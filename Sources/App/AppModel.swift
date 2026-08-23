@@ -36,16 +36,21 @@ final class AppModel {
     let catalog: [AerialAsset]
     let isFollower: Bool
 
+    /// 正在编辑的那个时段。改动先落在这里，点「应用」才写进 `schedule`。
+    ///
+    /// 草稿放在这里而不是 `SlotPage` 的 `@State` 里：选壁纸是另一页，SlotPage 会被
+    /// 卸下来重建，草稿得比页面活得久。面板一失焦就收起，草稿也得比面板活得久 ——
+    /// 「选本地图片」会弹系统对话框，那一下必定把面板关掉。
+    private var draftSession: SlotDraft?
+
+    var draft: Slot? { draftSession?.slot }
+
     private let assetNames: [String: String]
     private let scheduler: Scheduler
     private let lock: EngineLock?
     private var watcher: ConfigWatcher?
     private var ticker: Timer?
-    private var pendingCommit: DispatchWorkItem?
     private var messageExpiry: DispatchWorkItem?
-
-    /// 时间选择器一拖就是几十次变更。落盘（进而可能触发写壁纸）要等手停下来。
-    private let commitDelay: TimeInterval = 0.35
 
     private init() {
         catalog = (try? AerialCatalog.load()) ?? []
@@ -140,6 +145,16 @@ final class AppModel {
             }
     }
 
+    /// 面板顶上那张大图，是不是系统里此刻真挂着的那张。
+    ///
+    /// 不比 `lastWritten` 而直接比 `resolution.active`：引擎还没写过任何东西时
+    /// （首次运行、刚清过 `state.json`）`isManuallyOverridden` 恒为假，但那张图
+    /// 仍然只是「排程算出来的」，不能对用户说这就是目前的壁纸。
+    var activeIsActual: Bool {
+        guard let actual, let active = resolution?.active.wallpaper else { return false }
+        return WallpaperWriter.normalized(actual) == WallpaperWriter.normalized(active)
+    }
+
     /// 当前壁纸不是引擎写下去的那张 —— 用户自己换过，下一个触发点才会接管。
     var isManuallyOverridden: Bool {
         guard let lastWritten, let actual else { return false }
@@ -152,45 +167,119 @@ final class AppModel {
             && schedule.slots.contains { if case .solar = $0.trigger { return $0.enabled } else { return false } }
     }
 
-    // MARK: - 编辑
+    // MARK: - 编辑（草稿）
 
-    /// `debounced` 用于连续变化的控件（时刻、偏移分钟）：界面立刻跟手，落盘等手停。
-    func update(_ slot: Slot, debounced: Bool = false) {
-        guard let index = schedule.slots.firstIndex(where: { $0.id == slot.id }) else { return }
-        var updated = schedule
-        updated.slots[index] = slot
-        commit(updated, debounced: debounced)
+    /// 时段页要显示的那一段：正在编辑就用草稿，否则用配置里的。
+    func editing(_ id: UUID) -> Slot? {
+        draftSession?.slot.id == id ? draftSession?.slot : slot(id)
+    }
+
+    /// 草稿还没进过配置 —— 是「添加时段」新起的那一份。
+    var draftIsNew: Bool {
+        draftSession?.isNew ?? false
+    }
+
+    /// 有没有未应用的改动。新时段恒为真（配置里那份是 nil）。
+    var draftIsDirty: Bool {
+        draftSession?.isDirty ?? false
+    }
+
+    var draftHasConflict: Bool { draftSession?.conflict != nil }
+
+    var draftCanApply: Bool { draftSession?.canApply ?? false }
+
+    var draftCanDiscard: Bool { draftIsDirty || draftHasConflict }
+
+    /// 新时段不在配置里也能继续编辑；已有时段若被别处删除，就不能借草稿把它复活。
+    func canContinueEditing(_ id: UUID) -> Bool {
+        guard let session = draftSession, session.slot.id == id else { return slot(id) != nil }
+        return session.isNew || session.conflict != .deleted
+    }
+
+    func beginEditing(_ id: UUID) {
+        // 从选壁纸页返回时还会再走一次，别把半路的改动冲掉。
+        guard draftSession?.slot.id != id else { return }
+        draftSession = slot(id).map(SlotDraft.init(existing:))
+    }
+
+    /// 改草稿。界面立刻跟手，但配置与壁纸都还没动。
+    func editDraft(_ transform: (inout Slot) -> Void) {
+        draftSession?.edit(transform)
     }
 
     /// 新时段默认接着当前这一段：同一张壁纸、下一个整点。改哪一项都行，先给个能用的。
+    /// 只是一份草稿 —— 点「添加」才会进配置。
     @discardableResult
-    func addSlot() -> UUID {
+    func beginNewSlot() -> UUID {
         let wallpaper = resolution?.active.wallpaper
             ?? catalog.first.map { Wallpaper.aerial(assetID: $0.id) }
             ?? .aerial(assetID: Tahoe.day)
         let hour = (Calendar.current.component(.hour, from: Date()) + 1) % 24
         let slot = Slot(trigger: .clock(hour: hour, minute: 0), wallpaper: wallpaper)
-
-        var updated = schedule
-        updated.slots.append(slot)
-        commit(updated)
+        draftSession = SlotDraft(new: slot)
         return slot.id
     }
 
-    func delete(_ id: UUID) {
+    /// 点「应用 / 添加」：这是配置唯一会因为编辑而改变的入口。
+    @discardableResult
+    func applyDraft() -> Bool {
+        guard var session = draftSession, session.canApply else { return false }
+        var updated = schedule
+        if session.isNew {
+            updated.slots.append(session.slot)
+        } else {
+            guard let index = updated.slots.firstIndex(where: { $0.id == session.slot.id }) else {
+                show("这个时段已在别处删除")
+                return false
+            }
+            updated.slots[index] = session.slot
+        }
+        // 先把会话标成已应用，让领跑模式同步回调时不会把自己的写入误判成外部冲突；
+        // 保存失败则恢复，页面仍保留未应用的改动。
+        let previous = session
+        session.markApplied()
+        draftSession = session
+        guard commit(updated) else {
+            draftSession = previous
+            return false
+        }
+        return true
+    }
+
+    /// 把草稿退回配置里那一份。新时段没有「那一份」，直接丢掉。
+    func discardDraft() {
+        guard let session = draftSession else { return }
+        guard !session.isNew, let current = slot(session.slot.id) else {
+            draftSession = nil
+            return
+        }
+        draftSession = SlotDraft(existing: current)
+    }
+
+    func endEditing() {
+        draftSession = nil
+    }
+
+    @discardableResult
+    func delete(_ id: UUID) -> Bool {
         var updated = schedule
         updated.slots.removeAll { $0.id == id }
-        commit(updated)
+        let previous = draftSession
+        if draftSession?.slot.id == id { draftSession = nil }
+        guard commit(updated) else {
+            draftSession = previous
+            return false
+        }
+        return true
     }
 
     // MARK: - 操作
 
     func setPaused(_ paused: Bool) {
-        flushPendingCommit()
         if isFollower {
             var updated = schedule
             updated.paused = paused
-            commit(updated)
+            guard commit(updated) else { return }
             // 恢复是明确的用户意图：无视中途的手动改动立刻校正。
             // 对方收到配置变更时的求值不是 assertive 的，得由这里补上。
             if !paused { oneShot(reason: .resume) }
@@ -205,7 +294,6 @@ final class AppModel {
     }
 
     func applyNow() {
-        flushPendingCommit()
         if isFollower {
             oneShot(reason: .manual)
         } else {
@@ -220,25 +308,9 @@ final class AppModel {
 
     // MARK: - 内部
 
-    private func commit(_ updated: Schedule, debounced: Bool = false) {
-        // 先更新内存，界面立刻跟手；落盘可以慢一拍。
-        schedule = updated
-        resolution = updated.resolve()
-
-        pendingCommit?.cancel()
-        let work = DispatchWorkItem {
-            MainActor.assumeIsolated { AppModel.shared.persist(updated) }
-        }
-        pendingCommit = work
-        if debounced {
-            DispatchQueue.main.asyncAfter(deadline: .now() + commitDelay, execute: work)
-        } else {
-            work.perform()
-        }
-    }
-
-    private func persist(_ updated: Schedule) {
-        pendingCommit = nil
+    /// 落盘。编辑期间不会走到这里 —— 草稿只在内存里，点「应用」才调过来。
+    @discardableResult
+    private func commit(_ updated: Schedule) -> Bool {
         do {
             if isFollower {
                 // 存下去就够了，对方的 ConfigWatcher 会接着求值。
@@ -248,16 +320,13 @@ final class AppModel {
             }
         } catch {
             show("保存失败: \(error)")
+            return false
         }
+        // 引擎也是先落盘再提交内存；UI 遵守同一个顺序，失败时不会显示一份磁盘上不存在的配置。
+        schedule = updated
+        resolution = updated.resolve()
         refresh()
-    }
-
-    /// 有未落盘的编辑时先落下去，再执行会读配置的操作。
-    private func flushPendingCommit() {
-        guard let pending = pendingCommit else { return }
-        pending.cancel()
-        pendingCommit = nil
-        pending.perform()
+        return true
     }
 
     /// 从属模式下的一次性求值。`state.json` 才是权威，所以借一个临时 `Scheduler`
@@ -271,15 +340,24 @@ final class AppModel {
     }
 
     private func absorbFromScheduler() {
-        schedule = scheduler.schedule
+        replaceSchedule(scheduler.schedule)
         resolution = scheduler.lastResolution
         refresh()
     }
 
     private func reloadFromDisk() {
         guard let reloaded = try? Store.load() else { return }
-        schedule = reloaded
+        replaceSchedule(reloaded)
         refresh()
+    }
+
+    private func replaceSchedule(_ updated: Schedule) {
+        if var session = draftSession {
+            let current = updated.slots.first { $0.id == session.slot.id }
+            session.reconcile(with: current)
+            draftSession = session
+        }
+        schedule = updated
     }
 
     private func refresh() {

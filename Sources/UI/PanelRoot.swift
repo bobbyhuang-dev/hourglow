@@ -42,16 +42,36 @@ struct PanelRoot: View {
         // 宽度锁死；高度由各页自己决定（时间轴按时段数收，选壁纸那页固定铺满）。
         .frame(width: Panel.width)
         .animation(Panel.animation, value: page)
-        .onChange(of: model.schedule.slots.count) {
+        .onAppear {
+            // 面板一失焦就收起，「选本地图片」更是必定把它关掉。半路的草稿没有丢，
+            // 重新打开时回到那一段继续编辑，而不是把没应用的改动无声地扔掉。
+            // 若关闭期间那一段已被外部配置删除，则丢掉旧草稿，不能把它重新带回来。
+            switch page {
+            case .timeline:
+                if let draft = model.draft {
+                    if model.canContinueEditing(draft.id) {
+                        navigate(.slot(draft.id))
+                    } else {
+                        model.endEditing()
+                    }
+                }
+            case .slot(let id), .picker(let id):
+                if !model.canContinueEditing(id) { navigate(.timeline) }
+            }
+        }
+        .onChange(of: model.schedule.slots.map(\.id)) {
             // 时段可能被别处删掉（手改 schedule.json、另一个进程）。
             // 停在一个已经不存在的时段上会是一片空白，退回时间轴。
-            if case .slot(let id) = page, model.slot(id) == nil { navigate(.timeline) }
-            if case .picker(let id) = page, model.slot(id) == nil { navigate(.timeline) }
+            // 新时段的草稿还没进配置，`editing` 认得它，别把正在填的那一段踢掉。
+            if case .slot(let id) = page, !model.canContinueEditing(id) { navigate(.timeline) }
+            if case .picker(let id) = page, !model.canContinueEditing(id) { navigate(.timeline) }
         }
     }
 
+    /// 回到时间轴就等于结束这次编辑：没点「应用」的改动到此为止。
     private func navigate(_ target: Page) {
         forward = target.depth > page.depth
+        if target == .timeline { model.endEditing() }
         page = target
     }
 

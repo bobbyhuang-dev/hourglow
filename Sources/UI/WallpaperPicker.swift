@@ -140,7 +140,7 @@ struct WallpaperPicker: View {
     }
 
     private func cell(_ asset: AerialAsset) -> some View {
-        let selected = model.slot(slotID).map { $0.wallpaper == .aerial(assetID: asset.id) } ?? false
+        let selected = model.editing(slotID).map { $0.wallpaper == .aerial(assetID: asset.id) } ?? false
 
         return Button {
             choose(.aerial(assetID: asset.id))
@@ -203,15 +203,14 @@ struct WallpaperPicker: View {
 
     // MARK: -
 
+    /// 只改草稿，回时段页等用户点「应用」。
     private func choose(_ wallpaper: Wallpaper) {
-        guard var slot = model.slot(slotID) else { return }
-        slot.wallpaper = wallpaper
-        model.update(slot)
+        model.editDraft { $0.wallpaper = wallpaper }
         open(.slot(slotID))
     }
 
-    /// 面板会在打开系统对话框时收起（菜单栏面板一失焦就关），
-    /// 所以选完直接落到配置里，不依赖面板还开着。
+    /// 面板会在打开系统对话框时收起（菜单栏面板一失焦就关），选完时面板已经不在了。
+    /// 草稿活在 `AppModel` 里不受影响，面板再打开时 `PanelRoot` 会回到这一段继续编辑。
     private func chooseLocalImage() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]

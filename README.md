@@ -28,6 +28,8 @@ under 5 MB.
 - **It won't fight you** — if you change the wallpaper yourself in System Settings, HourGlow
   won't silently undo it on the next in-place re-evaluation. Your manual pick stands until
   the next scheduled switch (see below)
+- **Edits are staged** — changing a slot's time or wallpaper only builds up a draft; nothing
+  is written to the schedule, and no wallpaper changes, until you hit Apply
 - **Human-readable JSON config** — edit `schedule.json` by hand and the engine follows
   immediately
 
@@ -114,6 +116,7 @@ offline, none of which touch your real wallpaper:
 ```bash
 ./build/modelcheck             # resolution: midnight wraparound, solar triggers, Codable compatibility
 ./build/enginecheck            # engine: the assert-vs-stand-down matrix, and timer scheduling
+./build/appcheck               # app state: drafts, save boundaries, external config conflicts
 python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephemeris (10 cases, max deviation 4s)
 ./build/panelshot ~/Desktop    # render the three panel pages to PNG, for comparing layout changes
 ```

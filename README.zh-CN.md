@@ -20,6 +20,8 @@ macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 
   各有对应的系统通知，合盖睡过了某个触发时刻，醒来会补切
 - **不跟你抢** —— 你自己去系统设置里换了一张，HourGlow 不会在下一次原地求值时无声抹掉它；
   手动选择的有效期到下一次排定的切换为止（详见下文）
+- **改动不即时生效** —— 时段页上调时刻、换壁纸都先攒成草稿，点「应用」才写进日程、
+  才可能换壁纸；试错不必真的把壁纸换过去
 - **配置是人类可读的 JSON** —— 手改 `schedule.json` 后引擎立刻跟上
 
 ## 要求
@@ -100,6 +102,7 @@ LaunchAgent 日志 `~/Library/Logs/HourGlow.log`。
 ```bash
 ./build/modelcheck             # 求值：跨午夜回绕、solar 触发、Codable 兼容
 ./build/enginecheck            # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
+./build/appcheck               # 应用状态：草稿、保存边界、外部配置冲突
 python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例，最大偏差 4 秒）
 ./build/panelshot ~/Desktop    # 把三个界面画成 PNG，改版式时对照
 ```

@@ -2,8 +2,9 @@ import SwiftUI
 
 /// 单个时段的编辑页：触发条件 + 壁纸 + 启用 + 删除。
 ///
-/// 所有改动都即时生效（没有「保存」按钮）。时刻与偏移是连续变化的控件，
-/// 交给 `AppModel` 去抖后再落盘，免得拖一次滑块写十几次 `schedule.json`。
+/// **改动不即时生效**：页面上的每一次改动只落在 `AppModel` 的草稿里，界面立刻跟手，
+/// 但 `schedule.json` 与壁纸都不动 —— 要点底部的「应用」才写下去。
+/// 草稿放在 model 里而不是这里的 `@State`：选壁纸是另一页，这个视图会被卸下来重建。
 struct SlotPage: View {
     @Environment(AppModel.self) private var model
     let slotID: UUID
@@ -15,10 +16,10 @@ struct SlotPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(title: "时段", back: { open(.timeline) })
+            PanelHeader(title: model.draftIsNew ? "新时段" : "时段", back: { open(.timeline) })
             Divider()
 
-            if let slot = model.slot(slotID) {
+            if let slot = model.editing(slotID) {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
                         trigger(slot)
@@ -29,13 +30,18 @@ struct SlotPage: View {
                     .padding(Panel.inset)
                     .measureHeight(into: $contentHeight)
                 }
-                .frame(height: min(contentHeight, Panel.height))
+                .frame(height: min(contentHeight, Panel.height - Panel.footerHeight))
+                Divider()
+                footer
             } else {
                 Spacer()
                 Text("这个时段已经不在了").font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer()
             }
         }
+        // 页面每次出现都认领一次草稿。从选壁纸页返回时也会走到这里，
+        // 但 `beginEditing` 认得同一个 id，不会把半路的改动冲掉。
+        .onAppear { model.beginEditing(slotID) }
     }
 
     // MARK: - 触发
@@ -55,11 +61,8 @@ struct SlotPage: View {
                 HStack {
                     Text("每天").font(.system(size: 12))
                     Spacer()
-                    DatePicker("", selection: clockBinding(slot),
-                               displayedComponents: .hourAndMinute)
-                        .datePickerStyle(.stepperField)
-                        .labelsHidden()
-                        .frame(width: 92)
+                    // 底色与留白在 `TimeField` 里，这里只负责摆位置。
+                    TimeField(date: clockBinding(slot))
                 }
             case .solar(let event, let offset):
                 VStack(alignment: .leading, spacing: 6) {
@@ -160,33 +163,75 @@ struct SlotPage: View {
         }
     }
 
+    /// 新时段还没进过配置，「删除」没有对象可删，那一栏整个不出现 ——
+    /// 放弃它走底部的「取消」。
+    @ViewBuilder
     private var delete: some View {
-        Button(confirmingDelete ? "再点一次以删除" : "删除这个时段") {
-            if confirmingDelete {
-                model.delete(slotID)
-                open(.timeline)
-            } else {
-                confirmingDelete = true
-                // 误触之后不该一直红着等下一次点击。
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) { confirmingDelete = false }
+        if !model.draftIsNew {
+            Button(confirmingDelete ? "再点一次以删除" : "删除这个时段") {
+                if confirmingDelete {
+                    if model.delete(slotID) { open(.timeline) }
+                } else {
+                    confirmingDelete = true
+                    // 误触之后不该一直红着等下一次点击。
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) { confirmingDelete = false }
+                }
             }
+            .buttonStyle(.plain)
+            .font(.system(size: 12, weight: confirmingDelete ? .semibold : .regular))
+            .foregroundStyle(.red)
+            .padding(.horizontal, 4)
+            .padding(.top, 2)
         }
-        .buttonStyle(.plain)
-        .font(.system(size: 12, weight: confirmingDelete ? .semibold : .regular))
-        .foregroundStyle(.red)
-        .padding(.horizontal, 4)
-        .padding(.top, 2)
+    }
+
+    // MARK: - 底部：应用 / 撤销
+
+    /// 删除是即时的（本来就要点两下确认），其余改动全都攒在这里等一次「应用」。
+    private var footer: some View {
+        HStack(spacing: 8) {
+            Text(statusLine)
+                .font(.system(size: 11))
+                .foregroundStyle(model.draftIsDirty ? Color.orange : Color.secondary)
+                .lineLimit(1)
+
+            Spacer(minLength: 4)
+
+            if model.draftIsNew {
+                Button("取消") {
+                    model.endEditing()
+                    open(.timeline)
+                }
+            } else {
+                Button("撤销") { model.discardDraft() }
+                    .disabled(!model.draftCanDiscard)
+            }
+
+            Button(model.draftIsNew ? "添加" : "应用") {
+                // 落盘之后草稿就不「新」了，先记下来再应用。
+                let wasNew = model.draftIsNew
+                guard model.applyDraft() else { return }
+                // 新时段加完直接回时间轴，能看见它排在哪一格。
+                if wasNew { open(.timeline) }
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!model.draftCanApply)
+            .keyboardShortcut(.defaultAction)
+        }
+        .controlSize(.small)
+        .padding(.horizontal, Panel.inset)
+        .padding(.vertical, 9)
+    }
+
+    private var statusLine: String {
+        if model.draftHasConflict { return "配置已在别处更改，请先撤销" }
+        if model.draftIsNew { return "点「添加」才会写进日程" }
+        return model.draftIsDirty ? "有改动尚未应用" : "已应用"
     }
 
     // MARK: - 绑定
 
     private enum TriggerKind: Hashable { case clock, sunrise, sunset }
-
-    private func write(_ slot: Slot, _ transform: (inout Slot) -> Void, debounced: Bool = false) {
-        var updated = slot
-        transform(&updated)
-        model.update(updated, debounced: debounced)
-    }
 
     private func kindBinding(_ slot: Slot) -> Binding<TriggerKind> {
         Binding {
@@ -195,7 +240,7 @@ struct SlotPage: View {
             case .solar(let event, _): return event == .sunrise ? .sunrise : .sunset
             }
         } set: { kind in
-            write(slot) { updated in
+            model.editDraft { updated in
                 switch kind {
                 case .clock:
                     // 从日出/日落切过来时，用它今天算出来的那个时刻当起点，
@@ -222,8 +267,9 @@ struct SlotPage: View {
                                          of: Date()) ?? Date()
         } set: { date in
             let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
-            write(slot, { $0.trigger = .clock(hour: parts.hour ?? 0, minute: parts.minute ?? 0) },
-                  debounced: true)
+            // 拖时间选择器一秒钟能变几十次 —— 但这些只改内存里的草稿，不落盘，
+            // 原来的 0.35 秒去抖也就没有必要了。
+            model.editDraft { $0.trigger = .clock(hour: parts.hour ?? 0, minute: parts.minute ?? 0) }
         }
     }
 
@@ -233,11 +279,11 @@ struct SlotPage: View {
             return 0
         } set: { value in
             guard case .solar(let event, _) = slot.trigger else { return }
-            write(slot, { $0.trigger = .solar(event: event, offsetMinutes: value) }, debounced: true)
+            model.editDraft { $0.trigger = .solar(event: event, offsetMinutes: value) }
         }
     }
 
     private func enabledBinding(_ slot: Slot) -> Binding<Bool> {
-        Binding { slot.enabled } set: { value in write(slot) { $0.enabled = value } }
+        Binding { slot.enabled } set: { value in model.editDraft { $0.enabled = value } }
     }
 }

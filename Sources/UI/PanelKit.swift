@@ -13,7 +13,12 @@ enum Panel {
     static let inset: CGFloat = 12
     static let rowInset: CGFloat = 8
     static let rowHeight: CGFloat = 44
+    /// 底部操作条（时间轴的三个操作、时段页的「应用」）的高度。
+    static let footerHeight: CGFloat = 42
     static let corner: CGFloat = 7
+    /// 时间轴上标「现在正在跑的是这一段」的那根竖条。
+    /// 它是状态，不是选中 —— 所以只在行首立一根，绝不给整行铺强调色底。
+    static let nowBar = CGSize(width: 3, height: 18)
     static let animation: Animation = .snappy(duration: 0.22)
 }
 
@@ -84,16 +89,16 @@ struct PanelSection<Content: View>: View {
 // MARK: - 行
 
 /// 列表行的按钮样式：悬停时一层淡底，按下再深一点。菜单栏面板里最像原生的做法。
+///
+/// 底色只表示「鼠标在这儿」和「正在按」这两件事，任何行都一样 —— 常驻的底色是列表
+/// 「选中项」的语言，而这个面板里的行点下去是翻页，从来没有选中态。
 struct PanelRowStyle: ButtonStyle {
-    var tinted: Bool = false
-
     func makeBody(configuration: Configuration) -> some View {
-        RowBody(configuration: configuration, tinted: tinted)
+        RowBody(configuration: configuration)
     }
 
     private struct RowBody: View {
         let configuration: Configuration
-        let tinted: Bool
         @State private var hovering = false
 
         var body: some View {
@@ -105,7 +110,6 @@ struct PanelRowStyle: ButtonStyle {
 
         private var fill: Color {
             if configuration.isPressed { return .primary.opacity(0.12) }
-            if tinted { return .accentColor.opacity(hovering ? 0.20 : 0.13) }
             return hovering ? .primary.opacity(0.06) : .clear
         }
     }
@@ -192,6 +196,70 @@ struct Thumbnail: View {
                 image = await ThumbnailCache.shared.image(for: url,
                                                           maxPixel: Int(size.width * 3))
             }
+    }
+}
+
+// MARK: - 时刻输入
+
+/// 「每天 09:00」里那个时刻输入框，只有小时和分钟。
+///
+/// 为什么不用 SwiftUI 的 `DatePicker(.stepperField)`：数字几乎贴着 AppKit 画的框线，
+/// 而那点横向内边距从 SwiftUI 这一层够不到 —— 给它宽度它不撑（只把控件在盒子里居中），
+/// 换 `controlSize` 只长高不长宽。所以这里自己包一层 `NSDatePicker`，关掉它自带的
+/// 边框与底色，留白改由外面的 padding 决定；点小时/分钟分别改、上下键、步进器
+/// 这些编辑行为仍旧是系统原生那一套。
+///
+/// 代价是没了系统的聚焦光晕；正在改哪一段仍然靠数字本身的高亮看得出来。
+///
+/// 底色与留白也一起包在这里，不留给调用方：上下两边**不等**，散在视图里只会被当成笔误。
+struct TimeField: View {
+    @Binding var date: Date
+
+    var body: some View {
+        Field(date: $date)
+            .fixedSize()
+            .padding(.horizontal, 8)
+            // 上下差半点是补出来的，不是随手写的：`NSDatePicker` 的内容贴着自己盒子的
+            // 底边画，下面固定留着字体的降部空间（12 pt 字体是 6.5 pt），上面把余下的
+            // 高度全吃掉。而时刻只有数字和冒号，一个降部都用不上 —— 上下给一样的
+            // padding，看上去就是「上 8.5 下 10」的偏上。补这半点之后数字与右边的
+            // 步进器同时正好居中。字号跟着改成 12（与左边的「每天」一齐），
+            // 13 pt 时这个差额是 1.5 pt，补平数字就会把步进器顶歪。
+            .padding(.top, 3.5)
+            .padding(.bottom, 3)
+            .background(.quaternary.opacity(0.7),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
+private struct Field: NSViewRepresentable {
+    @Binding var date: Date
+
+    func makeNSView(context: Context) -> NSDatePicker {
+        let picker = NSDatePicker()
+        picker.datePickerStyle = .textFieldAndStepper
+        picker.datePickerElements = [.hourMinute]
+        picker.isBezeled = false
+        picker.drawsBackground = false
+        picker.font = .systemFont(ofSize: 12)
+        picker.target = context.coordinator
+        picker.action = #selector(Coordinator.change(_:))
+        return picker
+    }
+
+    func updateNSView(_ picker: NSDatePicker, context: Context) {
+        context.coordinator.date = $date
+        // 正在输入时别把光标顶回开头。
+        if picker.dateValue != date { picker.dateValue = date }
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(date: $date) }
+
+    @MainActor
+    final class Coordinator: NSObject {
+        var date: Binding<Date>
+        init(date: Binding<Date>) { self.date = date }
+        @objc func change(_ sender: NSDatePicker) { date.wrappedValue = sender.dateValue }
     }
 }
 
