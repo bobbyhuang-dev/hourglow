@@ -1,31 +1,42 @@
 # HourGlow
 
-跟着天光走的 macOS 壁纸调度器。
+> **English** · [中文](README.zh-CN.md)
 
-macOS Tahoe 提供了 Tahoe Morning / Day / Evening / Night 四张动态壁纸，却没有像旧版
-macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 但不写死这四张，而是做成一个
-通用的「触发条件 → 壁纸」调度器：你定义若干时段，每段绑一张壁纸，它负责在正确的时刻切换。
+A macOS wallpaper scheduler that follows the daylight.
 
-菜单栏常驻，无 Dock 图标。Swift 6.3 + SwiftUI，零第三方依赖，二进制不到 5 MB。
+macOS Tahoe ships four dynamic wallpapers — Tahoe Morning / Day / Evening / Night — but
+unlike older versions of macOS, it can no longer switch between them as the day goes on.
+HourGlow fills that gap. Rather than hardcoding those four, it is a general
+"trigger → wallpaper" scheduler: you define any number of time slots, bind a wallpaper to
+each, and it handles switching at the right moment.
 
-## 功能
+Lives in the menu bar, no Dock icon. Swift 6.3 + SwiftUI, zero third-party dependencies,
+under 5 MB.
 
-- **两种触发条件** —— 固定时刻，或相对日出/日落（偏移可正可负，如「日落前 30 分」）
-- **两种壁纸来源** —— 系统自带的 156 张 aerial 动态壁纸，或本地图片
-- **时段数量不限** —— Tahoe 那四张只是首次启动写入的预设，随便改、随便删
-- **日出日落本地计算** —— NOAA 太阳位置算法，不联网；坐标由时区推断，也可手动指定
-- **不轮询** —— 定时器直接排到下一个触发点；睡眠唤醒、系统时钟变更、时区变更、跨日
-  各有对应的系统通知，合盖睡过了某个触发时刻，醒来会补切
-- **不跟你抢** —— 你自己去系统设置里换了一张，HourGlow 不会在下一次原地求值时无声抹掉它；
-  手动选择的有效期到下一次排定的切换为止（详见下文）
-- **配置是人类可读的 JSON** —— 手改 `schedule.json` 后引擎立刻跟上
+## Features
 
-## 要求
+- **Two kinds of trigger** — a fixed clock time, or relative to sunrise/sunset with a
+  signed offset (e.g. "30 minutes before sunset")
+- **Two wallpaper sources** — any of the 156 system aerials, or a local image file
+- **Any number of slots** — the Tahoe four are just the preset written on first launch;
+  edit or delete them freely
+- **Sun times computed locally** — the NOAA solar position algorithm, no network. Coordinates
+  are inferred from your time zone, or set by hand
+- **No polling** — the timer is scheduled directly at the next trigger point. Sleep/wake,
+  system clock changes, time zone changes and day rollover each have their own notification,
+  so sleeping through a trigger means the wallpaper catches up on wake
+- **It won't fight you** — if you change the wallpaper yourself in System Settings, HourGlow
+  won't silently undo it on the next in-place re-evaluation. Your manual pick stands until
+  the next scheduled switch (see below)
+- **Human-readable JSON config** — edit `schedule.json` by hand and the engine follows
+  immediately
 
-macOS 26 (Tahoe) 及以上。构建只需要命令行的 Swift 工具链（`xcode-select --install` 即可），
-不需要完整的 Xcode。
+## Requirements
 
-## 构建与运行
+macOS 26 (Tahoe) or later. Building needs only the command-line Swift toolchain
+(`xcode-select --install`), not the full Xcode.
+
+## Build and run
 
 ```bash
 git clone https://github.com/bobbyhuang-dev/hourglow.git
@@ -34,39 +45,43 @@ cd hourglow
 open build/HourGlow.app
 ```
 
-`build.sh` 用 `swiftc` 直接编译并手工组装 `.app`（ad-hoc 签名，个人自用足够），
-不经过 Xcode 工程。产物全部落在 `build/`。
+`build.sh` compiles with `swiftc` and assembles the `.app` by hand (ad-hoc signed — fine for
+personal use); there is no Xcode project. Everything lands in `build/`.
 
-## 命令行
+## Command line
 
-`hourglow-cli` 是排障入口，也可以当作无头常驻使用：
+`hourglow-cli` is the troubleshooting entry point, and doubles as a headless daemon:
 
 ```bash
-./build/hourglow-cli now                 # 当前应生效的壁纸、下次切换、与实际是否一致
-./build/hourglow-cli list                # 时间轴与今天各段的实际时刻
-./build/hourglow-cli catalog Space       # 列出系统 aerial（含下载状态与体积）
-./build/hourglow-cli simulate 2026-12-21 # 时间旅行：打印该日全天的每一次切换
-./build/hourglow-cli solar               # 今天的日出日落
-./build/hourglow-cli apply --dry-run     # 看会写什么，不真写
-./build/hourglow-cli run                 # 前台常驻引擎
-./build/hourglow-cli agent install       # 注册成 LaunchAgent，重启后仍然活着
+./build/hourglow-cli now                 # what should be active now, next switch, whether reality agrees
+./build/hourglow-cli list                # the timeline, with today's actual times per slot
+./build/hourglow-cli catalog Space       # list system aerials (with download state and size)
+./build/hourglow-cli simulate 2026-12-21 # time travel: print every switch across that day
+./build/hourglow-cli solar               # today's sunrise and sunset
+./build/hourglow-cli apply --dry-run     # show what would be written, without writing
+./build/hourglow-cli run                 # run the engine in the foreground
+./build/hourglow-cli agent install       # register as a LaunchAgent, survives reboot
 ```
 
-菜单栏 app 与 `hourglow-cli run` 抢同一把单实例锁：先起的那个负责排程，后起的退回从属模式，
-只编辑配置，由对方跟上。
+The menu bar app and `hourglow-cli run` compete for the same single-instance lock: whichever
+starts first owns scheduling, the other falls back to follower mode — it only edits the
+config, and the leader picks the change up.
 
-## 手动改壁纸时谁说了算
+## Who wins when you change the wallpaper yourself
 
-你随时可能自己去系统设置里换一张。HourGlow 按「是否跨过了新的触发边界」分开处理：
+You may well go into System Settings and pick a different wallpaper. HourGlow decides based
+on whether a new trigger boundary has been crossed:
 
-- **跨过了**（到点了、睡过了某个触发时刻、暂停后恢复）—— 照常写。手动选择的有效期到
-  下一次排定的切换为止，跟空调的「临时保持」一个意思。
-- **没跨过**（启动、唤醒、时区变更等原地重新求值）—— 只有当前壁纸确实还是它上次写的那张
-  时才写；否则让位，不把你十分钟前的选择无声抹掉。
+- **Crossed** (a trigger fired, you slept through one, or the schedule was resumed from
+  pause) — write as usual. Your manual pick is valid until the next scheduled switch, the
+  same way a thermostat's "temporary hold" works.
+- **Not crossed** (launch, wake, time zone change — any in-place re-evaluation) — write only
+  if the current wallpaper is still the one HourGlow last wrote. Otherwise it stands down
+  rather than silently erasing the choice you made ten minutes ago.
 
-## 配置
+## Configuration
 
-`~/Library/Application Support/HourGlow/schedule.json`，可以直接手改：
+`~/Library/Application Support/HourGlow/schedule.json`, safe to edit by hand:
 
 ```json
 {
@@ -88,33 +103,39 @@ open build/HourGlow.app
 }
 ```
 
-其余运行时路径：状态 `state.json`、单实例锁 `run.lock`（同目录），
-LaunchAgent 日志 `~/Library/Logs/HourGlow.log`。
+Other runtime paths: `state.json` and the single-instance lock `run.lock` sit in the same
+directory; the LaunchAgent logs to `~/Library/Logs/HourGlow.log`.
 
-## 验证
+## Verification
 
-没有 XCTest。验证靠几个独立编译的靶子，全部离线、不碰真实壁纸：
+There is no XCTest. Verification runs through a few separately compiled check binaries, all
+offline, none of which touch your real wallpaper:
 
 ```bash
-./build/modelcheck             # 求值：跨午夜回绕、solar 触发、Codable 兼容
-./build/enginecheck            # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
-python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例，最大偏差 4 秒）
-./build/panelshot ~/Desktop    # 把三个界面画成 PNG，改版式时对照
+./build/modelcheck             # resolution: midnight wraparound, solar triggers, Codable compatibility
+./build/enginecheck            # engine: the assert-vs-stand-down matrix, and timer scheduling
+python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephemeris (10 cases, max deviation 4s)
+./build/panelshot ~/Desktop    # render the three panel pages to PNG, for comparing layout changes
 ```
 
-## 状态
+## Status
 
-M1（逻辑层）、M2（调度引擎）、M3（菜单栏界面）已完成，M4 收尾中：开机自启、
-CoreLocation 精确定位、验收清单。规格见 `MVP.md`，进度与实现笔记见 `TODO.md`。
+M1 (logic layer), M2 (scheduling engine) and M3 (menu bar UI) are done; M4 is wrapping up:
+launch at login, precise CoreLocation, acceptance checklist. The spec lives in `MVP.md`,
+progress and implementation notes in `TODO.md` — both are written in Chinese, as are the
+source comments.
 
-## 它是怎么改壁纸的
+## How it actually changes the wallpaper
 
-macOS 把壁纸配置存在 `~/Library/Application Support/com.apple.wallpaper/Store/Index.plist`
-（binary plist），改完 `killall WallpaperAgent` 生效。HourGlow 读改写这个文件：保留所有
-未知字段、写入前备份、统一写成 `linked`（桌面与屏保一起换）、目标与当前一致时跳过写入以免闪屏。
-格式细节见 `MVP.md` 第 2 节，都是实机验证过的。
+macOS keeps wallpaper configuration in
+`~/Library/Application Support/com.apple.wallpaper/Store/Index.plist` (a binary plist), and
+applies it once `WallpaperAgent` is killed. HourGlow reads, modifies and writes that file:
+preserving every unknown field, backing it up first, always writing the slot as `linked`
+(desktop and screen saver change together), and skipping the write entirely when the target
+already matches — which avoids the flicker. The format details are in section 2 of `MVP.md`,
+all verified on a real machine.
 
-这是没有公开 API 的做法，随 macOS 小版本变动的风险自负。
+This is not a public API. The risk of it changing across macOS point releases is yours.
 
 ## License
 
