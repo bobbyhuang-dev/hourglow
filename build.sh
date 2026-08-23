@@ -18,12 +18,15 @@ swiftc -O "${COMMON[@]}" Sources/App/SlotDraft.swift Tests/AppCheck/main.swift -
 swiftc -O "${COMMON[@]}" "${UI[@]}" Tests/PanelShot/main.swift -o build/panelshot
 
 # HourGlow.app —— 手工 bundle，不经过 Xcode。
-# M4 会在这里补上应用图标；LSUIElement 让它没有 Dock 图标、没有主窗口。
+# LSUIElement 让它没有 Dock 图标、没有主窗口；图标只在访达和「登录项」里露面。
 APP=build/HourGlow.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 swiftc -O "${COMMON[@]}" "${UI[@]}" "${ENTRY[@]}" -o "$APP/Contents/MacOS/HourGlow"
+
+# 图标已经生成好提交在仓库里，改它才需要重跑 `Tools/makeicon.swift`（用法见文件头）。
+cp Resources/HourGlow.icns "$APP/Contents/Resources/HourGlow.icns"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -36,12 +39,16 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleIdentifier</key>           <string>app.hourglow</string>
     <key>CFBundlePackageType</key>          <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleShortVersionString</key>   <string>0.3</string>
-    <key>CFBundleVersion</key>              <string>3</string>
+    <key>CFBundleShortVersionString</key>   <string>0.4</string>
+    <key>CFBundleVersion</key>              <string>4</string>
+    <key>CFBundleIconFile</key>             <string>HourGlow</string>
     <key>LSMinimumSystemVersion</key>       <string>26.0</string>
     <key>NSHighResolutionCapable</key>      <true/>
     <!-- 菜单栏常驻：没有 Dock 图标，也没有主窗口。 -->
     <key>LSUIElement</key>                  <true/>
+    <!-- 定位权限对话框上显示的理由。没有这一条系统直接拒，连框都不弹。 -->
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>HourGlow 用你的位置计算本地的日出日落时刻，只取一次，不上传。</string>
 </dict>
 </plist>
 PLIST

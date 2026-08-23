@@ -32,7 +32,84 @@ private struct MenuBarIcon: View {
 
 /// 引擎要在面板第一次打开之前就跑起来 —— 菜单栏 app 的常态是从不打开面板。
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        LoginItemProbe.handleIfNeeded()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 定位那条要等系统回调，得让主 run loop 转起来，所以不能在 willFinish 里做。
+        LocateProbe.handleIfNeeded()
         AppModel.shared.start()
+    }
+}
+
+/// 开机自启的排障入口：
+///
+/// ```
+/// build/HourGlow.app/Contents/MacOS/HourGlow --login-item [status|on|off]
+/// ```
+///
+/// 它没有长在 `hourglow-cli` 上，是因为 `SMAppService.mainApp` 注册的是**调用者自己的
+/// bundle** —— CLI 是个裸二进制，没有 bundle 可注册，从那边问到的永远是 `.notFound`。
+/// 打印完直接退出，菜单栏上不会留下图标。
+enum LoginItemProbe {
+    static func handleIfNeeded() {
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "--login-item") else { return }
+        let action = index + 1 < arguments.count ? arguments[index + 1] : "status"
+
+        switch action {
+        case "on", "off":
+            do {
+                try LaunchAtLogin.set(action == "on")
+            } catch {
+                print("失败: \((error as NSError).localizedDescription)")
+                exit(1)
+            }
+        case "status":
+            break
+        default:
+            print("用法: --login-item [status|on|off]")
+            exit(2)
+        }
+        print("开机自启  \(LaunchAtLogin.describe())")
+        print("bundle   \(Bundle.main.bundleURL.path)")
+        exit(0)
+    }
+}
+
+/// 定位的排障入口：
+///
+/// ```
+/// build/HourGlow.app/Contents/MacOS/HourGlow --locate
+/// ```
+///
+/// 和开机自启同理，权限是按 bundle 授予的，`hourglow-cli` 那个裸二进制问不出结果。
+/// 第一次跑会弹系统的定位授权对话框（理由取自 Info.plist 里的
+/// `NSLocationWhenInUseUsageDescription`）。拿到结果只打印，不写进配置 ——
+/// 写配置是设置页里那个按钮的事，排障不该顺手改用户的东西。
+enum LocateProbe {
+    @MainActor
+    static func handleIfNeeded() {
+        guard CommandLine.arguments.contains("--locate") else { return }
+
+        var done = false
+        PreciseLocation.shared.request { outcome in
+            switch outcome {
+            case .coordinate(let c):
+                print(String(format: "坐标  %.4f, %.4f", c.latitude, c.longitude))
+            case .denied:
+                print("被拒   在「系统设置 › 隐私与安全性 › 定位服务」里打开，或手填经纬度")
+            case .failed(let reason):
+                print("失败   \(reason)")
+            }
+            done = true
+        }
+        // 授权对话框要等人点，最多陪它两分钟；`PreciseLocation` 自己也有超时。
+        let deadline = Date().addingTimeInterval(120)
+        while !done, Date() < deadline {
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.2))
+        }
+        exit(done ? 0 : 1)
     }
 }

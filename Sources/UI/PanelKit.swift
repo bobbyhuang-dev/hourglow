@@ -266,12 +266,25 @@ private struct Field: NSViewRepresentable {
 // MARK: - 提示条
 
 /// 页面顶部的一行说明（缺坐标、被手动换过、谁在排程）。始终一行高，不撑版面。
+///
+/// 给了 `action` 就变成可点的一条 —— 说的是「哪儿不对」，点进去就该是「在哪儿改」。
+/// 末尾多一个尖括号，好让它看起来确实能点，不然一条提示条上的点击是猜出来的。
 struct PanelNotice: View {
     var symbol: String
     var text: String
     var tint: Color = .secondary
+    var action: (() -> Void)?
 
     var body: some View {
+        if let action {
+            Button(action: action) { bar }
+                .buttonStyle(.plain)
+        } else {
+            bar
+        }
+    }
+
+    private var bar: some View {
         HStack(spacing: 6) {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .semibold))
@@ -280,12 +293,18 @@ struct PanelNotice: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
+            if action != nil {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .opacity(0.7)
+            }
         }
         .foregroundStyle(tint)
         .padding(.horizontal, Panel.inset)
         .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(tint.opacity(0.09))
+        .contentShape(.rect)
     }
 }
 

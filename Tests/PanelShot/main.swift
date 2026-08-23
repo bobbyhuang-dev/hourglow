@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// 把三个页面画成 PNG（时段页的固定时刻那一栏版式不同，另出一张）。菜单栏面板不是普通窗口，screencapture 抓不到它，
+// 把各个页面画成 PNG（时段页的固定时刻那一栏版式不同，另出一张）。菜单栏面板不是普通窗口，screencapture 抓不到它，
 // 改版式时用这个对照：
 //
 //   ./build/panelshot [输出目录]
@@ -77,4 +77,5 @@ MainActor.assumeIsolated {
         shoot(SlotPage(slotID: clock.id, open: { _ in }), named: "2b-slot-clock", into: directory)
     }
     shoot(WallpaperPicker(slotID: first.id, open: { _ in }), named: "3-picker", into: directory)
+    shoot(SettingsPage(open: { _ in }), named: "4-settings", into: directory)
 }

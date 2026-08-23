@@ -146,7 +146,7 @@ Wallpaper =
    定时器直接排到下一个触发点，不轮询；时钟变更、时区变更、跨日各有对应通知
 5. **日出日落** —— `CLLocationManager` 取坐标后本地计算（NOAA 太阳位置算法），不联网；
    拒绝定位权限时回退为手填经纬度
-6. **杂项** —— 立即应用 / 全局暂停 / 开机自启（`SMAppService.mainApp`）
+6. **杂项** —— 全局暂停 / 开机自启（`SMAppService.mainApp`）
 
 ### 手动改壁纸的语义
 
@@ -209,18 +209,22 @@ Sources/
 ├── System/
 │   ├── WallpaperWriter.swift // 写 Index.plist + killall WallpaperAgent
 │   ├── AerialCatalog.swift   // 解析 entries.json，枚举缩略图与下载状态
-│   ├── Location.swift        // 时区反查近似坐标
+│   ├── Location.swift        // 时区反查近似坐标（免权限的回退路径）
+│   ├── PreciseLocation.swift // CoreLocation 取一次精确坐标，被拒时回退手填
+│   ├── LaunchAtLogin.swift   // 开机自启（SMAppService.mainApp）
 │   └── Solar.swift           // 日出日落计算
 ├── Engine/
 │   ├── Scheduler.swift      // 定时器 + 系统事件观察 + 决定写不写
 │   ├── EngineState.swift    // state.json：我们上次写的是哪张
 │   ├── ConfigWatcher.swift  // schedule.json 被手改后立刻跟上
-│   └── EngineLock.swift     // 单实例锁，app 与 CLI 抢同一把
+│   ├── EngineLock.swift     // 单实例锁，app 与 CLI 抢同一把
+│   └── LaunchAgentInstaller.swift // 无头常驻：把 CLI run 注册成 LaunchAgent
 ├── UI/
 │   ├── PanelRoot.swift      // 面板的根，三页左右推进
 │   ├── PanelKit.swift       // 固定度量、页头、分区、行样式、缩略图缓存
 │   ├── TimelineView.swift   // 主面板
 │   ├── SlotEditorView.swift // 单个时段的编辑页
+│   ├── SettingsView.swift   // 开机自启 + 位置
 │   └── WallpaperPicker.swift// 缩略图网格
 └── CLI/                     // 排障与无头常驻入口
 ```
@@ -245,14 +249,16 @@ Sources/
 
 ## 9. 验收标准
 
-- [ ] 菜单栏出现图标，点开可见时间轴，当前生效时段有标记
-- [ ] 新增一个时段并绑定任意 aerial，到点自动切换
-- [ ] 绑定一张本地图片，到点自动切换，且 slot 仍保持 `linked`
-- [ ] 「日落前 30 分」的触发时刻随日期变化而变化
-- [ ] 合盖睡眠跨越某个触发时刻后唤醒，壁纸补切到正确的那张
-- [ ] 重启后自动运行且状态保持
-- [ ] 全局暂停后不再自动切换，恢复后立即校正到当前应生效的壁纸
-- [ ] 手动换过壁纸后合盖再唤醒，若没跨过触发点，手动那张仍在
+M4 收尾时跑过一遍，逐条的实测记录见 `TODO.md` 的「验收清单实测」。
+
+- [x] 菜单栏出现图标，点开可见时间轴，当前生效时段有标记
+- [x] 新增一个时段并绑定任意 aerial，到点自动切换
+- [x] 绑定一张本地图片，到点自动切换，且 slot 仍保持 `linked`
+- [x] 「日落前 30 分」的触发时刻随日期变化而变化
+- [x] 合盖睡眠跨越某个触发时刻后唤醒，壁纸补切到正确的那张（M2 真机验过）
+- [~] 重启后自动运行且状态保持 —— 登录项的注册/注销已验证，真重启待用户确认
+- [x] 全局暂停后不再自动切换，恢复后立即校正到当前应生效的壁纸
+- [x] 手动换过壁纸后合盖再唤醒，若没跨过触发点，手动那张仍在
 
 ---
 
@@ -263,7 +269,7 @@ Sources/
 | M1 | `WallpaperWriter` + `AerialCatalog` + `Solar`，纯逻辑层，命令行可验证 |
 | M2 | `Scheduler` 引擎跑通，无 UI，替代现有 launchd 脚本 |
 | M3 | 菜单栏 UI：时间轴 + 壁纸选择器 |
-| M4 | 开机自启、暂停、首次启动预设、打包脚本 |
+| M4 | 开机自启、暂停、首次启动预设、打包脚本（全部完成） |
 
 ---
 

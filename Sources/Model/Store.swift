@@ -3,8 +3,18 @@ import Foundation
 /// 配置的持久化。JSON，人类可读、可手改。
 enum Store {
 
+    /// 配置目录。`HOURGLOW_HOME` 可以把它整个挪走 —— 验证「首次启动写入预设」这类
+    /// 一次性行为只能在一个空目录上做，而 `NSHomeDirectory()` 在 macOS 上取的是
+    /// 账户的真实家目录，改 `$HOME` 也没用（非沙盒进程走的是 getpwuid）。
+    /// 引擎状态与单实例锁都在这个目录下，所以换目录等于换出一整套干净的运行时环境。
     static var directoryURL: URL {
-        URL(fileURLWithPath: NSHomeDirectory())
+        // 用 getenv 而不是 ProcessInfo.environment：后者是进程启动时的快照，
+        // 靶子里 setenv 之后再问它拿到的还是旧值。
+        if let raw = getenv("HOURGLOW_HOME"), let override = String(validatingCString: raw),
+           !override.isEmpty {
+            return URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
+        }
+        return URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("Library/Application Support/HourGlow")
     }
 

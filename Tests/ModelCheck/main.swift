@@ -97,6 +97,38 @@ check(ApproxLocation.parseISO6709("+31xx+12128") == nil,
 check(ApproxLocation.parseISO6709("+9001+12128") == nil,
       "ISO 6709 解析拒绝越界纬度")
 
+// MARK: - 首次启动写入预设
+//
+// 这条只能在一个空目录上验：文件已经存在时那段分支根本不会走。`HOURGLOW_HOME` 就是
+// 为此存在的（macOS 上 `NSHomeDirectory()` 取的是账户真实家目录，改 $HOME 不管用）。
+// 写的全是临时目录，不碰真配置。
+
+let sandbox = URL(fileURLWithPath: NSTemporaryDirectory())
+    .appendingPathComponent("hourglow-modelcheck-\(UUID().uuidString)")
+setenv("HOURGLOW_HOME", sandbox.path, 1)
+defer { try? FileManager.default.removeItem(at: sandbox) }
+
+check(Store.directoryURL == sandbox, "HOURGLOW_HOME 能把配置目录整体改道")
+check(!FileManager.default.fileExists(atPath: Store.fileURL.path), "起点是一个空目录")
+
+let firstRun = (try? Store.load()) ?? Schedule()
+check(FileManager.default.fileExists(atPath: Store.fileURL.path),
+      "首次启动把预设落到了磁盘上")
+check(firstRun.slots.count == 4, "预设是四段")
+check(firstRun.slots.map(\.trigger) == [
+        .solar(event: .sunrise, offsetMinutes: 0),
+        .clock(hour: 9, minute: 0),
+        .solar(event: .sunset, offsetMinutes: -30),
+        .solar(event: .sunset, offsetMinutes: 60),
+      ], "预设的四个触发条件是日出 / 09:00 / 日落前 30 / 日落后 60")
+check(firstRun.slots.map(\.wallpaper) == [
+        .aerial(assetID: Tahoe.morning), .aerial(assetID: Tahoe.day),
+        .aerial(assetID: Tahoe.evening), .aerial(assetID: Tahoe.night),
+      ], "预设绑的是 Tahoe 四张")
+// ID 每次启动都换的话，引擎会把同一段当成「配置换了一段」而覆盖用户的手动选择。
+check((try? Store.load())?.slots.map(\.id) == firstRun.slots.map(\.id),
+      "第二次读回来的 slot ID 与首次写入的一致")
+
 if failures > 0 {
     FileHandle.standardError.write(Data("\n\(failures) 项测试失败\n".utf8))
     exit(1)
