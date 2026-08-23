@@ -65,20 +65,47 @@ struct SlotPage: View {
                     TimeField(date: clockBinding(slot))
                 }
             case .solar(let event, let offset):
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(offsetLabel(event: event, offset: offset))
-                            .font(.system(size: 12))
-                        Spacer()
-                        Stepper("", value: offsetBinding(slot), in: -240...240, step: 5)
-                            .labelsHidden()
+                // 与固定时刻那一栏同构：一行里左边是控件、右边是算出来的时刻。
+                // 弹出菜单只有一百四十来点宽，单独占一行右边全是空的；而「今天是 18:16」
+                // 本来就是这个控件的注脚，摆在同一行既填满了宽度又省下一行高度。
+                HStack(spacing: 8) {
+                    // 偏移是从一串预设里挑，不是一分钟一分钟地步进：步进器要按十几下才能
+                    // 从「正好」走到「一小时后」，而这个值本来就没人会调到 37 分。
+                    Picker("", selection: offsetBinding(slot)) {
+                        ForEach(offsetChoices(including: offset), id: \.self) { value in
+                            Text(offsetLabel(event: event, offset: value)).tag(value)
+                        }
                     }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    // 宽度交给控件自己：`NSPopUpButton` 按最宽的那一项定宽（给它
+                    // `frame(width:)` 也不认），所以换档时它不会跟着字数忽宽忽窄。
+                    .fixedSize()
+
+                    Spacer(minLength: 4)
+
                     Text(todayLine(slot))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
         }
+    }
+
+    /// 预设的偏移档位：一小时以内按 15 分一档，再往外拉开到半小时、一小时。
+    private static let offsetLadder = [-120, -90, -60, -45, -30, -15, 0,
+                                       15, 30, 45, 60, 90, 120]
+
+    /// 手改过 `schedule.json` 的值可能不在档位上（旧版的步进器也能走出 5 的倍数）。
+    /// 那就把它插进去，不然菜单选不中当前值，会显示成空白。
+    private func offsetChoices(including current: Int) -> [Int] {
+        var values = Self.offsetLadder
+        if !values.contains(current) {
+            values.append(current)
+            values.sort()
+        }
+        return values
     }
 
     private func offsetLabel(event: SolarEvent, offset: Int) -> String {
@@ -87,15 +114,15 @@ struct SlotPage: View {
         return offset > 0 ? "\(name)后 \(offset) 分钟" : "\(name)前 \(-offset) 分钟"
     }
 
-    /// 偏移是相对量，光看「日落前 30 分」不知道今天几点。把算出来的时刻写在下面。
+    /// 偏移是相对量，光看「日落前 30 分」不知道今天几点。把算出来的时刻摆在同一行的右端。
     private func todayLine(_ slot: Slot) -> String {
         guard let coordinate = model.schedule.effectiveCoordinate else {
-            return "缺少坐标，这一段会被跳过"
+            return "缺少坐标，会跳过"
         }
         guard let date = slot.trigger.fireDate(on: Date(),
                                                coordinate: coordinate,
                                                calendar: .current) else {
-            return "今天是极昼或极夜，这一段会被跳过"
+            return "极昼或极夜，会跳过"
         }
         return "今天是 \(Clock.string(date))"
     }
