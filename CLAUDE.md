@@ -17,16 +17,17 @@ aerial 动态壁纸或本地图片。Swift 6.3 + SwiftUI，零第三方依赖，
 
 ## 构建与验证
 
-没有 XCTest，也没有 `swift test`。验证靠几个独立编译的「靶子」二进制，全部离线、不碰真实壁纸
+没有 XCTest，也没有 `swift test`。验证靠四个独立编译的「靶子」二进制，全部离线、不碰真实壁纸
 （`panelshot` 除外，它会短暂弹一个窗口）。
 
 ```bash
 ./build.sh                    # 一次编出全部：CLI、三个靶子、panelshot、build/HourGlow.app
 ./build/modelcheck            # 求值：跨午夜回绕、solar 触发、Codable 兼容
 ./build/enginecheck           # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
+./build/appcheck              # 应用状态：草稿、保存边界、外部配置冲突
 ./build/solarcheck            # 日出日落，被 verify-solar.py 当作被测程序调用
 python3 Tests/verify-solar.py # 以 ephem 星历对拍（需 pip install ephem，容差 30 秒）
-./build/panelshot ~/Desktop   # 三个页面画成 PNG，改版式时对照
+./build/panelshot ~/Desktop   # 三个页面画成 PNG（固定时刻那一栏另出一张），改版式时对照
 ```
 
 单跑某一项检查：靶子里没有过滤机制，改 `Tests/<Name>/main.swift` 里的 `check(...)` 调用即可；
@@ -80,8 +81,13 @@ open build/HourGlow.app                 # 菜单栏 app
 
 贴 macOS 原生、简洁、**版式固定**。所有度量集中在 `UI/PanelKit.swift` 的 `Panel` 里
 （宽度锁死 360 pt；选壁纸页固定 470 pt，其余按内容收）—— 改布局先改那里，不要在视图里散写数字。
-改动即时生效，没有「保存」按钮；连续变化的控件在 `AppModel` 里去抖 0.35 秒再落盘。
-删除是就地两段式确认，不弹对话框（菜单栏面板里弹框太重）。
+行的常驻底色是 macOS 里「选中项」的语言，而这个面板里的行点下去是翻页、没有选中态 ——
+所以底色只留给悬停与按下，「现在正在跑的那一段」靠行首一根强调色竖条（`Panel.nowBar`）标。
+时段页的改动**不即时生效**：先落进 `AppModel.draft`（草稿），界面立刻跟手，点底部
+「应用」才写进 `schedule.json`、才可能换壁纸。草稿放在 model 里而不是视图的 `@State`：
+选壁纸是另一页，面板还会一失焦就收起，草稿得比两者都活得久。回到时间轴即结束编辑
+（`endEditing`），没应用的改动到此为止。删除是就地两段式确认，不弹对话框
+（菜单栏面板里弹框太重），确认后立即生效。
 
 ## 运行时路径
 

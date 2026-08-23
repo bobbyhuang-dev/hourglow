@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-// 把三个页面画成 PNG。菜单栏面板不是普通窗口，screencapture 抓不到它，
+// 把三个页面画成 PNG（时段页的固定时刻那一栏版式不同，另出一张）。菜单栏面板不是普通窗口，screencapture 抓不到它，
 // 改版式时用这个对照：
 //
 //   ./build/panelshot [输出目录]
@@ -69,5 +69,12 @@ MainActor.assumeIsolated {
 
     shoot(TimelinePage(open: { _ in }), named: "1-timeline", into: directory)
     shoot(SlotPage(slotID: first.id, open: { _ in }), named: "2-slot", into: directory)
+    // 固定时刻那一栏摆的是 AppKit 的时刻输入框，跟日出日落栏完全是两个版式，
+    // 只抓第一个时段很可能一次也看不到它。配置里有的话就多抓一张。
+    if let clock = model.schedule.slots.first(where: {
+        if case .clock = $0.trigger { return true } else { return false }
+    }), clock.id != first.id {
+        shoot(SlotPage(slotID: clock.id, open: { _ in }), named: "2b-slot-clock", into: directory)
+    }
     shoot(WallpaperPicker(slotID: first.id, open: { _ in }), named: "3-picker", into: directory)
 }

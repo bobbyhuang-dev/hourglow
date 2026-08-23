@@ -47,6 +47,12 @@ struct TimelinePage: View {
                       size: CGSize(width: 56, height: 35))
 
             VStack(alignment: .leading, spacing: 2) {
+                if let caption {
+                    Text(caption)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
+                }
                 Text(model.resolution.map { model.name(for: $0.active.wallpaper) } ?? "没有生效的时段")
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
@@ -60,6 +66,14 @@ struct TimelinePage: View {
         .padding(.horizontal, Panel.inset)
         .padding(.top, 8)
         .padding(.bottom, 10)
+    }
+
+    /// 大图上方那行小字：说清楚下面这个名字到底是什么。
+    /// 用户手动换过、或引擎还没来得及写（暂停中、缺坐标跳过），挂着的就不是这张，
+    /// 那时候只能说它是「排程中的」——具体差在哪由下面的提示条负责。
+    private var caption: String? {
+        guard model.resolution != nil else { return nil }
+        return model.activeIsActual ? "目前壁纸" : "排程中的壁纸"
     }
 
     private var subtitle: String {
@@ -148,13 +162,23 @@ struct TimelinePage: View {
             .padding(.horizontal, 8)
             .frame(height: Panel.rowHeight)
             .opacity(slot.enabled ? 1 : 0.55)
+            // 行首一根竖条，标「现在挂着的就是这一段」。
+            // 曾经是整行铺强调色，但那是 macOS 列表里「我选中了它」的样子 ——
+            // 这里的行点下去是翻到编辑页，没有选中态可言，状态得用别的记号说。
+            .overlay(alignment: .leading) {
+                if isActive {
+                    Capsule()
+                        .fill(Color.accentColor)
+                        .frame(width: Panel.nowBar.width, height: Panel.nowBar.height)
+                }
+            }
         }
-        .buttonStyle(PanelRowStyle(tinted: isActive))
+        .buttonStyle(PanelRowStyle())
     }
 
     private var addRow: some View {
         Button {
-            open(.slot(model.addSlot()))
+            open(.slot(model.beginNewSlot()))
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: "plus")

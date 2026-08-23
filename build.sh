@@ -6,13 +6,14 @@ mkdir -p build
 
 COMMON=(Sources/Model/*.swift Sources/System/*.swift Sources/Engine/*.swift)
 # 入口单列：panelshot 要复用界面代码，但不能把 @main 一起拖进去。
-UI=(Sources/App/AppModel.swift Sources/UI/*.swift)
+UI=(Sources/App/SlotDraft.swift Sources/App/AppModel.swift Sources/UI/*.swift)
 ENTRY=(Sources/App/HourGlowApp.swift)
 
 swiftc -O "${COMMON[@]}" Sources/CLI/*.swift          -o build/hourglow-cli
 swiftc -O "${COMMON[@]}" Tests/SolarCheck/main.swift -o build/solarcheck
 swiftc -O "${COMMON[@]}" Tests/ModelCheck/main.swift -o build/modelcheck
 swiftc -O "${COMMON[@]}" Tests/EngineCheck/main.swift -o build/enginecheck
+swiftc -O "${COMMON[@]}" Sources/App/SlotDraft.swift Tests/AppCheck/main.swift -o build/appcheck
 # 面板的离屏渲染，改版式时用来对照（见 Tests/PanelShot/main.swift）。
 swiftc -O "${COMMON[@]}" "${UI[@]}" Tests/PanelShot/main.swift -o build/panelshot
 
@@ -48,4 +49,4 @@ PLIST
 # ad-hoc 签名。个人自用足够；要分发再谈公证。
 codesign --force --sign - "$APP" >/dev/null 2>&1
 
-echo "built: build/hourglow-cli, build/solarcheck, build/modelcheck, build/enginecheck, build/panelshot, $APP"
+echo "built: build/hourglow-cli, build/solarcheck, build/modelcheck, build/enginecheck, build/appcheck, build/panelshot, $APP"
