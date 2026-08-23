@@ -90,8 +90,10 @@ struct TimelinePage: View {
         if let message = model.message {
             PanelNotice(symbol: "arrow.triangle.2.circlepath", text: message)
         } else if model.needsCoordinate {
+            // 这条提示本身就是入口：点进设置页去定位或手填经纬度。
             PanelNotice(symbol: "exclamationmark.triangle.fill",
-                        text: "缺少坐标，日出日落的时段会被跳过", tint: .orange)
+                        text: "缺少坐标，日出日落的时段会被跳过", tint: .orange,
+                        action: { open(.settings) })
         } else if model.isManuallyOverridden {
             PanelNotice(symbol: "hand.raised.fill",
                         text: "壁纸被手动换过 · 下一个触发点接管", tint: .secondary)
@@ -197,11 +199,10 @@ struct TimelinePage: View {
 
     // MARK: - 底部
 
+    /// 只剩暂停与 ⋯。曾经还有一个「立即应用」，但它做的事引擎自己一直在做 ——
+    /// 到点、唤醒、改配置都会重新求值 —— 按下去多半什么也不会变，白占一个主按钮的位置。
     private var footer: some View {
         HStack(spacing: 8) {
-            Button("立即应用") { model.applyNow() }
-                .buttonStyle(.borderedProminent)
-
             Button(model.schedule.paused ? "继续" : "暂停") {
                 model.setPaused(!model.schedule.paused)
             }
@@ -209,6 +210,8 @@ struct TimelinePage: View {
             Spacer(minLength: 0)
 
             Menu {
+                Button("设置…") { open(.settings) }
+                    .keyboardShortcut(",")
                 Button("在访达中显示配置…") { model.revealConfigInFinder() }
                 Divider()
                 Button("退出 HourGlow") { NSApplication.shared.terminate(nil) }

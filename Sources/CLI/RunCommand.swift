@@ -110,93 +110,23 @@ func runStatus() {
     }
 }
 
-// MARK: - LaunchAgent
+// MARK: - agent
 
-/// 把守护进程注册成 LaunchAgent。M4 的 `.app` 会改用 `SMAppService`，
-/// 在那之前这是让引擎重启后仍然活着的办法。
-enum LaunchAgentInstaller {
-
-    static let label = "app.hourglow.agent"
-
-    static var plistURL: URL {
-        URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Library/LaunchAgents/\(label).plist")
-    }
-
-    static var logURL: URL {
-        URL(fileURLWithPath: NSHomeDirectory())
-            .appendingPathComponent("Library/Logs/HourGlow.log")
-    }
-
-    private static var domain: String { "gui/\(getuid())" }
-
-    static var isLoaded: Bool {
-        launchctl(["print", "\(domain)/\(label)"]).status == 0
-    }
-
-    static func install(binary: URL) {
-        let plist: [String: Any] = [
-            "Label": label,
-            "ProgramArguments": [binary.path, "run"],
-            "RunAtLoad": true,
-            // 只在异常退出时拉起来。这样 `hourglow-cli agent uninstall` 能真的停掉它。
-            "KeepAlive": ["SuccessfulExit": false],
-            "ProcessType": "Background",
-            "StandardOutPath": logURL.path,
-            "StandardErrorPath": logURL.path,
-        ]
-
-        do {
-            try FileManager.default.createDirectory(
-                at: plistURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(
-                at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-            let data = try PropertyListSerialization.data(fromPropertyList: plist,
-                                                          format: .xml, options: 0)
-            try data.write(to: plistURL, options: .atomic)
-        } catch { fail("写 LaunchAgent 失败: \(error)") }
-
-        _ = launchctl(["bootout", "\(domain)/\(label)"])   // 可能没加载过，失败不算错
-        let result = launchctl(["bootstrap", domain, plistURL.path])
-        guard result.status == 0 else {
-            fail("launchctl bootstrap 失败 (\(result.status)): \(result.output)")
-        }
-        print("已安装  \(plistURL.path)")
-        print("日志    \(logURL.path)")
-    }
-
-    static func uninstall() {
-        let result = launchctl(["bootout", "\(domain)/\(label)"])
-        if result.status != 0, FileManager.default.fileExists(atPath: plistURL.path) {
-            print("launchctl bootout 返回 \(result.status)（可能本来就没在跑）")
-        }
-        try? FileManager.default.removeItem(at: plistURL)
-        print("已卸载 \(label)")
-    }
-
-    @discardableResult
-    private static func launchctl(_ arguments: [String]) -> (status: Int32, output: String) {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        task.arguments = arguments
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = pipe
-        do { try task.run() } catch { return (-1, "\(error)") }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        return (task.terminationStatus, String(decoding: data, as: UTF8.self))
-    }
-}
-
+// LaunchAgent 的安装本身在 `Engine/LaunchAgentInstaller.swift` —— 菜单栏 app 的设置页
+// 也要读它的状态、也要能卸载它，所以它不能只活在 CLI 里。这里只剩下命令行的外壳。
 func runAgent(_ subcommand: String?) {
     switch subcommand {
     case "install":
         // 用当前可执行文件的真实路径，这样从 build/ 直接装也能用。
         let binary = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath()
-        LaunchAgentInstaller.install(binary: URL(fileURLWithPath: binary.path).standardizedFileURL)
+        do {
+            try LaunchAgentInstaller.install(binary: URL(fileURLWithPath: binary.path).standardizedFileURL)
+        } catch { fail("\(error.localizedDescription)") }
+        print("已安装  \(LaunchAgentInstaller.plistURL.path)")
+        print("日志    \(LaunchAgentInstaller.logURL.path)")
     case "uninstall":
-        LaunchAgentInstaller.uninstall()
+        if let note = LaunchAgentInstaller.uninstall() { print(note) }
+        print("已卸载 \(LaunchAgentInstaller.label)")
     case "status", nil:
         print(LaunchAgentInstaller.isLoaded ? "已加载 \(LaunchAgentInstaller.label)" : "未加载")
         print("plist  \(LaunchAgentInstaller.plistURL.path)")

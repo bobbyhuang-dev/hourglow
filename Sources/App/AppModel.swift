@@ -1,5 +1,7 @@
 import AppKit
+import CoreLocation
 import Observation
+import ServiceManagement
 
 /// UI 与引擎之间唯一的一层。
 ///
@@ -35,6 +37,15 @@ final class AppModel {
 
     let catalog: [AerialAsset]
     let isFollower: Bool
+
+    /// 开机自启与 LaunchAgent 的现状。两者都要问系统（`SMAppService` 是同步 IPC、
+    /// LaunchAgent 更是要 fork 一个 `launchctl`），所以只在设置页出现时刷一次，
+    /// 不放进视图的 body 里每次重绘都问一遍。
+    private(set) var launchAtLogin = SMAppService.Status.notRegistered
+    private(set) var agentInstalled = false
+    /// 开机自启那一栏的补充说明（被系统设置关掉了、bundle 不在原位、注册报错）。
+    private(set) var launchAtLoginNote: String?
+    private(set) var locating = LocatingState.idle
 
     /// 正在编辑的那个时段。改动先落在这里，点「应用」才写进 `schedule`。
     ///
@@ -273,6 +284,114 @@ final class AppModel {
         return true
     }
 
+    // MARK: - 设置：开机自启
+
+    /// 只有从 `.app` 里跑起来才谈得上「开机自启」（`panelshot` 是裸二进制）。
+    var canLaunchAtLogin: Bool { LaunchAtLogin.isAvailable }
+
+    /// 读一次系统状态。设置页 `onAppear` 调，别在 body 里问。
+    func refreshSettings() {
+        if canLaunchAtLogin {
+            launchAtLogin = LaunchAtLogin.status
+            // `.notFound` 不是错：实测从来没注册过的 app（尤其不在「应用程序」里的）
+            // 一上来就是这个状态，照样能注册成功。所以它与 `.notRegistered` 一样，
+            // 只表示「没开」，不该在界面上报警。真正要说的只有被系统设置关掉那一种。
+            launchAtLoginNote = switch launchAtLogin {
+            case .requiresApproval: "已在「系统设置 › 登录项」里被关掉，要去那里打开"
+            case .enabled, .notRegistered, .notFound: nil
+            @unknown default: LaunchAtLogin.describe(launchAtLogin)
+            }
+        }
+        agentInstalled = LaunchAgentInstaller.isLoaded
+    }
+
+    func setLaunchAtLogin(_ on: Bool) {
+        var failure: String?
+        do {
+            try LaunchAtLogin.set(on)
+        } catch {
+            failure = "设置失败: \((error as NSError).localizedDescription)"
+        }
+        // 系统说了算：注册完再读回来，被用户在系统设置里关过的话这里仍然是关着的。
+        // 报错要在这之后再写回去 —— `refreshSettings` 会按状态重算这行说明，
+        // 先写就被它抹掉了，用户点一下开关什么反馈都没有。
+        refreshSettings()
+        if let failure { launchAtLoginNote = failure }
+    }
+
+    func openLoginItemsSettings() { LaunchAtLogin.openSystemSettings() }
+
+    /// 注册的是**当前这个 bundle 的路径**。`build.sh` 每次都 `rm -rf` 重建
+    /// `build/HourGlow.app`，登录项就此指向一个不存在的 bundle；把 app 挪个地方也一样。
+    /// 所以不在「应用程序」里跑的时候要说一声 —— 这不是错误，是个容易忘的前提。
+    var launchAtLoginPathWarning: String? {
+        guard canLaunchAtLogin, launchAtLogin == .enabled else { return nil }
+        let path = Bundle.main.bundleURL.path
+        guard !path.hasPrefix("/Applications/") else { return nil }
+        return "自启指向 \(path) · 移动或重建 app 后要回来重开一次"
+    }
+
+    /// 卸掉 M2 那条 LaunchAgent。app 自己会开机自启之后它就是多余的一份 ——
+    /// 留着不会出错（`EngineLock` 会让后起的那个退成从属），但白占一个后台进程。
+    func uninstallAgent() {
+        // 提示条只有一行、后来的会顶掉先来的，所以说明和结果拼成一句再显示。
+        let note = LaunchAgentInstaller.uninstall()
+        show(note.map { "已卸载后台守护进程（\($0)）" } ?? "已卸载后台守护进程")
+        refreshSettings()
+    }
+
+    // MARK: - 设置：位置
+
+    enum LocatingState: Equatable {
+        case idle
+        case requesting
+        /// 权限被拒。手填经纬度是唯一的出路，UI 要把它顶到前面。
+        case denied
+        case failed(String)
+    }
+
+    /// 坐标从哪来的。三条路：手填/定位写下的 > 时区推断 > 没有。
+    var coordinateSource: String {
+        if schedule.location != nil { return "手动设置" }
+        return schedule.effectiveCoordinate == nil ? "无" : "由时区推断（\(TimeZone.current.identifier)）"
+    }
+
+    /// 今天的日出日落。设置页用它证明坐标是对的 —— 数字对不对，本地人一眼就知道。
+    var solarToday: (sunrise: Date, sunset: Date)? {
+        guard let coordinate = schedule.effectiveCoordinate else { return nil }
+        return Solar.times(on: Date(), at: coordinate)
+    }
+
+    /// 向系统要一次坐标。拿到就写进配置，从此不再依赖时区推断。
+    func requestPreciseLocation() {
+        guard locating != .requesting else { return }
+        locating = .requesting
+        PreciseLocation.shared.request { outcome in
+            MainActor.assumeIsolated {
+                let model = AppModel.shared
+                switch outcome {
+                case .coordinate(let coordinate):
+                    model.locating = .idle
+                    model.setManualLocation(coordinate)
+                    model.show(String(format: "已定位到 %.4f, %.4f",
+                                      coordinate.latitude, coordinate.longitude))
+                case .denied:
+                    model.locating = .denied
+                case .failed(let reason):
+                    model.locating = .failed(reason)
+                }
+            }
+        }
+    }
+
+    /// 写死一个坐标；传 nil 表示清掉，回退到时区推断。
+    @discardableResult
+    func setManualLocation(_ coordinate: Coordinate?) -> Bool {
+        var updated = schedule
+        updated.location = coordinate
+        return commit(updated)
+    }
+
     // MARK: - 操作
 
     func setPaused(_ paused: Bool) {
@@ -289,15 +408,6 @@ final class AppModel {
             } catch {
                 show("保存失败: \(error)")
             }
-        }
-        refresh()
-    }
-
-    func applyNow() {
-        if isFollower {
-            oneShot(reason: .manual)
-        } else {
-            scheduler.applyNow()
         }
         refresh()
     }

@@ -3,7 +3,8 @@
 规格见 `MVP.md`。本文件是执行清单，新会话冷启动读这两个文件即可接上，
 不需要回溯对话历史。
 
-**当前进度**：M3 完成（菜单栏 UI 跑通，`build/HourGlow.app` 可直接双击）。下一步 M4。
+**当前进度**：M1–M4 全部完成。`build/HourGlow.app` 可直接双击，开机自启、定位、
+首次启动预设都已落地，`MVP.md` 第 9 节的验收清单跑过一遍（结果见 M4 末尾）。
 
 ---
 
@@ -113,7 +114,7 @@
       只调它的方法，求值与写入仍旧全在 `Scheduler` 里，没有为 UI 复制一份调度逻辑
 - [x] `UI/PanelRoot.swift`：三页在同一块画布上左右推进（像「控制中心」那种系统面板）
 - [x] `UI/TimelineView.swift`：时段列表，按今天的实际时刻排序，当前生效项高亮；
-      顶部是「现在挂着哪张 / 几点换下一张」，底部是立即应用 / 暂停 / ⋯
+      顶部是「现在挂着哪张 / 几点换下一张」，底部是暂停 / ⋯（M4 删掉了「立即应用」）
 - [x] `UI/SlotEditorView.swift`：触发条件编辑器（固定时刻用步进式时间选择器，
       日出日落用 ±5 分钟步进并显示「今天是 HH:mm」）、壁纸、启用、删除
 - [x] `UI/WallpaperPicker.swift`：3 列缩略图网格，5 个分类筛选 + 名称/shotID 搜索，
@@ -153,14 +154,16 @@
   配置里，不能指望面板还开着。
 - `Timer` 记得加到 `.common` mode（M2 就写在注释里了，面板一开就是另一个 mode）。
 
-## M4 — 收尾
+## M4 — 收尾（已完成）
 
 - [x] 时段页改成「草稿 + 应用」：编辑不再即时生效
-- [ ] 开机自启（`SMAppService.mainApp`）
-- [ ] 定位权限流程；被拒时回退到手填经纬度
-- [ ] 首次启动写入 Tahoe 四段预设
-- [ ] 打包脚本产出可双击运行的 `HourGlow.app`
-- [ ] 跑一遍 `MVP.md` 第 9 节的验收清单
+- [x] 设置页（面板的第四页，从 ⋯ 或「缺少坐标」那条提示进）
+- [x] 开机自启（`System/LaunchAtLogin.swift`，走 `SMAppService.mainApp`）
+- [x] 定位权限流程（`System/PreciseLocation.swift`）；被拒时回退到手填经纬度
+- [x] 首次启动写入 Tahoe 四段预设 —— 代码 M1 就在 `Store.load` 里，这次才**真的**
+      在一个空目录上验过（靠新加的 `HOURGLOW_HOME`，见下）
+- [x] 打包脚本产出可双击运行的 `HourGlow.app`，并补上应用图标
+- [x] 跑一遍 `MVP.md` 第 9 节的验收清单
 
 ### 草稿 + 应用（推翻 M3 的「即时生效」）
 
@@ -176,9 +179,54 @@
   否则新时段刚建出来就被自己踢掉。
 - 「应用」按钮里要先记下 `draftIsNew` 再 `applyDraft()` —— 落盘之后它就不「新」了。
 - 去抖没有了：连续变化的控件只改内存里的草稿，本来就不写盘。
-- 删除仍然即时（本来就要点两下确认）；暂停 / 立即应用是时间轴上的操作，不受影响。
+- 删除仍然即时（本来就要点两下确认）；暂停是时间轴上的操作，不受影响。
 - `Tests/AppCheck` 覆盖草稿状态机：保存成功前不冒充已应用；编辑期间外部修改会标冲突，
   外部删除不会把旧草稿误认成新时段并复活。
+
+### 验收清单实测（`MVP.md` 第 9 节）
+
+在一份一次性配置上跑的（`HOURGLOW_HOME` 指向临时目录，两个时段分别排在实测时刻的
+1 分钟与 2 分钟后），跑完把真配置该有的那张写回去：
+
+| 项 | 结果 |
+|---|---|
+| 菜单栏图标、时间轴、当前时段有标记 | ✓ app 起来后拿到 `EngineLock`（`status` 显示「引擎 在跑」）；版式见 `panelshot` |
+| 新增时段绑 aerial，到点自动切换 | ✓ `21:49:01 [到点] 已切换 → Tahoe Evening`，落在触发时刻 +1 秒 |
+| 绑本地图片，到点切换且 slot 仍是 `linked` | ✓ `21:50:01 → Dusty Rose.png`，写完两个 slot 的 `Type` 都还是 `linked` |
+| 「日落前 30 分」随日期变化 | ✓ `simulate`：夏至 18:32 切 Evening，冬至 16:26，差 2 小时 6 分 |
+| 合盖睡过触发时刻后唤醒补切 | M2 已在真机上验过；`enginecheck` 覆盖决策矩阵。本轮没再合盖 |
+| 重启后自动运行且状态保持 | 开机自启注册/注销都验过（`--login-item on/off` → `已开启` / `未开启`），真重启没做 |
+| 暂停不再切换，恢复立即校正 | ✓ 暂停期间手动换成 Tahoe Day 引擎不动；`resume` 立刻校正回 Dusty Rose |
+| 手动换过、没跨触发点时手动那张仍在 | ✓ 手动换成 Tahoe Morning 后改配置逼它重新求值：`[配置变更] 让位给手动选择` |
+
+首次启动预设另外单验：空目录 + `HOURGLOW_HOME` → `schedule.json` 自动生成，
+四段正是日出/09:00/日落前 30/日落后 60。
+
+定位单验：`--locate` 拿到 22.7963, 114.6854，而时区推断给的是上海 31.23, 121.47 ——
+差出来的日出日落有二十多分钟，这一栏确实值得做。
+
+### M4 的几个决定
+
+- **设置页与时段页并排**（都是从时间轴推进一层），不是模态、也不开第二个窗口。
+  开机自启与坐标都不是每天要动的东西，但又都会决定调度对不对（没坐标日出日落整段被跳过），
+  所以「缺少坐标」那条提示条本身做成了可点的入口 —— 说的是哪儿不对，点进去就是在哪儿改。
+- **设置页的改动即时生效**，不套时段页那套草稿。一个开关、一对坐标都是单次动作，
+  没有「一组改动一起应用」的语义，草稿只会碍事。
+- **`LaunchAgentInstaller` 从 `CLI/` 挪进了 `Engine/`**。设置页要能看见 M2 那条
+  LaunchAgent、能一键卸载它（app 自己会开机自启之后它就是多余的第二份常驻），
+  而 CLI 那份代码 app 编不进来。挪过去时把 `fail()` 换成了 `throws`。
+- **定位只取一次**，不做持续定位：坐标不会自己跑，日出日落对它的敏感度也就是
+  「几十公里 ≈ 一分钟」。拿到就写进 `schedule.json` 的 `location`，之后一直用它。
+- **`HOURGLOW_HOME` 环境变量**可以把整个配置目录挪走（`schedule.json` / `state.json` /
+  `run.lock` 都跟着走）。加它是因为「首次启动写入预设」只能在空目录上验证，而
+  `NSHomeDirectory()` 在 macOS 上取的是账户真实家目录，**改 `$HOME` 不管用**
+  （非沙盒进程走 getpwuid）。顺带也让端到端实测能在一份一次性配置上跑，不动真配置。
+- **图标是画出来的**（`Tools/makeicon.swift`：SF Symbol 沙漏 + 晨光→暮色→夜色的竖向渐变），
+  产物 `Resources/HourGlow.icns` 提交进仓库，`build.sh` 只负责拷。改图标才需要重跑那个工具。
+
+- **删掉了时间轴上的「立即应用」**。它做的事引擎自己一直在做（到点、唤醒、改配置都会
+  重新求值），按下去多半什么也不变，却占着底部唯一一个主按钮的位置。`AppModel.applyNow()`
+  跟着删掉；`Scheduler.applyNow()` 留着，CLI 的 `apply` 还用它。
 
 ### M4 期间踩到的坑（别再踩一次）
 
@@ -193,6 +241,24 @@
   底色只留给悬停与按下；`PanelRowStyle` 的 `tinted` 参数跟着删掉了。
 - `panelshot` 只抓第一个时段的话，配置里第一段是日出/日落就永远看不到固定时刻那一栏
   （两栏版式完全不同）。现在会另外抓一张 `2b-slot-clock.png`。
+- **`SMAppService.mainApp.status` 在从没注册过时返回的是 `.notFound`，不是
+  `.notRegistered`**（实测：全新 ad-hoc 签名的 bundle、放在 `build/` 里）。照字面把它
+  当成「登录项指向的 app 已不在原位」会一上来就报一句假警告 —— 它和 `.notRegistered`
+  一样只表示「没开」，照样能注册成功。界面上只有 `.requiresApproval`（用户自己在系统设置里
+  关过）才值得说一句。
+- **注册的是当前这个 bundle 的路径**。`build.sh` 每次都 `rm -rf` 重建 `build/HourGlow.app`，
+  重建之后原来的登录项就指向了一个不存在的 bundle。所以开着自启时，设置页会把 bundle
+  路径显示出来提醒一句；自用请把 app 拷进 `/Applications` 再开。
+- **开机自启与定位都没法从 `hourglow-cli` 验证**：`SMAppService.mainApp` 注册的、
+  以及定位权限授予的，都是**调用者自己的 bundle**，而 CLI 是个裸二进制。所以这两条排障
+  入口长在 app 的可执行文件上：`HourGlow.app/Contents/MacOS/HourGlow --login-item [status|on|off]`
+  与 `--locate`，打印完就 `exit`，菜单栏上不留图标。`--locate` 要等系统回调，
+  必须放在 `applicationDidFinishLaunching` 里自己转 run loop，`willFinishLaunching` 太早。
+- `CLLocationManagerDelegate` 的方法要声明成 `nonisolated`，再在里面
+  `MainActor.assumeIsolated` —— 协议本身没有隔离，`@MainActor` 的类直接实现会被警告
+  「不能满足非隔离的要求」。回调确实都在主线程（manager 是在主线程建的）。
+- 缺 `NSLocationWhenInUseUsageDescription` 的话系统**直接拒绝**，连授权对话框都不弹。
+  这一条写在 `build.sh` 生成的 Info.plist 里。
 
 ---
 
@@ -202,7 +268,7 @@
 壁纸配置   ~/Library/Application Support/com.apple.wallpaper/Store/Index.plist
 aerial 库  ~/Library/Application Support/com.apple.wallpaper/aerials/
 项目目录   ~/documents/programming/HourGlow/
-引擎配置   ~/Library/Application Support/HourGlow/schedule.json
+引擎配置   ~/Library/Application Support/HourGlow/schedule.json   # HOURGLOW_HOME 可整体改道
 引擎状态   ~/Library/Application Support/HourGlow/state.json   # 上次写了哪张
 单实例锁   ~/Library/Application Support/HourGlow/run.lock
 常驻       ~/Library/LaunchAgents/app.hourglow.agent.plist
@@ -218,6 +284,13 @@ open build/HourGlow.app       # 菜单栏 app（M3）
 ./build/enginecheck           # 引擎决策矩阵与定时排期
 ./build/hourglow-cli run      # 前台常驻，Ctrl-C 退出（和 app 抢同一把 EngineLock）
 ./build/hourglow-cli status   # 上次写了什么、现在是不是还是那张
+
+# 只影响 app 自己那个 bundle，CLI 问不出结果
+build/HourGlow.app/Contents/MacOS/HourGlow --login-item status   # 开机自启：status|on|off
+build/HourGlow.app/Contents/MacOS/HourGlow --locate              # 定位一次，只打印不写配置
+
+# 一次性配置目录，端到端实测用它，不碰真配置
+HOURGLOW_HOME=/tmp/hg ./build/hourglow-cli list
 ```
 
 plist 结构、Provider 格式、四个 assetID 见 `MVP.md` 第 2 节。

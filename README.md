@@ -21,7 +21,8 @@ under 5 MB.
 - **Any number of slots** — the Tahoe four are just the preset written on first launch;
   edit or delete them freely
 - **Sun times computed locally** — the NOAA solar position algorithm, no network. Coordinates
-  are inferred from your time zone, or set by hand
+  come from a one-shot system location fix or a latitude/longitude you type in; with neither,
+  they are inferred from your time zone, which needs no permission at all
 - **No polling** — the timer is scheduled directly at the next trigger point. Sleep/wake,
   system clock changes, time zone changes and day rollover each have their own notification,
   so sleeping through a trigger means the wallpaper catches up on wake
@@ -30,6 +31,8 @@ under 5 MB.
   the next scheduled switch (see below)
 - **Edits are staged** — changing a slot's time or wallpaper only builds up a draft; nothing
   is written to the schedule, and no wallpaper changes, until you hit Apply
+- **Launch at login** — a login item registered through `SMAppService`, visible and
+  switchable in System Settings › Login Items
 - **Human-readable JSON config** — edit `schedule.json` by hand and the engine follows
   immediately
 
@@ -62,7 +65,16 @@ personal use); there is no Xcode project. Everything lands in `build/`.
 ./build/hourglow-cli solar               # today's sunrise and sunset
 ./build/hourglow-cli apply --dry-run     # show what would be written, without writing
 ./build/hourglow-cli run                 # run the engine in the foreground
-./build/hourglow-cli agent install       # register as a LaunchAgent, survives reboot
+./build/hourglow-cli agent install       # register as a LaunchAgent, survives reboot (headless use)
+```
+
+Launch-at-login and location can't be asked of the CLI: the login item is registered for —
+and location permission granted to — *the caller's own bundle*, and the CLI is a bare
+binary. Those two entry points live on the app's executable and exit as soon as they print:
+
+```bash
+build/HourGlow.app/Contents/MacOS/HourGlow --login-item status   # status | on | off
+build/HourGlow.app/Contents/MacOS/HourGlow --locate              # one fix, printed, never written to the config
 ```
 
 The menu bar app and `hourglow-cli run` compete for the same single-instance lock: whichever
@@ -106,7 +118,9 @@ on whether a new trigger boundary has been crossed:
 ```
 
 Other runtime paths: `state.json` and the single-instance lock `run.lock` sit in the same
-directory; the LaunchAgent logs to `~/Library/Logs/HourGlow.log`.
+directory; the LaunchAgent logs to `~/Library/Logs/HourGlow.log`. The whole config directory
+can be moved with the `HOURGLOW_HOME` environment variable — handy for trying things out on a
+throwaway config, leaving the real one alone.
 
 ## Verification
 
@@ -118,15 +132,15 @@ offline, none of which touch your real wallpaper:
 ./build/enginecheck            # engine: the assert-vs-stand-down matrix, and timer scheduling
 ./build/appcheck               # app state: drafts, save boundaries, external config conflicts
 python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephemeris (10 cases, max deviation 4s)
-./build/panelshot ~/Desktop    # render the three panel pages to PNG, for comparing layout changes
+./build/panelshot ~/Desktop    # render the four panel pages to PNG, for comparing layout changes
 ```
 
 ## Status
 
-M1 (logic layer), M2 (scheduling engine) and M3 (menu bar UI) are done; M4 is wrapping up:
-launch at login, precise CoreLocation, acceptance checklist. The spec lives in `MVP.md`,
-progress and implementation notes in `TODO.md` — both are written in Chinese, as are the
-source comments.
+M1 (logic layer), M2 (scheduling engine), M3 (menu bar UI) and M4 (launch at login, precise
+location, packaging) are all done, and the acceptance checklist in section 9 of `MVP.md` has
+been run through. The spec lives in `MVP.md`, progress and implementation notes in `TODO.md`
+— both are written in Chinese, as are the source comments.
 
 ## How it actually changes the wallpaper
 
