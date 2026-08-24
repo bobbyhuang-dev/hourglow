@@ -38,6 +38,7 @@ jobs:
         run: |
           ./build/modelcheck
           ./build/enginecheck
+          ./build/importcheck
           ./build/appcheck
           ./build/updatecheck
           bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
@@ -64,4 +65,5 @@ jobs:
         run: |
           ./build/hourglow-cli list
           ./build/hourglow-cli solar
+          ./build/hourglow-cli cities 深圳
           ./build/hourglow-cli simulate 2026-12-21

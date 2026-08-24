@@ -7,6 +7,7 @@ enum Page: Equatable {
     case slot(UUID)
     case picker(UUID)
     case settings
+    case place
 
     var depth: Int {
         switch self {
@@ -14,6 +15,7 @@ enum Page: Equatable {
         case .slot:     return 1
         case .settings: return 1
         case .picker:   return 2
+        case .place:    return 2
         }
     }
 }
@@ -43,6 +45,9 @@ struct PanelRoot: View {
             case .settings:
                 SettingsPage(open: navigate)
                     .transition(slide)
+            case .place:
+                PlacePage(open: navigate)
+                    .transition(slide)
             }
         }
         // 宽度锁死；高度由各页自己决定（时间轴按时段数收，选壁纸那页固定铺满）。
@@ -63,7 +68,7 @@ struct PanelRoot: View {
                 }
             case .slot(let id), .picker(let id):
                 if !model.canContinueEditing(id) { navigate(.timeline) }
-            case .settings:
+            case .settings, .place:
                 break
             }
         }

@@ -199,6 +199,9 @@ struct SettingsPage: View {
                 .controlSize(.small)
                 .disabled(model.locating == .requesting || model.locating == .denied)
 
+                Button("选择城市…") { open(.place) }
+                    .controlSize(.small)
+
                 if let hint = locatingHint {
                     Text(hint)
                         .font(.system(size: 11))

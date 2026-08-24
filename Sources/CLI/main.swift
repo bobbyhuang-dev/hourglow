@@ -75,7 +75,8 @@ func showList() {
 
     print("配置  \(Store.fileURL.path)")
     if let c = coordinate {
-        print(String(format: "坐标  %.2f, %.2f  (%@)", c.latitude, c.longitude, source))
+        let name = c.name.map { "  \($0)" } ?? ""
+        print(String(format: "坐标  %.2f, %.2f  (%@)%@", c.latitude, c.longitude, source, name))
     } else {
         print("坐标  未知 — solar 触发将被跳过")
     }
@@ -210,6 +211,10 @@ func showSolar() {
     }
     print("\(dayFormat.string(from: day))  日出 \(clockFormat.string(from: times.sunrise))"
           + "   日落 \(clockFormat.string(from: times.sunset))")
+    if let events = Solar.events(on: day, at: coordinate) {
+        print("        航海晨光 \(clockFormat.string(from: events.nauticalDawn))"
+              + "   民用黄昏 \(clockFormat.string(from: events.civilDusk))")
+    }
 }
 
 func setLocation() {
@@ -222,13 +227,41 @@ func setLocation() {
         } catch { fail("\(error)") }
         return
     }
-    guard positional.count == 2,
-          let lat = Double(positional[0]), let lon = Double(positional[1]) else {
-        fail("用法: hourglow-cli location <纬度> <经度>   （不带参数则清除）")
+    if positional.count >= 2,
+       let lat = Double(positional[0]), let lon = Double(positional[1]) {
+        let name = positional.count > 2 ? positional.dropFirst(2).joined(separator: " ") : nil
+        schedule.location = Coordinate(latitude: lat, longitude: lon, name: name)
+        do {
+            try Store.save(schedule)
+            let label = name.map { " \($0)" } ?? ""
+            print(String(format: "坐标已设为 %.4f, %.4f%@", lat, lon, label))
+        } catch { fail("\(error)") }
+        return
     }
-    schedule.location = Coordinate(latitude: lat, longitude: lon)
-    do { try Store.save(schedule); print(String(format: "坐标已设为 %.4f, %.4f", lat, lon)) }
-    catch { fail("\(error)") }
+
+    let query = positional.joined(separator: " ")
+    let city = Cities.lookup(query) ?? PlaceSearch.nominatimBlocking(query).first
+    guard let city else {
+        fail("找不到这个地方: \(query)    试试城市名，或 location <纬度> <经度>")
+    }
+    schedule.location = city.asCoordinate
+    do {
+        try Store.save(schedule)
+        print(String(format: "地点  %@  %.4f, %.4f", city.name, city.coordinate.latitude, city.coordinate.longitude))
+    } catch { fail("\(error)") }
+}
+
+func showCities() {
+    let query = positional.joined(separator: " ")
+    let hits = Cities.search(query)
+    guard !hits.isEmpty else { fail("没有匹配的城市") }
+    for city in hits.prefix(40) {
+        print(String(format: "  %@  %7.3f  %8.3f  %@",
+                     city.name.padded(to: 12),
+                     city.coordinate.latitude, city.coordinate.longitude,
+                     city.detail))
+    }
+    print("\n\(min(hits.count, 40)) / \(hits.count) 条。面板里还可以搜系统地理编码。")
 }
 
 /// 时间旅行：在一整天上按固定步长求值，打印每一次切换。
@@ -266,6 +299,31 @@ func runSimulate() {
     print("\n当天共 \(transitions) 次切换（含 00:00 承接前一天的那次）")
 }
 
+func runImport() {
+    guard let path = positional.first else {
+        fail("用法: hourglow-cli import <文件夹> [--name 名称]")
+    }
+    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+    var name: String?
+    if let flag = operands.firstIndex(of: "--name"), flag + 1 < operands.count {
+        name = operands[flag + 1]
+    }
+    let schedule = loadSchedule()
+    do {
+        let updated = try SceneImport.apply(folder: url, to: schedule, name: name)
+        try Store.save(updated)
+        print("已导入 \(updated.slots.count) 张")
+        print("素材  \(SceneImport.scenesDirectory.path)")
+        print("配置  \(Store.fileURL.path)")
+        print("触发  天光分段（航海晨光 / 日出 / 日落 / 民用黄昏，按每段张数均分）")
+        for slot in updated.slots {
+            print("  \(slot.trigger.description.padded(to: 14))→  \(describe(slot.wallpaper))")
+        }
+    } catch {
+        fail("导入失败: \(error.localizedDescription)")
+    }
+}
+
 func showHelp() {
     print("""
     hourglow-cli — HourGlow 的调试入口
@@ -278,8 +336,11 @@ func showHelp() {
       catalog [关键词] [--downloaded]
                                  列出 156 张系统 aerial
       simulate [YYYY-MM-DD]      时间旅行：打印该日全天的每一次切换
-      solar [YYYY-MM-DD]         该日的日出日落
-      location [纬度 经度]        设置或清除手动坐标
+      solar [YYYY-MM-DD]         该日的日出、日落、航海晨光、民用黄昏
+      location [纬度 经度 | 城市] 设置或清除手动坐标（中国城市可直接写名字）
+      cities [关键词]             搜索离线城市表
+      import <文件夹> [--name 名称]
+                                 一组静帧 → 天光分段时间轴（认 24 Hour Wallpaper 命名）
 
     引擎（M2）
       run                        前台常驻：定时器 + 唤醒/时区/配置变更驱动
@@ -300,6 +361,8 @@ case "catalog":  showCatalog()
 case "simulate": runSimulate()
 case "solar":    showSolar()
 case "location": setLocation()
+case "cities":   showCities()
+case "import":   runImport()
 case "run":      runDaemon()
 case "status":   runStatus()
 case "pause":    runPause()

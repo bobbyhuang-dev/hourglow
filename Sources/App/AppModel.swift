@@ -190,7 +190,7 @@ final class AppModel {
     /// 有 solar 时段却没有坐标，这些段会被整个跳过，得说一声。
     var needsCoordinate: Bool {
         schedule.effectiveCoordinate == nil
-            && schedule.slots.contains { if case .solar = $0.trigger { return $0.enabled } else { return false } }
+            && schedule.slots.contains { $0.enabled && $0.trigger.dependsOnSun }
     }
 
     // MARK: - 编辑（草稿）
@@ -451,8 +451,23 @@ final class AppModel {
 
     /// 坐标从哪来的。三条路：手填/定位写下的 > 时区推断 > 没有。
     var coordinateSource: String {
-        if schedule.location != nil { return "手动设置" }
+        if let location = schedule.location {
+            if let name = location.name, !name.isEmpty { return name }
+            return "手动设置"
+        }
         return schedule.effectiveCoordinate == nil ? "无" : "由时区推断（\(TimeZone.current.identifier)）"
+    }
+
+    /// 地点页顶上那一行：有名字用名字，否则是坐标或时区。
+    var placeLabel: String {
+        if let location = schedule.location {
+            if let name = location.name, !name.isEmpty { return name }
+            return String(format: "%.4f, %.4f", location.latitude, location.longitude)
+        }
+        if schedule.effectiveCoordinate != nil {
+            return "跟随系统时区（\(TimeZone.current.identifier)）"
+        }
+        return "没有坐标"
     }
 
     /// 今天的日出日落。设置页用它证明坐标是对的 —— 数字对不对，本地人一眼就知道。
@@ -489,6 +504,39 @@ final class AppModel {
         var updated = schedule
         updated.location = coordinate
         return commit(updated)
+    }
+
+    @discardableResult
+    func setPlace(_ city: City) -> Bool {
+        setManualLocation(city.asCoordinate)
+    }
+
+    // MARK: - 导入
+
+    /// 用一组图片替换当前时间轴。面板会在打开系统对话框时收起，
+    /// 所以选完直接落到配置里，不依赖面板还开着。
+    func importSceneFromPanel() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.prompt = "导入"
+        panel.message = "选一个文件夹：文件名含 sunrise / morning / day / sunset / evening / night，或按文件名顺序均分成四段。也认 24 Hour Wallpaper 的 .sundialScene。"
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        importScene(from: url)
+    }
+
+    func importScene(from url: URL) {
+        endEditing()
+        do {
+            let updated = try SceneImport.apply(folder: url, to: schedule)
+            guard commit(updated) else { return }
+            show("已导入 \(updated.slots.count) 张，按当天晨昏线均分")
+        } catch {
+            show("导入失败: \(error.localizedDescription)")
+        }
     }
 
     // MARK: - 操作

@@ -138,7 +138,7 @@ struct TimelinePage: View {
                             .monospacedDigit()
                             .foregroundStyle(isActive ? Color.accentColor : .primary)
                         // 固定时刻的规则就是左边那个时间本身，不必再说一遍。
-                        if case .solar = slot.trigger {
+                        if slot.trigger.dependsOnSun {
                             Text(slot.trigger.description)
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(.secondary)
@@ -212,6 +212,7 @@ struct TimelinePage: View {
             Menu {
                 Button("设置…") { open(.settings) }
                     .keyboardShortcut(",")
+                Button("导入 24 小时壁纸…") { model.importSceneFromPanel() }
                 Button("检查更新…") {
                     open(.settings)
                     model.checkForUpdates()
