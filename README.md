@@ -38,6 +38,8 @@ under 5 MB.
   is written to the schedule, and no wallpaper changes, until you hit Apply
 - **Launch at login** — a login item registered through `SMAppService`, visible and
   switchable in System Settings › Login Items
+- **Built-in updates** — check manually or let HourGlow check GitHub Releases daily,
+  verify the download and code signature, install it in place, and relaunch itself
 - **Human-readable JSON config** — edit `schedule.json` by hand and the engine follows
   immediately
 
@@ -59,6 +61,10 @@ Open Anyway**.
 It then lives in the menu bar — no Dock icon, no window. On first launch it writes the
 Tahoe four-slot preset; edit or delete those freely. To have it come back after a reboot,
 turn on **Launch at login** in the settings page (the ⋯ menu).
+
+Automatic updates are on by default. The settings page can turn them off, check manually,
+or install an available release immediately. Updates keep the app at its current location,
+so move it into `/Applications` before enabling Launch at login.
 
 Current builds use a stable code identity and a new bundle identifier to avoid a macOS 26
 Control Center bug that could hide an updated ad-hoc-signed menu bar app even while Settings
@@ -167,17 +173,19 @@ offline, none of which touch your real wallpaper:
 ./build/modelcheck             # resolution: midnight wraparound, solar triggers, Codable compatibility
 ./build/enginecheck            # engine: the assert-vs-stand-down matrix, and timer scheduling
 ./build/appcheck               # app state: drafts, save boundaries, external config conflicts
+./build/updatecheck            # updater: SemVer ordering, Release parsing, SHA-256
+bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephemeris (10 cases, max deviation 4s)
 ./build/panelshot ~/Desktop    # render the four panel pages to PNG, for comparing layout changes
 ```
 
 ## Status
 
-**1.0 — the MVP is complete.** M1 (logic layer), M2 (scheduling engine), M3 (menu bar UI)
-and M4 (launch at login, precise location, packaging) are all done, and the acceptance
-checklist in section 9 of `MVP.md` has been run through. The spec lives in `MVP.md`,
-progress and implementation notes in `TODO.md` — both are written in Chinese, as are the
-source comments.
+**1.1 development — built-in manual and automatic updates are implemented.** The 1.0 MVP
+(logic layer, scheduling engine, menu bar UI, launch at login, precise location and packaging)
+is complete, and the acceptance checklist in section 9 of `MVP.md` has been run through.
+The spec lives in `MVP.md`, progress and implementation notes in `TODO.md` — both are written
+in Chinese, as are the source comments.
 
 ## How it actually changes the wallpaper
 

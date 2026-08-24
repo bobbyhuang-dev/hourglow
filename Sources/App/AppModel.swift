@@ -47,6 +47,10 @@ final class AppModel {
     private(set) var launchAtLoginNote: String?
     private(set) var locating = LocatingState.idle
 
+    /// 更新与壁纸调度彼此独立；这里仅保存设置页要展示的状态。
+    private(set) var updateState = AppUpdateState.idle
+    private(set) var automaticUpdatesEnabled = AppUpdater.automaticUpdatesEnabled
+
     /// 正在编辑的那个时段。改动先落在这里，点「应用」才写进 `schedule`。
     ///
     /// 草稿放在这里而不是 `SlotPage` 的 `@State` 里：选壁纸是另一页，SlotPage 会被
@@ -62,6 +66,8 @@ final class AppModel {
     private var watcher: ConfigWatcher?
     private var ticker: Timer?
     private var messageExpiry: DispatchWorkItem?
+    @ObservationIgnored private var updateTicker: Timer?
+    @ObservationIgnored private var updateTask: Task<Void, Never>?
 
     private init() {
         catalog = (try? AerialCatalog.load()) ?? []
@@ -105,6 +111,15 @@ final class AppModel {
         }
         RunLoop.main.add(ticker, forMode: .common)
         self.ticker = ticker
+
+        // App 通常一跑就是很多天，不能只在启动那一刻检查。每小时醒一次很便宜，
+        // AppUpdater 里的 24 小时间隔才是实际的联网频率。
+        checkForUpdates(manual: false)
+        let updateTicker = Timer(timeInterval: 60 * 60, repeats: true) { _ in
+            MainActor.assumeIsolated { AppModel.shared.checkForUpdates(manual: false) }
+        }
+        RunLoop.main.add(updateTicker, forMode: .common)
+        self.updateTicker = updateTicker
     }
 
     // MARK: - 查询
@@ -338,6 +353,90 @@ final class AppModel {
         let note = LaunchAgentInstaller.uninstall()
         show(note.map { "已卸载后台守护进程（\($0)）" } ?? "已卸载后台守护进程")
         refreshSettings()
+    }
+
+    // MARK: - 设置：更新
+
+    var canUpdate: Bool { AppUpdater.isAvailable }
+
+    var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
+    }
+
+    var availableUpdate: AppRelease? {
+        if case .available(let release) = updateState { return release }
+        return nil
+    }
+
+    func setAutomaticUpdates(_ enabled: Bool) {
+        automaticUpdatesEnabled = enabled
+        AppUpdater.automaticUpdatesEnabled = enabled
+        // 用户刚明确打开时立即检查，不必等上一次检查满 24 小时。
+        if enabled { checkForUpdates(manual: false, force: true) }
+    }
+
+    /// 手动检查总是联网；自动检查由 24 小时间隔限流。手动检查即使发现新版也先展示，
+    /// 等用户点「更新并重启」，避免他正在看设置页时 app 突然消失。
+    func checkForUpdates(manual: Bool = true, force: Bool = false) {
+        guard canUpdate else {
+            if manual { updateState = .failed("只有从 HourGlow.app 启动时才能更新") }
+            return
+        }
+        guard !updateState.isBusy else { return }
+        guard manual || force || AppUpdater.shouldCheckAutomatically else { return }
+
+        updateState = .checking
+        updateTask = Task { [weak self] in
+            guard let self else { return }
+            defer { updateTask = nil }
+            do {
+                let release = try await AppUpdater.latestRelease(currentVersion: currentVersion)
+                try Task.checkCancellation()
+                AppUpdater.markChecked()
+                guard let release else {
+                    updateState = .upToDate(currentVersion)
+                    return
+                }
+                updateState = .available(release)
+                if automaticUpdatesEnabled && !manual {
+                    try await downloadAndInstall(release)
+                }
+            } catch is CancellationError {
+                updateState = .idle
+            } catch {
+                updateState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    func installAvailableUpdate() {
+        guard let release = availableUpdate, !updateState.isBusy else { return }
+        updateTask = Task { [weak self] in
+            guard let self else { return }
+            defer { updateTask = nil }
+            do {
+                try await downloadAndInstall(release)
+            } catch is CancellationError {
+                updateState = .available(release)
+            } catch {
+                updateState = .failed(error.localizedDescription)
+            }
+        }
+    }
+
+    func openReleasesPage() {
+        let url = availableUpdate?.pageURL ?? AppUpdater.releasesPage
+        NSWorkspace.shared.open(url)
+    }
+
+    private func downloadAndInstall(_ release: AppRelease) async throws {
+        try AppUpdater.requireInstallableLocation()
+        updateState = .downloading(release)
+        let staged = try await AppUpdater.stage(release)
+        try Task.checkCancellation()
+        try AppUpdater.launchInstaller(stagedApp: staged)
+        // helper 已经独立运行；只有当前进程真正退出以后，它才会动 bundle。
+        NSApplication.shared.terminate(nil)
     }
 
     // MARK: - 设置：位置

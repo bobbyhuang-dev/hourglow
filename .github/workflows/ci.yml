@@ -1,4 +1,4 @@
-# 每次推送与 PR 都跑一遍：编得出来、四个靶子全绿、日出日落对得上星历。
+# 每次推送与 PR 都跑一遍：编得出来、五个编译靶子全绿、日出日落对得上星历。
 name: CI
 
 on:
@@ -39,6 +39,8 @@ jobs:
           ./build/modelcheck
           ./build/enginecheck
           ./build/appcheck
+          ./build/updatecheck
+          bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 
       - uses: actions/setup-python@v5
         with:

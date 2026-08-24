@@ -29,6 +29,8 @@ macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 
 - **改动不即时生效** —— 时段页上调时刻、换壁纸都先攒成草稿，点「应用」才写进日程、
   才可能换壁纸；试错不必真的把壁纸换过去
 - **开机自启** —— `SMAppService` 注册的登录项，在「系统设置 › 登录项」里看得见、关得掉
+- **内建更新** —— 可以手动检查，也可以每天自动检查 GitHub Releases；下载后校验哈希与
+  代码签名，原位安装并自行重启
 - **配置是人类可读的 JSON** —— 手改 `schedule.json` 后引擎立刻跟上
 
 ## 下载
@@ -47,6 +49,9 @@ xattr -dr com.apple.quarantine /Applications/HourGlow.app
 
 之后它常驻菜单栏 —— 没有 Dock 图标，也没有窗口。首次启动会写入 Tahoe 四段预设，
 随便改、随便删。想让它重启后自己回来，去设置页（⋯ 菜单）打开**开机自启**。
+
+自动更新默认开启。设置页可以关掉、手动检查，或立即安装已经发现的版本。更新会留在当前
+app 所在位置，所以请先把它放进「应用程序」再打开开机自启。
 
 当前构建使用稳定的代码身份和新 bundle ID，避开 macOS 26 Control Center 的一个问题：
 ad-hoc 签名应用升级后，即使设置显示已允许，菜单栏项仍可能被隐藏。旧版日程会保留，
@@ -146,14 +151,16 @@ LaunchAgent 日志 `~/Library/Logs/HourGlow.log`。整个配置目录可以用 `
 ./build/modelcheck             # 求值：跨午夜回绕、solar 触发、Codable 兼容
 ./build/enginecheck            # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
 ./build/appcheck               # 应用状态：草稿、保存边界、外部配置冲突
+./build/updatecheck            # 更新器：SemVer 排序、Release 解析、SHA-256
+bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例，最大偏差 4 秒）
 ./build/panelshot ~/Desktop    # 把四个界面画成 PNG，改版式时对照
 ```
 
 ## 状态
 
-**1.0 —— MVP 已经完成。** M1（逻辑层）、M2（调度引擎）、M3（菜单栏界面）、
-M4（开机自启、精确定位、打包收尾）全部完成，`MVP.md` 第 9 节的验收清单跑过一遍。
+**1.1 开发中 —— 手动更新与自动更新已经实现。** 1.0 的 MVP（逻辑层、调度引擎、菜单栏界面、
+开机自启、精确定位、打包收尾）已经完成，`MVP.md` 第 9 节的验收清单跑过一遍。
 规格见 `MVP.md`，进度与实现笔记见 `TODO.md`。
 
 ## 它是怎么改壁纸的
