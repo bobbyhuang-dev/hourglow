@@ -1,0 +1,56 @@
+# 每次推送与 PR 都跑一遍：编得出来、四个靶子全绿、日出日落对得上星历。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 构建与验证
+    runs-on: macos-26      # 项目 LSMinimumSystemVersion 是 26.0，只能在 Tahoe 的 SDK 上编
+    steps:
+      - uses: actions/checkout@v5
+
+      # runner 上常并存多个 Xcode，默认那个不一定最新；这里挑版本号最大的。
+      - name: 选 Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1 || true)
+          if [ -n "$latest" ]; then sudo xcode-select -s "$latest"; fi
+          xcodebuild -version
+          swift --version
+
+      - name: 构建
+        run: ./build.sh
+
+      # 靶子本身不碰真实配置（ModelCheck 自己改道 HOURGLOW_HOME），
+      # 这里再兜一层，保证 runner 上任何写入都落在临时目录里。
+      - name: 靶子
+        env:
+          HOURGLOW_HOME: ${{ runner.temp }}/hourglow-home
+        run: |
+          ./build/modelcheck
+          ./build/enginecheck
+          ./build/appcheck
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: 日出日落对拍星历
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install ephem
+          python3 Tests/verify-solar.py
+
+      # 只跑纯计算的子命令：runner 上没有 aerial 素材库，也没有壁纸配置，
+      # `catalog` / `now` / `status` 这些要读系统文件的在这里没有意义。
+      - name: CLI 冒烟
+        env:
+          HOURGLOW_HOME: ${{ runner.temp }}/hourglow-cli-home
+        run: |
+          ./build/hourglow-cli list
+          ./build/hourglow-cli solar
+          ./build/hourglow-cli simulate 2026-12-21

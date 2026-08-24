@@ -2,6 +2,11 @@
 
 > [English](README.md) · **中文**
 
+[![CI](https://github.com/bobbyhuang-dev/hourglow/actions/workflows/ci.yml/badge.svg)](https://github.com/bobbyhuang-dev/hourglow/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/bobbyhuang-dev/hourglow?label=release)](https://github.com/bobbyhuang-dev/hourglow/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](#要求)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 跟着天光走的 macOS 壁纸调度器。
 
 macOS Tahoe 提供了 Tahoe Morning / Day / Evening / Night 四张动态壁纸，却没有像旧版
@@ -26,12 +31,32 @@ macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 
 - **开机自启** —— `SMAppService` 注册的登录项，在「系统设置 › 登录项」里看得见、关得掉
 - **配置是人类可读的 JSON** —— 手改 `schedule.json` 后引擎立刻跟上
 
+## 下载
+
+**[⬇ 下载最新版本](https://github.com/bobbyhuang-dev/hourglow/releases/latest)**
+—— 拿 `HourGlow-x.y.z.zip`，解压，把 `HourGlow.app` 拖进「应用程序」。
+
+应用是 ad-hoc 签名、**未经公证**（没有付费的 Apple 开发者账号），macOS 会拦下首次打开。
+执行一次这条清掉隔离属性：
+
+```bash
+xattr -dr com.apple.quarantine /Applications/HourGlow.app
+```
+
+或者先双击一次，再去**系统设置 › 隐私与安全性 › 仍要打开**放行。
+
+之后它常驻菜单栏 —— 没有 Dock 图标，也没有窗口。首次启动会写入 Tahoe 四段预设，
+随便改、随便删。想让它重启后自己回来，去设置页（⋯ 菜单）打开**开机自启**。
+
+同一个页面上的 `hourglow-cli-x.y.z.zip` 是可选的命令行工具（见下），
+把里面的二进制放到 `PATH` 上任意位置即可。
+
 ## 要求
 
-macOS 26 (Tahoe) 及以上。构建只需要命令行的 Swift 工具链（`xcode-select --install` 即可），
-不需要完整的 Xcode。
+macOS 26 (Tahoe) 及以上。从源码构建只需要命令行的 Swift 工具链（`xcode-select --install`
+即可），不需要完整的 Xcode。
 
-## 构建与运行
+## 从源码构建
 
 ```bash
 git clone https://github.com/bobbyhuang-dev/hourglow.git
@@ -41,7 +66,9 @@ open build/HourGlow.app
 ```
 
 `build.sh` 用 `swiftc` 直接编译并手工组装 `.app`（ad-hoc 签名，个人自用足够），
-不经过 Xcode 工程。产物全部落在 `build/`。
+不经过 Xcode 工程。产物全部落在 `build/`。每次推送都由 GitHub Actions
+（`.github/workflows/ci.yml`）以同样的方式构建并跑一遍验证；推一个 `v*` tag
+则触发构建、验证、发版（`.github/workflows/release.yml`）。
 
 ## 命令行
 
@@ -120,8 +147,9 @@ python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例�
 
 ## 状态
 
-M1（逻辑层）、M2（调度引擎）、M3（菜单栏界面）、M4（开机自启、精确定位、打包收尾）
-全部完成，`MVP.md` 第 9 节的验收清单跑过一遍。规格见 `MVP.md`，进度与实现笔记见 `TODO.md`。
+**1.0 —— MVP 已经完成。** M1（逻辑层）、M2（调度引擎）、M3（菜单栏界面）、
+M4（开机自启、精确定位、打包收尾）全部完成，`MVP.md` 第 9 节的验收清单跑过一遍。
+规格见 `MVP.md`，进度与实现笔记见 `TODO.md`。
 
 ## 它是怎么改壁纸的
 

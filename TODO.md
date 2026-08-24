@@ -3,8 +3,9 @@
 规格见 `MVP.md`。本文件是执行清单，新会话冷启动读这两个文件即可接上，
 不需要回溯对话历史。
 
-**当前进度**：M1–M4 全部完成。`build/HourGlow.app` 可直接双击，开机自启、定位、
-首次启动预设都已落地，`MVP.md` 第 9 节的验收清单跑过一遍（结果见 M4 末尾）。
+**当前进度**：M1–M5 全部完成，1.0 已发布。`build/HourGlow.app` 可直接双击，开机自启、定位、
+首次启动预设都已落地，`MVP.md` 第 9 节的验收清单跑过一遍（结果见 M4 末尾）；
+CI 与发版流水线见 M5。
 
 ---
 
@@ -270,6 +271,32 @@
   这一条写在 `build.sh` 生成的 Info.plist 里。
 
 ---
+
+## M5 — 发布 1.0（已完成）
+
+- [x] `.github/workflows/ci.yml`：每次 push / PR 在 `macos-26` 上编一遍、跑三个靶子、
+      跑一遍 `verify-solar.py` 对拍星历，外加几条纯计算的 CLI 冒烟
+- [x] `.github/workflows/release.yml`：推 `v*` tag 就构建、验证、压包、建 GitHub Release
+- [x] `build.sh` 的版本号改成可注入：`HOURGLOW_VERSION` / `HOURGLOW_BUILD`（默认 1.0.0 / 1），
+      流水线用 tag 与 run number 覆盖
+- [x] README 双语都加上下载入口、徽章，状态改成 1.0
+
+### 发布相关的坑
+
+- **runner 必须是 `macos-26`**。`LSMinimumSystemVersion` 是 26.0，SDK 低了根本编不过；
+  `macos-latest` 现在正好指向它，但写死版本号更稳，免得哪天 `latest` 漂走。
+- **runner 上常并存多个 Xcode，默认那个不一定最新**，所以两个 workflow 都先
+  `ls -d /Applications/Xcode_*.app | sort -V | tail -1` 再 `xcode-select -s`。
+- **`.app` 只能用 `ditto -c -k --keepParent` 压**。`zip` 不保留符号链接与扩展属性，
+  解压出来的 bundle 签名是坏的。反过来，裸二进制的 CLI 用 `zip -qj` 就够 ——
+  `ditto --sequesterRsrc` 会额外塞一份 `__MACOSX/`。
+  压完再解一次跑 `codesign --verify --deep --strict`，确认压包这一步没把签名弄坏。
+- **CI 里不能跑要读系统文件的 CLI 子命令**：runner 上没有 aerial 素材库、也没有
+  `Index.plist`，`catalog` / `now` / `status` / `apply` 在那里没有意义。冒烟只跑
+  `list` / `solar` / `simulate`，并且用 `HOURGLOW_HOME` 指到 `$RUNNER_TEMP`。
+- **ad-hoc 签名 + 未公证 = 用户首次打开会被拦**。README 与发布说明都写了两条出路：
+  `xattr -dr com.apple.quarantine`，或系统设置 › 隐私与安全性 › 仍要打开。
+  真要免掉这一步，得有付费开发者账号做 `notarytool` 公证 —— 1.0 不做。
 
 ## 环境速查
 
