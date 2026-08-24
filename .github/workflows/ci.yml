@@ -25,6 +25,11 @@ jobs:
       - name: 构建
         run: ./build.sh
 
+      # 普通 ad-hoc 签名默认用 cdhash 当身份，每次重编都会变。
+      # macOS 26 的菜单栏许可会因此误伤新版本，所以这里单独守住稳定 requirement。
+      - name: App 签名身份
+        run: bash Tests/verify-app-signature.sh build/HourGlow.app
+
       # 靶子本身不碰真实配置（ModelCheck 自己改道 HOURGLOW_HOME），
       # 这里再兜一层，保证 runner 上任何写入都落在临时目录里。
       - name: 靶子

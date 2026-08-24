@@ -277,7 +277,7 @@ CI 与发版流水线见 M5。
 - [x] `.github/workflows/ci.yml`：每次 push / PR 在 `macos-26` 上编一遍、跑三个靶子、
       跑一遍 `verify-solar.py` 对拍星历，外加几条纯计算的 CLI 冒烟
 - [x] `.github/workflows/release.yml`：推 `v*` tag 就构建、验证、压包、建 GitHub Release
-- [x] `build.sh` 的版本号改成可注入：`HOURGLOW_VERSION` / `HOURGLOW_BUILD`（默认 1.0.0 / 1），
+- [x] `build.sh` 的版本号改成可注入：`HOURGLOW_VERSION` / `HOURGLOW_BUILD`（默认 1.0.1 / 1），
       流水线用 tag 与 run number 覆盖
 - [x] README 双语都加上下载入口、徽章，状态改成 1.0
 
@@ -301,6 +301,13 @@ CI 与发版流水线见 M5。
 - **ad-hoc 签名 + 未公证 = 用户首次打开会被拦**。README 与发布说明都写了两条出路：
   `xattr -dr com.apple.quarantine`，或系统设置 › 隐私与安全性 › 仍要打开。
   真要免掉这一步，得有付费开发者账号做 `notarytool` 公证 —— 1.0 不做。
+- **ad-hoc 的默认 designated requirement 是 `cdhash`，不能用来升级菜单栏 app**。
+  每次重编都会变身份；macOS 26 的 `group.com.apple.controlcenter/trackedApplications`
+  还可能把新产物误关联到旧的 blocked 记录，表现为「允许在菜单栏中」已开却启动即退。
+  已被污染的 `app.hourglow` 记录连系统的 Reset Control Center 都清不掉，
+  所以正式 bundle ID 一次性迁移到 `dev.bobbyhuang.hourglow`。`build.sh` 同时显式写入
+  `designated => identifier "dev.bobbyhuang.hourglow"`，以后重编和升级都沿用同一身份；
+  `Tests/verify-app-signature.sh` 与 CI/Release 同时防回归。
 
 ## 环境速查
 

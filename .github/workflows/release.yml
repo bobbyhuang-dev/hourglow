@@ -48,6 +48,9 @@ jobs:
           HOURGLOW_BUILD: ${{ github.run_number }}
         run: ./build.sh
 
+      - name: App 签名身份
+        run: bash Tests/verify-app-signature.sh build/HourGlow.app
+
       # 发版前先过一遍与 CI 相同的验证，别把编得过但算错的东西发出去。
       - name: 靶子
         env:
@@ -85,7 +88,7 @@ jobs:
         run: |
           rm -rf "$RUNNER_TEMP/verify" && mkdir -p "$RUNNER_TEMP/verify"
           ditto -x -k "dist/HourGlow-$VERSION.zip" "$RUNNER_TEMP/verify"
-          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/verify/HourGlow.app"
+          bash Tests/verify-app-signature.sh "$RUNNER_TEMP/verify/HourGlow.app"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             "$RUNNER_TEMP/verify/HourGlow.app/Contents/Info.plist"
 
@@ -112,6 +115,12 @@ jobs:
              或者先双击一次，再去**系统设置 › 隐私与安全性 › 仍要打开**。
           3. It lives in the menu bar — no Dock icon, no window.
              它常驻菜单栏，没有 Dock 图标，也没有主窗口。
+
+          Older builds used a one-build-only ad-hoc identity. This release migrates to a stable
+          identity so macOS 26 keeps the menu-bar permission across upgrades. Existing schedules
+          are retained; location and Launch at Login may need to be enabled once again.
+          旧版的 ad-hoc 身份只对当次构建有效。本版迁移到稳定身份，避免 macOS 26 在升级后
+          误屏蔽菜单栏项。旧日程会保留；定位和开机自启可能需要重新开启一次。
 
           Requires macOS 26 (Tahoe) or later. 需要 macOS 26 (Tahoe) 及以上。
 

@@ -48,6 +48,10 @@ xattr -dr com.apple.quarantine /Applications/HourGlow.app
 之后它常驻菜单栏 —— 没有 Dock 图标，也没有窗口。首次启动会写入 Tahoe 四段预设，
 随便改、随便删。想让它重启后自己回来，去设置页（⋯ 菜单）打开**开机自启**。
 
+当前构建使用稳定的代码身份和新 bundle ID，避开 macOS 26 Control Center 的一个问题：
+ad-hoc 签名应用升级后，即使设置显示已允许，菜单栏项仍可能被隐藏。旧版日程会保留，
+但身份迁移后可能需要重新授权定位、重新打开一次**开机自启**。
+
 同一个页面上的 `hourglow-cli-x.y.z.zip` 是可选的命令行工具（见下），
 把里面的二进制放到 `PATH` 上任意位置即可。
 
@@ -66,7 +70,8 @@ open build/HourGlow.app
 ```
 
 `build.sh` 用 `swiftc` 直接编译并手工组装 `.app`（ad-hoc 签名，个人自用足够），
-不经过 Xcode 工程。产物全部落在 `build/`。每次推送都由 GitHub Actions
+不经过 Xcode 工程。签名显式写入稳定的 designated requirement，避免重编或升级后
+被 macOS 26 误认为新的菜单栏应用。产物全部落在 `build/`。每次推送都由 GitHub Actions
 （`.github/workflows/ci.yml`）以同样的方式构建并跑一遍验证；推一个 `v*` tag
 则触发构建、验证、发版（`.github/workflows/release.yml`）。
 

@@ -4,9 +4,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p build
 
-# 版本号。发布流水线用 tag 覆盖（HOURGLOW_VERSION=1.0.0），本地构建就用这里的默认值。
-VERSION="${HOURGLOW_VERSION:-1.0.0}"
+# 版本号。发布流水线用 tag 覆盖（如 HOURGLOW_VERSION=1.0.1），本地构建就用这里的默认值。
+VERSION="${HOURGLOW_VERSION:-1.0.1}"
 BUILD_NUMBER="${HOURGLOW_BUILD:-1}"
+BUNDLE_ID="dev.bobbyhuang.hourglow"
 
 COMMON=(Sources/Model/*.swift Sources/System/*.swift Sources/Engine/*.swift)
 # 入口单列：panelshot 要复用界面代码，但不能把 @main 一起拖进去。
@@ -40,7 +41,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key>                 <string>HourGlow</string>
     <key>CFBundleDisplayName</key>          <string>HourGlow</string>
     <key>CFBundleExecutable</key>           <string>HourGlow</string>
-    <key>CFBundleIdentifier</key>           <string>app.hourglow</string>
+    <key>CFBundleIdentifier</key>           <string>$BUNDLE_ID</string>
     <key>CFBundlePackageType</key>          <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
     <key>CFBundleShortVersionString</key>   <string>$VERSION</string>
@@ -57,8 +58,14 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# ad-hoc 签名。个人自用足够；要分发再谈公证。
-codesign --force --sign - "$APP" >/dev/null 2>&1
+# ad-hoc 签名默认把 designated requirement 写成当前二进制的 cdhash。
+# 每次重编 cdhash 都变，macOS 26 的「允许在菜单栏中」会把新产物当成
+# 另一个应用，甚至会误命中旧的 blocked 记录。显式写入稳定的 bundle-ID
+# requirement，让本地重编与 Release 升级仍是同一个菜单栏应用。
+# 仍然是 ad-hoc，不代表公证或 Developer ID 签名。
+codesign --force --sign - \
+    --requirements "=designated => identifier \"$BUNDLE_ID\"" \
+    "$APP" >/dev/null 2>&1
 
 echo "built: HourGlow $VERSION ($BUILD_NUMBER)"
 echo "built: build/hourglow-cli, build/solarcheck, build/modelcheck, build/enginecheck, build/appcheck, build/panelshot, $APP"
