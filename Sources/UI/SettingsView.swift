@@ -25,6 +25,7 @@ struct SettingsPage: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     startup
+                    updates
                     location
                     about
                 }
@@ -39,6 +40,80 @@ struct SettingsPage: View {
         }
         // 定位成功会把坐标写进配置，输入框跟着显示新值。
         .onChange(of: model.schedule.location) { seedFields() }
+    }
+
+    // MARK: - 更新
+
+    private var updates: some View {
+        PanelSection(title: "更新") {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("自动更新").font(.system(size: 12))
+                    Text("每天检查，验证发布包后自动安装并重启")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Toggle("", isOn: Binding(get: { model.automaticUpdatesEnabled },
+                                         set: { model.setAutomaticUpdates($0) }))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .disabled(!model.canUpdate)
+            }
+
+            Divider()
+
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("当前版本 \(model.currentVersion)")
+                        .font(.system(size: 12)).monospacedDigit()
+                    Text(updateDetail)
+                        .font(.system(size: 11))
+                        .foregroundStyle(updateFailed ? Color.orange : Color.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+
+                if model.updateState.isBusy {
+                    ProgressView().controlSize(.small)
+                } else if model.availableUpdate != nil {
+                    Button("更新并重启") { model.installAvailableUpdate() }
+                        .controlSize(.small)
+                } else {
+                    Button("检查更新") { model.checkForUpdates() }
+                        .controlSize(.small)
+                        .disabled(!model.canUpdate)
+                }
+            }
+
+            if model.availableUpdate != nil || updateFailed {
+                Button("查看 GitHub 发布页…") { model.openReleasesPage() }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var updateDetail: String {
+        switch model.updateState {
+        case .idle:
+            return model.canUpdate ? "从 GitHub Releases 获取正式版" : "请从 HourGlow.app 启动"
+        case .checking: return "正在检查…"
+        case .upToDate: return "已经是最新版本"
+        case .available(let release):
+            let size = ByteCountFormatter.string(fromByteCount: release.byteCount,
+                                                 countStyle: .file)
+            return "新版本 \(release.version) · \(size)"
+        case .downloading(let release): return "正在下载并验证 \(release.version)…"
+        case .failed(let reason): return reason
+        }
+    }
+
+    private var updateFailed: Bool {
+        if case .failed = model.updateState { return true }
+        return false
     }
 
     // MARK: - 启动

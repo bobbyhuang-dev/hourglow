@@ -59,6 +59,8 @@ jobs:
           ./build/modelcheck
           ./build/enginecheck
           ./build/appcheck
+          ./build/updatecheck
+          bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 
       - uses: actions/setup-python@v5
         with:
@@ -115,6 +117,10 @@ jobs:
              或者先双击一次，再去**系统设置 › 隐私与安全性 › 仍要打开**。
           3. It lives in the menu bar — no Dock icon, no window.
              它常驻菜单栏，没有 Dock 图标，也没有主窗口。
+
+          HourGlow checks GitHub Releases for future updates once a day. You can turn automatic
+          updates off or run a manual check from its settings page.
+          HourGlow 每天从 GitHub Releases 检查后续更新；可以在设置页关闭自动更新或手动检查。
 
           Older builds used a one-build-only ad-hoc identity. This release migrates to a stable
           identity so macOS 26 keeps the menu-bar permission across upgrades. Existing schedules

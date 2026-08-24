@@ -10,21 +10,23 @@ aerial 动态壁纸或本地图片。Swift 6.3 + SwiftUI，零第三方依赖，
 
 - `MVP.md` —— 规格。第 2 节是**实机验证过的系统事实**（`Index.plist` 结构、两种
   Provider 的写法、aerial 素材库路径、Tahoe 四张的 assetID），实现时直接依赖，不要重新推测。
-- `TODO.md` —— 执行清单与当前进度（M1–M5 全部完成，1.0 已发布）。每个里程碑末尾有
+- `TODO.md` —— 执行清单与当前进度（M1–M6 全部完成，1.1 开发中）。每个里程碑末尾有
   「踩到的坑（别再踩一次）」小节，改对应模块前务必先看。
 
 新会话冷启动读这两份即可接上，不需要回溯对话历史。做完一项工作后，把结论/进度回写进去。
 
 ## 构建与验证
 
-没有 XCTest，也没有 `swift test`。验证靠四个独立编译的「靶子」二进制，全部离线、不碰真实壁纸
+没有 XCTest，也没有 `swift test`。验证靠五个独立编译的「靶子」二进制，全部离线、不碰真实壁纸
 （`panelshot` 除外，它会短暂弹一个窗口）。
 
 ```bash
-./build.sh                    # 一次编出全部：CLI、四个靶子、panelshot、build/HourGlow.app
+./build.sh                    # 一次编出全部：CLI、五个靶子、panelshot、build/HourGlow.app
 ./build/modelcheck            # 求值：跨午夜回绕、solar 触发、Codable 兼容
 ./build/enginecheck           # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
 ./build/appcheck              # 应用状态：草稿、保存边界、外部配置冲突
+./build/updatecheck           # 更新器：SemVer、Release 解析、SHA-256
+bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 ./build/solarcheck            # 日出日落，被 verify-solar.py 当作被测程序调用
 python3 Tests/verify-solar.py # 以 ephem 星历对拍（需 pip install ephem，容差 30 秒）
 ./build/panelshot ~/Desktop   # 四个页面画成 PNG（固定时刻那一栏另出一张），改版式时对照
@@ -63,9 +65,9 @@ open build/HourGlow.app                 # 菜单栏 app
 `Resources/HourGlow.icns`，产物已提交进仓库，`build.sh` 只负责拷进 bundle。改图标才需要
 按那个文件头上的用法重跑一次。
 
-版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.0.0` / `1`），
+版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.1.0` / `1`），
 发版流水线用 tag 与 run number 覆盖它们。CI 与发版都在 GitHub Actions 上：
-`.github/workflows/ci.yml` 每次 push / PR 跑一遍构建 + 三个靶子 + 星历对拍，
+`.github/workflows/ci.yml` 每次 push / PR 跑一遍构建 + 四个主靶子 + 星历对拍，
 `.github/workflows/release.yml` 见到 `v*` tag 就构建、验证、压包、建 Release。
 踩过的坑记在 `TODO.md` 的 M5 一节（runner 版本、`ditto` vs `zip`、Gatekeeper）。
 
@@ -90,6 +92,8 @@ open build/HourGlow.app                 # 菜单栏 app
   （唤醒 / 时钟变更 / 时区变更 / 跨日）补齐意外情况，外加最长 6 小时的安全网。
   `EngineState` 的 `state.json` 记录「我们上次写的是哪张」，是判断用户有没有手动换过的唯一依据。
 - `App/AppModel.swift` —— UI 与引擎之间唯一的一层，`@MainActor @Observable`。
+- `App/AppUpdater.swift` —— 从 GitHub Releases 查正式版、比较 SemVer、下载并校验 asset digest，
+  解压后同时核对 bundle ID / 版本 / 代码签名；`Updater/main.swift` 在主进程退出后原位替换 app。
 - `UI/` —— 单面板左右推进（时间轴 → 时段 → 选壁纸；设置与时段并排在第一层），
   不开第二个窗口。
 
@@ -128,6 +132,8 @@ open build/HourGlow.app                 # 菜单栏 app
 ~/Library/Application Support/com.apple.wallpaper/Store/Index.plist  # 系统壁纸配置
 ~/Library/Application Support/com.apple.wallpaper/aerials/           # aerial 素材库
 ~/Library/Logs/HourGlow.log                            # LaunchAgent 日志
+~/Library/Logs/HourGlow-Updater.log                    # 最近一次 helper 安装结果
+~/Library/Caches/HourGlow/Updates/                     # 下载与解包暂存（成功后清理）
 ```
 
 ## 语言

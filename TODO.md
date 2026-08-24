@@ -3,9 +3,9 @@
 规格见 `MVP.md`。本文件是执行清单，新会话冷启动读这两个文件即可接上，
 不需要回溯对话历史。
 
-**当前进度**：M1–M5 全部完成，1.0 已发布。`build/HourGlow.app` 可直接双击，开机自启、定位、
-首次启动预设都已落地，`MVP.md` 第 9 节的验收清单跑过一遍（结果见 M4 末尾）；
-CI 与发版流水线见 M5。
+**当前进度**：M1–M6 全部完成，1.1 开发中。`build/HourGlow.app` 可直接双击，开机自启、定位、
+首次启动预设和内建更新都已落地，`MVP.md` 第 9 节的验收清单跑过一遍（结果见 M4 末尾）；
+CI 与发版流水线见 M5，更新实现与安全边界见 M6。
 
 ---
 
@@ -274,7 +274,7 @@ CI 与发版流水线见 M5。
 
 ## M5 — 发布 1.0（已完成）
 
-- [x] `.github/workflows/ci.yml`：每次 push / PR 在 `macos-26` 上编一遍、跑三个靶子、
+- [x] `.github/workflows/ci.yml`：每次 push / PR 在 `macos-26` 上编一遍、跑四个主靶子、
       跑一遍 `verify-solar.py` 对拍星历，外加几条纯计算的 CLI 冒烟
 - [x] `.github/workflows/release.yml`：推 `v*` tag 就构建、验证、压包、建 GitHub Release
 - [x] `build.sh` 的版本号改成可注入：`HOURGLOW_VERSION` / `HOURGLOW_BUILD`（默认 1.0.1 / 1），
@@ -309,6 +309,35 @@ CI 与发版流水线见 M5。
   `designated => identifier "dev.bobbyhuang.hourglow"`，以后重编和升级都沿用同一身份；
   `Tests/verify-app-signature.sh` 与 CI/Release 同时防回归。
 
+---
+
+## M6 — 内建更新（已完成，1.1）
+
+- [x] 设置页新增「自动更新」开关（默认开）、「检查更新」与「更新并重启」
+- [x] app 启动后检查一次，常驻期间每小时看一次时间戳，实际最多每 24 小时联网一次
+- [x] 只读取 `bobbyhuang-dev/hourglow` 的 GitHub `releases/latest`；SemVer 比较不会按字符串
+      把 `1.10` 误判成小于 `1.9`，也不会把开发中的较新构建降级
+- [x] 下载 GitHub Release 中精确命名的 `HourGlow-x.y.z.zip`，先核对 asset 的 SHA-256 digest，
+      再核对 bundle ID、`CFBundleShortVersionString` 与完整代码签名
+- [x] `Contents/Helpers/HourGlowUpdater` 等主进程退出后才原位替换 bundle；失败时把旧版回滚，
+      成功后重启并清理缓存
+- [x] `Tests/UpdateCheck` 离线覆盖版本、Release fixture 与 SHA-256；
+      `verify-updater-helper.sh` 用临时假 bundle 覆盖替换和清理
+- [x] CI 与 Release 发版前都跑更新器两组检查；版本默认值升到 1.1.0
+
+### 更新相关的坑
+
+- **不能让正在运行的主进程覆盖自己**。下载与验签由 app 做，真正的 move 交给一个先复制到
+  缓存目录的 helper；helper 等旧 PID 消失之后才动 bundle，且始终先把旧 app 挪成备份，
+  新 app 到位和 `open` 都成功后才删备份。
+- **只校验下载哈希不够**。GitHub asset digest 能挡传输损坏，但发布元数据和文件在同一信任域；
+  所以解压后仍用 `codesign --verify --deep --strict` 校验整个 bundle，并要求稳定的
+  `designated => identifier "dev.bobbyhuang.hourglow"`。
+- **嵌套 helper 要先签名**。外层 app 的签名会把 `Contents/Helpers` 当 nested code；
+  `build.sh` 必须先签 `HourGlowUpdater`，再签 HourGlow.app，否则深度验签不成立。
+- 自动更新沿用 app 当前路径。父目录不可写（只读卷、某些标准用户的 `/Applications`）时不尝试
+  提权，设置页直接给出失败原因，用户仍可打开 GitHub 发布页手动安装。
+
 ## 环境速查
 
 ```
@@ -320,6 +349,8 @@ aerial 库  ~/Library/Application Support/com.apple.wallpaper/aerials/
 单实例锁   ~/Library/Application Support/HourGlow/run.lock
 常驻       ~/Library/LaunchAgents/app.hourglow.agent.plist
 守护日志   ~/Library/Logs/HourGlow.log
+更新日志   ~/Library/Logs/HourGlow-Updater.log
+更新缓存   ~/Library/Caches/HourGlow/Updates/
 临时方案   已不存在（曾经是 ~/.local/bin/tahoe-wallpaper + com.bobby.tahoe-wallpaper）
 构建验证   swiftc -O -parse-as-library main.swift -o Probe    # 已验证可行
 ```
@@ -329,6 +360,7 @@ aerial 库  ~/Library/Application Support/com.apple.wallpaper/aerials/
 open build/HourGlow.app       # 菜单栏 app（M3）
 ./build/panelshot ~/Desktop   # 把三个页面画成 PNG（固定时刻那一栏另出一张），改版式时对照
 ./build/enginecheck           # 引擎决策矩阵与定时排期
+./build/updatecheck           # 更新版本、Release 解析与 SHA-256
 ./build/hourglow-cli run      # 前台常驻，Ctrl-C 退出（和 app 抢同一把 EngineLock）
 ./build/hourglow-cli status   # 上次写了什么、现在是不是还是那张
 

@@ -212,6 +212,10 @@ struct TimelinePage: View {
             Menu {
                 Button("设置…") { open(.settings) }
                     .keyboardShortcut(",")
+                Button("检查更新…") {
+                    open(.settings)
+                    model.checkForUpdates()
+                }
                 Button("在访达中显示配置…") { model.revealConfigInFinder() }
                 Divider()
                 Button("退出 HourGlow") { NSApplication.shared.terminate(nil) }

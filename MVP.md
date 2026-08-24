@@ -146,7 +146,7 @@ Wallpaper =
    定时器直接排到下一个触发点，不轮询；时钟变更、时区变更、跨日各有对应通知
 5. **日出日落** —— `CLLocationManager` 取坐标后本地计算（NOAA 太阳位置算法），不联网；
    拒绝定位权限时回退为手填经纬度
-6. **杂项** —— 全局暂停 / 开机自启（`SMAppService.mainApp`）
+6. **杂项** —— 全局暂停 / 开机自启（`SMAppService.mainApp`）/ 内建手动与自动更新
 
 ### 手动改壁纸的语义
 
@@ -201,7 +201,8 @@ Wallpaper =
 Sources/
 ├── App/
 │   ├── HourGlowApp.swift    // @main，MenuBarExtra 场景
-│   └── AppModel.swift       // UI 与引擎之间唯一的一层，@Observable
+│   ├── AppModel.swift       // UI 与引擎之间唯一的一层，@Observable
+│   └── AppUpdater.swift     // GitHub Release 检查、下载、校验与安装交接
 ├── Model/
 │   ├── Schedule.swift       // Slot / Trigger / Wallpaper + Codable
 │   ├── Store.swift          // 读写 schedule.json
@@ -226,6 +227,7 @@ Sources/
 │   ├── SlotEditorView.swift // 单个时段的编辑页
 │   ├── SettingsView.swift   // 开机自启 + 位置
 │   └── WallpaperPicker.swift// 缩略图网格
+├── Updater/main.swift       // 主进程退出后原位替换 app 并重启
 └── CLI/                     // 排障与无头常驻入口
 ```
 
@@ -270,6 +272,8 @@ M4 收尾时跑过一遍，逐条的实测记录见 `TODO.md` 的「验收清单
 | M2 | `Scheduler` 引擎跑通，无 UI，替代现有 launchd 脚本 |
 | M3 | 菜单栏 UI：时间轴 + 壁纸选择器 |
 | M4 | 开机自启、暂停、首次启动预设、打包脚本（全部完成） |
+| M5 | CI、GitHub Release 与 1.0 发布 |
+| M6 | 内建手动更新与每日自动更新 |
 
 ---
 
