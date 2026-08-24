@@ -294,6 +294,10 @@ CI 与发版流水线见 M5。
 - **CI 里不能跑要读系统文件的 CLI 子命令**：runner 上没有 aerial 素材库、也没有
   `Index.plist`，`catalog` / `now` / `status` / `apply` 在那里没有意义。冒烟只跑
   `list` / `solar` / `simulate`，并且用 `HOURGLOW_HOME` 指到 `$RUNNER_TEMP`。
+- **GitHub runner 的时区是 UTC，而 UTC 在 `zone.tab` 里查不到坐标**。没手填经纬度时，
+  `Location` 的时区反查落空，`solar` / `list` 里的 solar 段就会（正确地）报
+  「没有坐标可用」并退出 1 —— CI 第一次跑就栽在这。冒烟步骤因此把 `TZ` 指成
+  `Asia/Shanghai`。这不是 bug：UTC 本来就不对应任何地面位置。
 - **ad-hoc 签名 + 未公证 = 用户首次打开会被拦**。README 与发布说明都写了两条出路：
   `xattr -dr com.apple.quarantine`，或系统设置 › 隐私与安全性 › 仍要打开。
   真要免掉这一步，得有付费开发者账号做 `notarytool` 公证 —— 1.0 不做。

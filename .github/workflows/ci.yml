@@ -47,9 +47,13 @@ jobs:
 
       # 只跑纯计算的子命令：runner 上没有 aerial 素材库，也没有壁纸配置，
       # `catalog` / `now` / `status` 这些要读系统文件的在这里没有意义。
+      #
+      # TZ 必须指一个真实城市：runner 是 UTC，而 UTC 在 zone.tab 里查不到坐标，
+      # 没手填经纬度时 solar 相关的子命令会正确地报「没有坐标可用」并退出 1。
       - name: CLI 冒烟
         env:
           HOURGLOW_HOME: ${{ runner.temp }}/hourglow-cli-home
+          TZ: Asia/Shanghai
         run: |
           ./build/hourglow-cli list
           ./build/hourglow-cli solar
