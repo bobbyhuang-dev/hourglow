@@ -4,6 +4,10 @@ set -euo pipefail
 cd "$(dirname "$0")"
 mkdir -p build
 
+# 版本号。发布流水线用 tag 覆盖（HOURGLOW_VERSION=1.0.0），本地构建就用这里的默认值。
+VERSION="${HOURGLOW_VERSION:-1.0.0}"
+BUILD_NUMBER="${HOURGLOW_BUILD:-1}"
+
 COMMON=(Sources/Model/*.swift Sources/System/*.swift Sources/Engine/*.swift)
 # 入口单列：panelshot 要复用界面代码，但不能把 @main 一起拖进去。
 UI=(Sources/App/SlotDraft.swift Sources/App/AppModel.swift Sources/UI/*.swift)
@@ -28,7 +32,7 @@ swiftc -O "${COMMON[@]}" "${UI[@]}" "${ENTRY[@]}" -o "$APP/Contents/MacOS/HourGl
 # 图标已经生成好提交在仓库里，改它才需要重跑 `Tools/makeicon.swift`（用法见文件头）。
 cp Resources/HourGlow.icns "$APP/Contents/Resources/HourGlow.icns"
 
-cat > "$APP/Contents/Info.plist" <<'PLIST'
+cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -39,8 +43,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
     <key>CFBundleIdentifier</key>           <string>app.hourglow</string>
     <key>CFBundlePackageType</key>          <string>APPL</string>
     <key>CFBundleInfoDictionaryVersion</key><string>6.0</string>
-    <key>CFBundleShortVersionString</key>   <string>0.4</string>
-    <key>CFBundleVersion</key>              <string>4</string>
+    <key>CFBundleShortVersionString</key>   <string>$VERSION</string>
+    <key>CFBundleVersion</key>              <string>$BUILD_NUMBER</string>
     <key>CFBundleIconFile</key>             <string>HourGlow</string>
     <key>LSMinimumSystemVersion</key>       <string>26.0</string>
     <key>NSHighResolutionCapable</key>      <true/>
@@ -56,4 +60,5 @@ PLIST
 # ad-hoc 签名。个人自用足够；要分发再谈公证。
 codesign --force --sign - "$APP" >/dev/null 2>&1
 
+echo "built: HourGlow $VERSION ($BUILD_NUMBER)"
 echo "built: build/hourglow-cli, build/solarcheck, build/modelcheck, build/enginecheck, build/appcheck, build/panelshot, $APP"

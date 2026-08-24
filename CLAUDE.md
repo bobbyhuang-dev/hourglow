@@ -10,7 +10,7 @@ aerial 动态壁纸或本地图片。Swift 6.3 + SwiftUI，零第三方依赖，
 
 - `MVP.md` —— 规格。第 2 节是**实机验证过的系统事实**（`Index.plist` 结构、两种
   Provider 的写法、aerial 素材库路径、Tahoe 四张的 assetID），实现时直接依赖，不要重新推测。
-- `TODO.md` —— 执行清单与当前进度（M1–M4 全部完成）。每个里程碑末尾有
+- `TODO.md` —— 执行清单与当前进度（M1–M5 全部完成，1.0 已发布）。每个里程碑末尾有
   「踩到的坑（别再踩一次）」小节，改对应模块前务必先看。
 
 新会话冷启动读这两份即可接上，不需要回溯对话历史。做完一项工作后，把结论/进度回写进去。
@@ -62,6 +62,12 @@ open build/HourGlow.app                 # 菜单栏 app
 应用图标是画出来的：`Tools/makeicon.swift` 用 SF Symbol 的沙漏加一条晨光→夜色的渐变生成
 `Resources/HourGlow.icns`，产物已提交进仓库，`build.sh` 只负责拷进 bundle。改图标才需要
 按那个文件头上的用法重跑一次。
+
+版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.0.0` / `1`），
+发版流水线用 tag 与 run number 覆盖它们。CI 与发版都在 GitHub Actions 上：
+`.github/workflows/ci.yml` 每次 push / PR 跑一遍构建 + 三个靶子 + 星历对拍，
+`.github/workflows/release.yml` 见到 `v*` tag 就构建、验证、压包、建 Release。
+踩过的坑记在 `TODO.md` 的 M5 一节（runner 版本、`ditto` vs `zip`、Gatekeeper）。
 
 `build.sh` 里入口文件单列成 `ENTRY`：`@main`（`HourGlowApp.swift`）不能和含顶层代码的
 `main.swift` 编进同一模块，而 `panelshot` 要复用 `UI/`。新增 UI 文件会被 `Sources/UI/*.swift`

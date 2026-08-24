@@ -2,6 +2,11 @@
 
 > **English** · [中文](README.zh-CN.md)
 
+[![CI](https://github.com/bobbyhuang-dev/hourglow/actions/workflows/ci.yml/badge.svg)](https://github.com/bobbyhuang-dev/hourglow/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/bobbyhuang-dev/hourglow?label=release)](https://github.com/bobbyhuang-dev/hourglow/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](#requirements)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 A macOS wallpaper scheduler that follows the daylight.
 
 macOS Tahoe ships four dynamic wallpapers — Tahoe Morning / Day / Evening / Night — but
@@ -36,12 +41,34 @@ under 5 MB.
 - **Human-readable JSON config** — edit `schedule.json` by hand and the engine follows
   immediately
 
+## Download
+
+**[⬇ Download the latest release](https://github.com/bobbyhuang-dev/hourglow/releases/latest)**
+— grab `HourGlow-x.y.z.zip`, unzip it, drag `HourGlow.app` into `/Applications`.
+
+The app is ad-hoc signed but *not notarized* (no paid Apple developer account), so macOS
+blocks the first launch. Clear the quarantine flag once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/HourGlow.app
+```
+
+Or double-click it once and then allow it under **System Settings › Privacy & Security ›
+Open Anyway**.
+
+It then lives in the menu bar — no Dock icon, no window. On first launch it writes the
+Tahoe four-slot preset; edit or delete those freely. To have it come back after a reboot,
+turn on **Launch at login** in the settings page (the ⋯ menu).
+
+`hourglow-cli-x.y.z.zip` on the same page is the optional command line tool (see below);
+drop the binary anywhere on your `PATH`.
+
 ## Requirements
 
-macOS 26 (Tahoe) or later. Building needs only the command-line Swift toolchain
+macOS 26 (Tahoe) or later. Building from source needs only the command-line Swift toolchain
 (`xcode-select --install`), not the full Xcode.
 
-## Build and run
+## Build from source
 
 ```bash
 git clone https://github.com/bobbyhuang-dev/hourglow.git
@@ -51,7 +78,9 @@ open build/HourGlow.app
 ```
 
 `build.sh` compiles with `swiftc` and assembles the `.app` by hand (ad-hoc signed — fine for
-personal use); there is no Xcode project. Everything lands in `build/`.
+personal use); there is no Xcode project. Everything lands in `build/`. Every push is built
+and checked the same way by GitHub Actions (`.github/workflows/ci.yml`); pushing a `v*` tag
+builds, verifies and publishes a release (`.github/workflows/release.yml`).
 
 ## Command line
 
@@ -137,10 +166,11 @@ python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephem
 
 ## Status
 
-M1 (logic layer), M2 (scheduling engine), M3 (menu bar UI) and M4 (launch at login, precise
-location, packaging) are all done, and the acceptance checklist in section 9 of `MVP.md` has
-been run through. The spec lives in `MVP.md`, progress and implementation notes in `TODO.md`
-— both are written in Chinese, as are the source comments.
+**1.0 — the MVP is complete.** M1 (logic layer), M2 (scheduling engine), M3 (menu bar UI)
+and M4 (launch at login, precise location, packaging) are all done, and the acceptance
+checklist in section 9 of `MVP.md` has been run through. The spec lives in `MVP.md`,
+progress and implementation notes in `TODO.md` — both are written in Chinese, as are the
+source comments.
 
 ## How it actually changes the wallpaper
 
