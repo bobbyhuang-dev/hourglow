@@ -60,6 +60,11 @@ It then lives in the menu bar — no Dock icon, no window. On first launch it wr
 Tahoe four-slot preset; edit or delete those freely. To have it come back after a reboot,
 turn on **Launch at login** in the settings page (the ⋯ menu).
 
+Current builds use a stable code identity and a new bundle identifier to avoid a macOS 26
+Control Center bug that could hide an updated ad-hoc-signed menu bar app even while Settings
+showed it as allowed. Schedules from older builds are kept, but you may need to grant location
+access and enable **Launch at login** once again after this identity migration.
+
 `hourglow-cli-x.y.z.zip` on the same page is the optional command line tool (see below);
 drop the binary anywhere on your `PATH`.
 
@@ -78,9 +83,11 @@ open build/HourGlow.app
 ```
 
 `build.sh` compiles with `swiftc` and assembles the `.app` by hand (ad-hoc signed — fine for
-personal use); there is no Xcode project. Everything lands in `build/`. Every push is built
-and checked the same way by GitHub Actions (`.github/workflows/ci.yml`); pushing a `v*` tag
-builds, verifies and publishes a release (`.github/workflows/release.yml`).
+personal use); there is no Xcode project. The signature carries an explicit, stable designated
+requirement so rebuilding or upgrading does not create a new menu-bar identity on macOS 26.
+Everything lands in `build/`. Every push is built and checked the same way by GitHub Actions
+(`.github/workflows/ci.yml`); pushing a `v*` tag builds, verifies and publishes a release
+(`.github/workflows/release.yml`).
 
 ## Command line
 
