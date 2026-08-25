@@ -362,6 +362,9 @@ HourGlow 原先只有 clock + 日出/日落偏移，张数要手填时段，窗�
   不要给 solarPhase 再套一层偏移锚点。
 - 文件名用 token 匹配，不要 `contains("day")`：`sunday.heic` 会被误伤。
 - 24 Hour Wallpaper 把同一张图按分辨率放在子目录里，按 basename 去重，留像素最多的那份。
+- 菜单栏面板点 ⋯ 的同时会把自己关掉。立刻 `NSOpenPanel.runModal` 会被一起取消，
+  对话框里「导入」像坏了。要等面板收完，临时把 `activationPolicy` 改成 `.regular`，
+  并且允许选文件、文件夹和 `.sundialScene`，不能只许选目录。
 
 ## 环境速查
 

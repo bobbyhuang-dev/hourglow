@@ -27,19 +27,35 @@ enum SceneImport {
     static func apply(folder source: URL,
                       to schedule: Schedule,
                       name: String? = nil) throws -> Schedule {
-        let files = try listImages(in: source)
+        try apply(urls: [source], to: schedule, name: name)
+    }
+
+    /// 文件夹、`.sundialScene`、或直接选中的一组图片都可以。
+    static func apply(urls: [URL],
+                      to schedule: Schedule,
+                      name: String? = nil) throws -> Schedule {
+        guard !urls.isEmpty else {
+            throw SceneImportError(message: "没有选任何文件")
+        }
+
+        var files: [URL] = []
+        for url in urls {
+            files.append(contentsOf: try listImages(in: url))
+        }
+        files = pickPreferredResolution(files)
         guard !files.isEmpty else {
-            throw SceneImportError(message: "文件夹里没有图片")
+            throw SceneImportError(message: "这里面没有图片")
         }
 
         let grouped = group(files)
-        let slug = slugify(name ?? sceneName(from: source))
+        let slug = slugify(name ?? defaultName(for: urls))
         let dest = scenesDirectory.appendingPathComponent(slug, isDirectory: true)
         let fm = FileManager.default
 
         // 源目录就是目标时只重写时段，别先把自己删掉。
-        if dest.standardizedFileURL != source.standardizedFileURL,
-           fm.fileExists(atPath: dest.path) {
+        let destPath = dest.standardizedFileURL
+        let sources = Set(urls.map(\.standardizedFileURL))
+        if !sources.contains(destPath), fm.fileExists(atPath: dest.path) {
             try fm.removeItem(at: dest)
         }
         try fm.createDirectory(at: dest, withIntermediateDirectories: true)
@@ -139,10 +155,11 @@ enum SceneImport {
         let files: [URL]
         if isDir.boolValue {
             files = try collectImages(in: source)
-        } else if imageExts.contains(source.pathExtension.lowercased()) {
-            files = [source]
+        } else if imageExts.contains(source.pathExtension.lowercased())
+                    || source.pathExtension.lowercased() == "sundialscene" {
+            files = imageExts.contains(source.pathExtension.lowercased()) ? [source] : try collectImages(in: source)
         } else {
-            throw SceneImportError(message: "请选一个图片文件夹")
+            throw SceneImportError(message: "请选一个图片文件夹，或一组图片")
         }
         return pickPreferredResolution(files)
     }
@@ -223,6 +240,11 @@ enum SceneImport {
     private static func orderKey(_ url: URL) -> (trailing: Int, leading: Int) {
         let numbers = tokenize(url.deletingPathExtension().lastPathComponent).compactMap(Int.init)
         return (numbers.last ?? 0, numbers.first ?? 0)
+    }
+
+    private static func defaultName(for urls: [URL]) -> String {
+        if urls.count == 1 { return sceneName(from: urls[0]) }
+        return urls[0].deletingLastPathComponent().lastPathComponent
     }
 
     private static func sceneName(from source: URL) -> String {

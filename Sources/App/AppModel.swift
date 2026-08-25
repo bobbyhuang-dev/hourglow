@@ -2,6 +2,7 @@ import AppKit
 import CoreLocation
 import Observation
 import ServiceManagement
+import UniformTypeIdentifiers
 
 /// UI 与引擎之间唯一的一层。
 ///
@@ -513,30 +514,68 @@ final class AppModel {
 
     // MARK: - 导入
 
-    /// 用一组图片替换当前时间轴。面板会在打开系统对话框时收起，
-    /// 所以选完直接落到配置里，不依赖面板还开着。
+    /// 用一组图片替换当前时间轴。
+    ///
+    /// 菜单栏面板一失焦就收起：从 ⋯ 菜单里立刻 `runModal`，对话框会被一起取消，
+    /// 看起来像「不能导入」。等这一轮 UI 收完、临时把 app 变成普通前台，
+    /// 选文件夹、一组图片或 `.sundialScene` 都能点「导入」。
     func importSceneFromPanel() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = "导入"
-        panel.message = "选一个文件夹：文件名含 sunrise / morning / day / sunset / evening / night，或按文件名顺序均分成四段。也认 24 Hour Wallpaper 的 .sundialScene。"
-
-        NSApp.activate(ignoringOtherApps: true)
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        importScene(from: url)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            AppModel.shared.presentImportPanel()
+        }
     }
 
     func importScene(from url: URL) {
+        importScene(from: [url])
+    }
+
+    func importScene(from urls: [URL]) {
         endEditing()
         do {
-            let updated = try SceneImport.apply(folder: url, to: schedule)
+            let updated = try SceneImport.apply(urls: urls, to: schedule)
             guard commit(updated) else { return }
-            show("已导入 \(updated.slots.count) 张，按当天晨昏线均分")
+            let text = "已导入 \(updated.slots.count) 张，按当天日出日落均分。"
+            show(text)
+            announceImport(success: true, text: text)
         } catch {
             show("导入失败: \(error.localizedDescription)")
+            announceImport(success: false, text: error.localizedDescription)
         }
+    }
+
+    private func presentImportPanel() {
+        let previous = NSApp.activationPolicy()
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        defer { NSApp.setActivationPolicy(previous) }
+
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.canCreateDirectories = false
+        panel.treatsFilePackagesAsDirectories = true
+        var types: [UTType] = [.folder, .image]
+        if let scene = UTType(filenameExtension: "sundialScene") {
+            types.append(scene)
+        }
+        panel.allowedContentTypes = types
+        panel.prompt = "导入"
+        panel.message = "选一个文件夹、一组图片，或 24 Hour Wallpaper 的 .sundialScene"
+
+        guard panel.runModal() == .OK else { return }
+        importScene(from: panel.urls)
+    }
+
+    /// 面板此时已经收起，提示条看不见，用对话框把结果说清楚。
+    private func announceImport(success: Bool, text: String) {
+        let alert = NSAlert()
+        alert.messageText = success ? "已导入" : "导入失败"
+        alert.informativeText = text
+        alert.alertStyle = success ? .informational : .warning
+        alert.addButton(withTitle: "好")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     // MARK: - 操作

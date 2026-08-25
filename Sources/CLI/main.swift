@@ -300,17 +300,23 @@ func runSimulate() {
 }
 
 func runImport() {
-    guard let path = positional.first else {
-        fail("用法: hourglow-cli import <文件夹> [--name 名称]")
-    }
-    let url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+    var rest = Array(operands)
     var name: String?
-    if let flag = operands.firstIndex(of: "--name"), flag + 1 < operands.count {
-        name = operands[flag + 1]
+    if let flag = rest.firstIndex(of: "--name"), flag + 1 < rest.count {
+        name = rest[flag + 1]
+        rest.remove(at: flag + 1)
+        rest.remove(at: flag)
+    }
+    let paths = rest.filter { !$0.hasPrefix("--") }
+    guard !paths.isEmpty else {
+        fail("用法: hourglow-cli import <文件夹|图片…> [--name 名称]")
+    }
+    let urls = paths.map {
+        URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath)
     }
     let schedule = loadSchedule()
     do {
-        let updated = try SceneImport.apply(folder: url, to: schedule, name: name)
+        let updated = try SceneImport.apply(urls: urls, to: schedule, name: name)
         try Store.save(updated)
         print("已导入 \(updated.slots.count) 张")
         print("素材  \(SceneImport.scenesDirectory.path)")
@@ -339,7 +345,7 @@ func showHelp() {
       solar [YYYY-MM-DD]         该日的日出、日落、航海晨光、民用黄昏
       location [纬度 经度 | 城市] 设置或清除手动坐标（中国城市可直接写名字）
       cities [关键词]             搜索离线城市表
-      import <文件夹> [--name 名称]
+      import <文件夹|图片…> [--name 名称]
                                  一组静帧 → 天光分段时间轴（认 24 Hour Wallpaper 命名）
 
     引擎（M2）

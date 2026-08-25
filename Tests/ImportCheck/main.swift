@@ -142,6 +142,23 @@ do {
     check(false, "apply 成功：\(error)")
 }
 
+do {
+    let picked = [
+        numbered.appendingPathComponent("01_sunrise_1.heic"),
+        numbered.appendingPathComponent("04_day_1.heic"),
+        numbered.appendingPathComponent("07_sunset_1.heic"),
+        numbered.appendingPathComponent("10_night_1.heic"),
+    ]
+    let schedule = try SceneImport.apply(urls: picked, to: Schedule(), name: "picked")
+    check(schedule.slots.count == 4, "直接选中的 4 张图也能导入")
+    check(schedule.slots.map { slot -> DayPhase? in
+        if case .solarPhase(let phase, _, _) = slot.trigger { return phase }
+        return nil
+    } == [.sunrise, .day, .sunset, .night], "4 张分别进四段")
+} catch {
+    check(false, "多文件 apply 成功：\(error)")
+}
+
 if failures > 0 {
     FileHandle.standardError.write(Data("\n\(failures) 项导入测试失败\n".utf8))
     exit(1)

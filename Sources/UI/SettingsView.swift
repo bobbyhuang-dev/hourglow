@@ -27,6 +27,7 @@ struct SettingsPage: View {
                     startup
                     updates
                     location
+                    sceneImport
                     about
                 }
                 .padding(Panel.inset)
@@ -270,6 +271,23 @@ struct SettingsPage: View {
         guard let c = model.schedule.effectiveCoordinate else { latitude = ""; longitude = ""; return }
         latitude = String(format: "%.4f", c.latitude)
         longitude = String(format: "%.4f", c.longitude)
+    }
+
+    // MARK: - 壁纸组
+
+    private var sceneImport: some View {
+        PanelSection(title: "壁纸组") {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("导入 24 小时壁纸").font(.system(size: 12))
+                    Text("文件夹、一组图片，或 .sundialScene")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Button("导入…") { model.importSceneFromPanel() }
+                    .controlSize(.small)
+            }
+        }
     }
 
     // MARK: - 关于

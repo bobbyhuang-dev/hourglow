@@ -207,6 +207,8 @@ struct TimelinePage: View {
                 model.setPaused(!model.schedule.paused)
             }
 
+            Button("导入…") { model.importSceneFromPanel() }
+
             Spacer(minLength: 0)
 
             Menu {
