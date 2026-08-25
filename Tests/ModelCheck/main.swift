@@ -129,6 +129,10 @@ check(firstRun.slots.map(\.wallpaper) == [
 check((try? Store.load())?.slots.map(\.id) == firstRun.slots.map(\.id),
       "第二次读回来的 slot ID 与首次写入的一致")
 
+check(Cities.lookup("深圳")?.isChina == true, "深圳归入中国")
+check(Cities.lookup("东京")?.isChina == false, "东京不归入中国")
+check(Cities.lookup("shenzhen")?.name == "深圳", "拼音能搜到深圳")
+
 // MARK: - 天光分段
 
 let shenzhen = Coordinate(latitude: 22.543, longitude: 114.058, name: "深圳")

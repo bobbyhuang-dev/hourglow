@@ -471,10 +471,23 @@ final class AppModel {
         return "没有坐标"
     }
 
+    /// 时间轴右上角那颗胶囊：尽量短，满了就截。
+    var placeChipLabel: String {
+        if let name = schedule.location?.name, !name.isEmpty { return name }
+        if schedule.location != nil { return "自定义" }
+        if schedule.effectiveCoordinate != nil { return "时区" }
+        return "选择地区"
+    }
+
     /// 今天的日出日落。设置页用它证明坐标是对的 —— 数字对不对，本地人一眼就知道。
     var solarToday: (sunrise: Date, sunset: Date)? {
         guard let coordinate = schedule.effectiveCoordinate else { return nil }
         return Solar.times(on: Date(), at: coordinate)
+    }
+
+    var solarEventsToday: Solar.Events? {
+        guard let coordinate = schedule.effectiveCoordinate else { return nil }
+        return Solar.events(on: Date(), at: coordinate)
     }
 
     /// 向系统要一次坐标。拿到就写进配置，从此不再依赖时区推断。
@@ -487,9 +500,13 @@ final class AppModel {
                 switch outcome {
                 case .coordinate(let coordinate):
                     model.locating = .idle
-                    model.setManualLocation(coordinate)
-                    model.show(String(format: "已定位到 %.4f, %.4f",
-                                      coordinate.latitude, coordinate.longitude))
+                    Task { @MainActor in
+                        let loc = CLLocation(latitude: coordinate.latitude,
+                                             longitude: coordinate.longitude)
+                        let city = await PlaceSearch.reverse(loc)
+                        _ = AppModel.shared.setPlace(city)
+                        AppModel.shared.show("已定位到 \(city.name)")
+                    }
                 case .denied:
                     model.locating = .denied
                 case .failed(let reason):

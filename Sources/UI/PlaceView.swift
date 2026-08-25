@@ -1,58 +1,97 @@
 import SwiftUI
 
-/// 选地点：常用城市离线可搜，其余走地理编码。
+/// 选地区：常用城市离线可搜，其余走地理编码。
 ///
 /// 中国全境都是 `Asia/Shanghai`，时区推断永远落在上海，深圳 / 张家界的日出会差
-/// 十几到四十分钟。菜单栏面板里弹系统定位对话框还能用，因为面板本来就会在失焦时收起；
-/// 选完城市直接写进 `schedule.location`，不依赖面板还开着。
+/// 十几到四十分钟。日出日落按这个点算，所以地区是调度的一部分，不是设置里的附录。
+/// 选完城市直接写进 `schedule.location`；菜单栏面板失焦会收起，不依赖它还开着。
 struct PlacePage: View {
     @Environment(AppModel.self) private var model
     var open: (Page) -> Void
+    var backPage: Page = .timeline
 
     @State private var query = ""
     @State private var remote: [City] = []
     @State private var searching = false
     @State private var searchTask: Task<Void, Never>?
+    @State private var latitude = ""
+    @State private var longitude = ""
 
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(title: "地点", back: { open(.settings) })
+            PanelHeader(title: "选择地区", back: { open(backPage) })
             current
             search
-            actions
+            sources
             Divider()
             list
+            Divider()
+            coordinates
         }
         .frame(height: Panel.height)
+        .onAppear { seedFields() }
         .onChange(of: query) { _, _ in scheduleRemoteSearch() }
+        .onChange(of: model.schedule.location) { seedFields() }
     }
 
     // MARK: - 当前
 
+    /// 先报「算出来的今天」，再让人改地方。数字对不对，本地人一眼知道。
     private var current: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(model.placeLabel)
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
-            Text(todaySunLine)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(model.placeLabel)
+                    .font(.system(size: 13, weight: .semibold))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            Text(sunLine)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+            if let twilight = twilightLine {
+                Text(twilight)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+            }
+            if let hint = locatingHint {
+                Text(hint)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Panel.inset)
-        .padding(.bottom, 8)
+        .padding(.bottom, 10)
     }
 
-    private var todaySunLine: String {
-        guard let coordinate = model.schedule.effectiveCoordinate,
-              let times = Solar.times(on: Date(), at: coordinate) else {
-            return "算不出今天的日出日落"
+    private var sunLine: String {
+        guard model.schedule.effectiveCoordinate != nil else {
+            return "没有坐标，日出日落的时段会被跳过"
         }
-        return "今天日出 \(Clock.string(times.sunrise)) · 日落 \(Clock.string(times.sunset))"
+        guard let times = model.solarToday else { return "今天是极昼或极夜" }
+        return "今天 日出 \(Clock.string(times.sunrise)) · 日落 \(Clock.string(times.sunset))"
     }
 
-    // MARK: - 搜索 / 操作
+    private var twilightLine: String? {
+        guard let events = model.solarEventsToday else { return nil }
+        return "航海晨光 \(Clock.string(events.nauticalDawn)) · 民用黄昏 \(Clock.string(events.civilDusk))"
+    }
+
+    private var locatingHint: String? {
+        switch model.locating {
+        case .denied: return "定位权限被拒，搜一个城市或在下面手填"
+        case .failed(let reason): return reason
+        default: return nil
+        }
+    }
+
+    // MARK: - 搜索
 
     private var search: some View {
         HStack(spacing: 6) {
@@ -85,7 +124,9 @@ struct PlacePage: View {
         .padding(.bottom, 8)
     }
 
-    private var actions: some View {
+    // MARK: - 来源
+
+    private var sources: some View {
         VStack(spacing: 2) {
             Button {
                 model.requestPreciseLocation()
@@ -131,6 +172,12 @@ struct PlacePage: View {
 
     // MARK: - 列表
 
+    private struct Section: Identifiable {
+        var id: String
+        var title: String
+        var cities: [City]
+    }
+
     private var displayed: [City] {
         var seen = Set<String>()
         var result: [City] = []
@@ -142,21 +189,43 @@ struct PlacePage: View {
         return result
     }
 
+    private var sections: [Section] {
+        let items = displayed
+        if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return [Section(id: "hits", title: "搜索结果", cities: items)]
+        }
+        let china = items.filter(\.isChina)
+        let world = items.filter { !$0.isChina }
+        var result: [Section] = []
+        if !china.isEmpty { result.append(Section(id: "cn", title: "中国", cities: china)) }
+        if !world.isEmpty { result.append(Section(id: "world", title: "海外", cities: world)) }
+        return result
+    }
+
     private var list: some View {
         ScrollView {
-            LazyVStack(spacing: 2) {
-                ForEach(displayed) { city in
-                    row(city)
+            LazyVStack(alignment: .leading, spacing: 2) {
+                ForEach(sections) { section in
+                    Text(section.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 8)
+                        .padding(.top, 8)
+                        .padding(.bottom, 2)
+                    ForEach(section.cities) { city in
+                        row(city)
+                    }
                 }
                 if displayed.isEmpty, !query.isEmpty, !searching {
                     Text("找不到这个地方")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
                         .padding(.top, 24)
                 }
             }
             .padding(.horizontal, Panel.rowInset)
-            .padding(.vertical, 6)
+            .padding(.bottom, 6)
         }
     }
 
@@ -164,7 +233,7 @@ struct PlacePage: View {
         let selected = isSelected(city)
         return Button {
             model.setPlace(city)
-            open(.settings)
+            open(.timeline)
         } label: {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 1) {
@@ -194,6 +263,42 @@ struct PlacePage: View {
         guard let current = model.schedule.location else { return false }
         return abs(current.latitude - city.coordinate.latitude) < 0.02
             && abs(current.longitude - city.coordinate.longitude) < 0.02
+    }
+
+    // MARK: - 手填
+
+    private var coordinates: some View {
+        HStack(spacing: 6) {
+            Text("纬度").font(.system(size: 11)).foregroundStyle(.secondary)
+            CoordinateField(text: $latitude)
+            Text("经度").font(.system(size: 11)).foregroundStyle(.secondary)
+            CoordinateField(text: $longitude)
+            Spacer(minLength: 0)
+            Button("使用") {
+                if let typed { model.setManualLocation(typed) }
+            }
+            .controlSize(.small)
+            .disabled(typed == nil || typed == model.schedule.location)
+        }
+        .padding(.horizontal, Panel.inset)
+        .padding(.vertical, 8)
+    }
+
+    private var typed: Coordinate? {
+        guard let lat = Double(latitude.trimmingCharacters(in: .whitespaces)),
+              let lon = Double(longitude.trimmingCharacters(in: .whitespaces)),
+              abs(lat) <= 90, abs(lon) <= 180 else { return nil }
+        return Coordinate(latitude: lat, longitude: lon)
+    }
+
+    private func seedFields() {
+        guard let c = model.schedule.effectiveCoordinate else {
+            latitude = ""
+            longitude = ""
+            return
+        }
+        latitude = String(format: "%.4f", c.latitude)
+        longitude = String(format: "%.4f", c.longitude)
     }
 
     private func scheduleRemoteSearch() {

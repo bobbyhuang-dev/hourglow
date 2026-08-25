@@ -78,4 +78,5 @@ MainActor.assumeIsolated {
     }
     shoot(WallpaperPicker(slotID: first.id, open: { _ in }), named: "3-picker", into: directory)
     shoot(SettingsPage(open: { _ in }), named: "4-settings", into: directory)
+    shoot(PlacePage(open: { _ in }), named: "5-place", into: directory)
 }

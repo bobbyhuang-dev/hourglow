@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 设置页：开机自启 + 位置。
+/// 设置页：开机自启 + 更新 + 地区入口。地区本身在「选择地区」那一页。
 ///
 /// 这两件事都不是「每天要动」的，所以不占时间轴的版面，收在 ⋯ 里；但它们又都会影响
 /// 调度对不对（没坐标日出日落整段被跳过、不自启就得每次自己开），所以也不能藏太深 ——
@@ -13,9 +13,6 @@ struct SettingsPage: View {
     var open: (Page) -> Void
 
     @State private var contentHeight: CGFloat = 320
-    /// 手填经纬度的输入框。合法且与现值不同才让点「使用」。
-    @State private var latitude = ""
-    @State private var longitude = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,12 +32,7 @@ struct SettingsPage: View {
             }
             .frame(height: min(contentHeight, Panel.height))
         }
-        .onAppear {
-            model.refreshSettings()
-            seedFields()
-        }
-        // 定位成功会把坐标写进配置，输入框跟着显示新值。
-        .onChange(of: model.schedule.location) { seedFields() }
+        .onAppear { model.refreshSettings() }
     }
 
     // MARK: - 更新
@@ -177,100 +169,40 @@ struct SettingsPage: View {
         }
     }
 
-    // MARK: - 位置
+    // MARK: - 地区
 
+    /// 地区是单独一页。设置里只留一行入口：现在在哪儿、今天日出日落几点。
     private var location: some View {
-        PanelSection(title: "位置") {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(coordinateLine).font(.system(size: 12)).monospacedDigit()
-                    Text(model.coordinateSource).font(.system(size: 11)).foregroundStyle(.secondary)
+        PanelSection(title: "地区") {
+            Button { open(.place) } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(model.placeLabel)
+                            .font(.system(size: 12))
+                            .lineLimit(1)
+                        Text(solarLine)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.tertiary)
                 }
-                Spacer(minLength: 0)
+                .padding(.vertical, 2)
+                .contentShape(.rect)
             }
-
-            Text(solarLine).font(.system(size: 11)).foregroundStyle(.secondary)
-
-            Divider()
-
-            HStack(spacing: 8) {
-                Button(model.locating == .requesting ? "定位中…" : "使用当前位置") {
-                    model.requestPreciseLocation()
-                }
-                .controlSize(.small)
-                .disabled(model.locating == .requesting || model.locating == .denied)
-
-                Button("选择城市…") { open(.place) }
-                    .controlSize(.small)
-
-                if let hint = locatingHint {
-                    Text(hint)
-                        .font(.system(size: 11))
-                        .foregroundStyle(model.locating == .idle ? Color.secondary : Color.orange)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-            }
-
-            // 权限被拒不是死路：手填一次就完事，精度对日出日落绰绰有余。
-            HStack(spacing: 6) {
-                Text("纬度").font(.system(size: 11)).foregroundStyle(.secondary)
-                CoordinateField(text: $latitude)
-                Text("经度").font(.system(size: 11)).foregroundStyle(.secondary)
-                CoordinateField(text: $longitude)
-                Spacer(minLength: 0)
-                Button("使用") { if let typed { model.setManualLocation(typed) } }
-                    .controlSize(.small)
-                    .disabled(typed == nil || typed == model.schedule.location)
-            }
-
-            if model.schedule.location != nil {
-                Button("清除，改用时区推断") {
-                    model.setManualLocation(nil)
-                    seedFields()
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            }
+            .buttonStyle(PanelRowStyle())
         }
-    }
-
-    private var coordinateLine: String {
-        guard let c = model.schedule.effectiveCoordinate else { return "没有坐标" }
-        return String(format: "%.4f, %.4f", c.latitude, c.longitude)
     }
 
     private var solarLine: String {
         guard model.schedule.effectiveCoordinate != nil else {
-            return "日出日落的时段会被整个跳过"
+            return "日出日落的时段会被跳过"
         }
         guard let times = model.solarToday else { return "今天是极昼或极夜" }
         return "今天 日出 \(Clock.string(times.sunrise)) · 日落 \(Clock.string(times.sunset))"
-    }
-
-    private var locatingHint: String? {
-        switch model.locating {
-        case .idle:      return model.schedule.location == nil ? "只问一次，之后就一直用它" : nil
-        case .requesting: return nil
-        case .denied:    return "定位权限被拒，请在下面手填经纬度"
-        case .failed(let reason): return reason
-        }
-    }
-
-    /// 输入框里那一对数，合法才返回。
-    private var typed: Coordinate? {
-        guard let lat = Double(latitude.trimmingCharacters(in: .whitespaces)),
-              let lon = Double(longitude.trimmingCharacters(in: .whitespaces)),
-              abs(lat) <= 90, abs(lon) <= 180 else { return nil }
-        return Coordinate(latitude: lat, longitude: lon)
-    }
-
-    private func seedFields() {
-        guard let c = model.schedule.effectiveCoordinate else { latitude = ""; longitude = ""; return }
-        latitude = String(format: "%.4f", c.latitude)
-        longitude = String(format: "%.4f", c.longitude)
     }
 
     // MARK: - 壁纸组
@@ -304,23 +236,6 @@ struct SettingsPage: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 4)
-    }
-}
-
-/// 经纬度输入框。固定宽度，等宽数字 —— 两个框并排时数字不会因为位数不同而跳。
-private struct CoordinateField: View {
-    @Binding var text: String
-
-    var body: some View {
-        TextField("", text: $text)
-            .textFieldStyle(.plain)
-            .font(.system(size: 12).monospacedDigit())
-            .multilineTextAlignment(.trailing)
-            .frame(width: 62)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .background(.quaternary.opacity(0.7),
-                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
 

@@ -29,6 +29,7 @@ struct TimelinePage: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
+            placeChip
             if model.schedule.paused {
                 Label("已暂停", systemImage: "pause.fill")
                     .font(.system(size: 10, weight: .medium))
@@ -38,6 +39,25 @@ struct TimelinePage: View {
         }
         .padding(.horizontal, Panel.inset)
         .padding(.top, 10)
+    }
+
+    /// 日出日落按这个点算。中国全境一个时区，不选地区就永远是上海。
+    private var placeChip: some View {
+        Button { open(.place) } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "location.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(model.placeChipLabel)
+                    .lineLimit(1)
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(.quaternary.opacity(0.5), in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .help("选择计算日出日落的地区")
     }
 
     /// 当前生效的那一段。缩略图 + 名字 + 下次切换，一眼看完。
@@ -93,7 +113,7 @@ struct TimelinePage: View {
             // 这条提示本身就是入口：点进设置页去定位或手填经纬度。
             PanelNotice(symbol: "exclamationmark.triangle.fill",
                         text: "缺少坐标，日出日落的时段会被跳过", tint: .orange,
-                        action: { open(.settings) })
+                        action: { open(.place) })
         } else if model.isManuallyOverridden {
             PanelNotice(symbol: "hand.raised.fill",
                         text: "壁纸被手动换过 · 下一个触发点接管", tint: .secondary)
@@ -214,6 +234,7 @@ struct TimelinePage: View {
             Menu {
                 Button("设置…") { open(.settings) }
                     .keyboardShortcut(",")
+                Button("选择地区…") { open(.place) }
                 Button("导入 24 小时壁纸…") { model.importSceneFromPanel() }
                 Button("检查更新…") {
                     open(.settings)
