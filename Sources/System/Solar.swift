@@ -21,13 +21,14 @@ enum Solar {
 
     /// 一天里天光分段要用的四个时刻。
     ///
-    /// 航海晨光 / 民用黄昏在高纬可能不存在（太阳掉不到那么深），此时回退到
-    /// 官方日出 / 日落，免得整组壁纸在极圈附近直接求值失败。
+    /// 航海晨光 / 民用黄昏在高纬可能不存在（太阳掉不到那么深），此时为 nil。
+    /// 不要在这里回退到日出 / 日落 —— 那会让「晨光到日出」这段长度变成 0，
+    /// 天光分段就把一整段壁纸挤进几十秒里放完（`TimeMap` 里有对应的名义时长兜底）。
     struct Events {
-        var nauticalDawn: Date
+        var nauticalDawn: Date?
         var sunrise: Date
         var sunset: Date
-        var civilDusk: Date
+        var civilDusk: Date?
     }
 
     /// 指定日期、指定坐标的日出与日落。极昼或极夜返回 nil。
@@ -85,10 +86,10 @@ enum Solar {
         }
 
         return Events(
-            nauticalDawn: refine(direction: -1, zenith: nauticalZenith) ?? sunrise,
+            nauticalDawn: refine(direction: -1, zenith: nauticalZenith),
             sunrise: sunrise,
             sunset: sunset,
-            civilDusk: refine(direction: 1, zenith: civilZenith) ?? sunset
+            civilDusk: refine(direction: 1, zenith: civilZenith)
         )
     }
 

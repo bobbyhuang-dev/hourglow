@@ -194,6 +194,18 @@ final class AppModel {
             && schedule.slots.contains { $0.enabled && $0.trigger.dependsOnSun }
     }
 
+    /// 坐标有、但今天算不出日出日落（极圈的极昼极夜）。
+    ///
+    /// 导入一套壁纸后整张表都是天光分段，这时一段都排不上，壁纸会一动不动地
+    /// 停几个星期。`needsCoordinate` 盖不住它 —— 坐标是有的，是太阳不配合。
+    var solarUnavailable: Bool {
+        guard let coordinate = schedule.effectiveCoordinate else { return false }
+        guard schedule.slots.contains(where: { $0.enabled && $0.trigger.dependsOnSun }) else {
+            return false
+        }
+        return Solar.events(on: Date(), at: coordinate) == nil
+    }
+
     // MARK: - 编辑（草稿）
 
     /// 时段页要显示的那一段：正在编辑就用草稿，否则用配置里的。
@@ -500,12 +512,23 @@ final class AppModel {
                 switch outcome {
                 case .coordinate(let coordinate):
                     model.locating = .idle
-                    Task { @MainActor in
+                    // 先把刚拿到的精确坐标写下去。反查只是为了给它起个看得懂的名字，
+                    // 不能拿反查回来的行政区中心点替换掉它 —— 大城市能差几十公里，
+                    // 而一次定位授权换来的就是这几十公里的精度。
+                    model.setManualLocation(coordinate)
+                    model.show(String(format: "已定位到 %.4f, %.4f",
+                                      coordinate.latitude, coordinate.longitude))
+                    Task { @MainActor [weak model] in
                         let loc = CLLocation(latitude: coordinate.latitude,
                                              longitude: coordinate.longitude)
-                        let city = await PlaceSearch.reverse(loc)
-                        _ = AppModel.shared.setPlace(city)
-                        AppModel.shared.show("已定位到 \(city.name)")
+                        guard let city = await PlaceSearch.reverse(loc), let model else { return }
+                        // 期间用户可能又选了别的地方，别把人家的选择盖回去。
+                        guard model.schedule.location?.latitude == coordinate.latitude,
+                              model.schedule.location?.longitude == coordinate.longitude else { return }
+                        var named = coordinate
+                        named.name = city.name
+                        model.setManualLocation(named)
+                        model.show("已定位到 \(city.name)")
                     }
                 case .denied:
                     model.locating = .denied
@@ -546,18 +569,46 @@ final class AppModel {
         importScene(from: [url])
     }
 
+    /// 导入会整体替换时间轴，而且没有撤销。素材拷贝放到后台：24HW 一套几百 MB，
+    /// 在主线程上拷会把菜单栏 app 卡住。
     func importScene(from urls: [URL]) {
         endEditing()
-        do {
-            let updated = try SceneImport.apply(urls: urls, to: schedule)
-            guard commit(updated) else { return }
-            let text = "已导入 \(updated.slots.count) 张，按当天日出日落均分。"
-            show(text)
-            announceImport(success: true, text: text)
-        } catch {
-            show("导入失败: \(error.localizedDescription)")
-            announceImport(success: false, text: error.localizedDescription)
+        guard confirmReplace() else { return }
+        let current = schedule
+        Task {
+            do {
+                let outcome = try await Task.detached(priority: .userInitiated) {
+                    try SceneImport.apply(urls: urls, to: current)
+                }.value
+                guard commit(outcome.schedule) else { return }
+                var text = "已导入 \(outcome.schedule.slots.count) 张，按当天日出日落均分。"
+                if !outcome.skipped.isEmpty {
+                    text += "\n\(outcome.skipped.count) 张认不出是哪一段，没有收进来："
+                    text += "\n" + outcome.skipped.prefix(6).map(\.lastPathComponent)
+                        .joined(separator: "、")
+                    if outcome.skipped.count > 6 { text += " …" }
+                }
+                show("已导入 \(outcome.schedule.slots.count) 张"
+                     + (outcome.skipped.isEmpty ? "" : "，跳过 \(outcome.skipped.count) 张"))
+                announceImport(success: true, text: text)
+            } catch {
+                show("导入失败: \(error.localizedDescription)")
+                announceImport(success: false, text: error.localizedDescription)
+            }
         }
+    }
+
+    /// 时间轴是整体替换的，问一句再动。面板此时已经收起，只能用对话框。
+    private func confirmReplace() -> Bool {
+        guard !schedule.slots.isEmpty else { return true }
+        let alert = NSAlert()
+        alert.messageText = "替换整条时间轴？"
+        alert.informativeText = "现在的 \(schedule.slots.count) 个时段会被导入的这一套取代，无法撤销。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "替换")
+        alert.addButton(withTitle: "取消")
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     private func presentImportPanel() {

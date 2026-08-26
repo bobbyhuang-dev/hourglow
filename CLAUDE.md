@@ -24,7 +24,7 @@ aerial 动态壁纸或本地图片。Swift 6.3 + SwiftUI，零第三方依赖，
 ./build.sh                    # 一次编出全部：CLI、六个靶子、panelshot、build/HourGlow.app
 ./build/modelcheck            # 求值：跨午夜回绕、solar 触发、天光分段、Codable 兼容
 ./build/enginecheck           # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
-./build/importcheck           # 导入：24 Hour Wallpaper 文件名、多分辨率、均分
+./build/importcheck           # 导入：文件名与分子目录归类、多分辨率、均分、跳过与清理
 ./build/appcheck              # 应用状态：草稿、保存边界、外部配置冲突
 ./build/updatecheck           # 更新器：SemVer、Release 解析、SHA-256
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
@@ -86,7 +86,7 @@ open build/HourGlow.app                 # 菜单栏 app
 - `Model/` —— 纯数据与求值。`Schedule.swift` 的 `Trigger`/`Wallpaper` 用手写 `Codable`
   编成扁平 JSON（便于用户手改）。`Resolver.swift` 按每个 slot 的偏移反推基准日再前后各展开一天，
   跨午夜回绕由此自然成立。`TimeMap` 把日出/白昼/日落/夜晚均分到当天的航海晨光→民用黄昏窗口；
-  `SceneImport` 按文件名把一组静帧编成 `solarPhase` 时段。`Store.swift` 原子写 `schedule.json`。
+  `SceneImport` 按文件名（认不出时看上级文件夹名）把一组静帧编成 `solarPhase` 时段。`Store.swift` 原子写 `schedule.json`。
 - `System/` —— 与 macOS 打交道。`WallpaperWriter` 读改写 `Index.plist`（保留未知顶层字段、
   写前备份、强制 `linked`、目标一致时跳过写入以免闪屏、写后 `killall WallpaperAgent`）；
   `AerialCatalog` 解析系统的 `entries.json`；`Solar` 是 NOAA 算法。坐标有三条路，

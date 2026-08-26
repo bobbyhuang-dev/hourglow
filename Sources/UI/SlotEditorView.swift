@@ -13,6 +13,9 @@ struct SlotPage: View {
     /// 删除要点两下：面板里弹确认框太重，就地把按钮换成「再点一次」。
     @State private var confirmingDelete = false
     @State private var contentHeight: CGFloat = 320
+    /// 这一段本来的天光参数。切成固定时刻之后「天光」那一档就不该消失 ——
+    /// 消失了就再也切不回来，草稿还没应用也回不去。
+    @State private var originalPhase: (phase: DayPhase, index: Int, count: Int)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,7 +44,12 @@ struct SlotPage: View {
         }
         // 页面每次出现都认领一次草稿。从选壁纸页返回时也会走到这里，
         // 但 `beginEditing` 认得同一个 id，不会把半路的改动冲掉。
-        .onAppear { model.beginEditing(slotID) }
+        .onAppear {
+            model.beginEditing(slotID)
+            if case .solarPhase(let phase, let index, let count) = model.editing(slotID)?.trigger {
+                originalPhase = (phase, index, count)
+            }
+        }
     }
 
     // MARK: - 触发
@@ -49,7 +57,7 @@ struct SlotPage: View {
     private func trigger(_ slot: Slot) -> some View {
         PanelSection(title: "触发") {
             Picker("", selection: kindBinding(slot)) {
-                if case .solarPhase = slot.trigger {
+                if originalPhase != nil {
                     Text("天光").tag(TriggerKind.phase)
                 }
                 Text("固定时刻").tag(TriggerKind.clock)
@@ -299,7 +307,13 @@ struct SlotPage: View {
                     updated.trigger = .solar(event: kind == .sunrise ? .sunrise : .sunset,
                                              offsetMinutes: offset)
                 case .phase:
-                    break
+                    // 回到天光：天光段的参数（第几张 / 共几张）是导入时定的，
+                    // 用户在这一页改不出来，所以只能还原成进来时的那一组。
+                    if let originalPhase {
+                        updated.trigger = .solarPhase(phase: originalPhase.phase,
+                                                      index: originalPhase.index,
+                                                      count: originalPhase.count)
+                    }
                 }
             }
         }

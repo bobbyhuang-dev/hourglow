@@ -10,6 +10,12 @@ import Foundation
 /// 窗口本身每天按当地太阳位置重算，所以冬夏的切换时刻会跟着走，不把钟点写死。
 enum TimeMap {
 
+    /// 高纬夏天太阳掉不到 −12°/−6°，航海晨光与民用黄昏根本不存在。
+    /// 这时用一个名义时长顶上：既不能取 0（几张日出会挤在几十秒里连着刷过去，
+    /// 还会连着 killall 三次 WallpaperAgent），也不能拿它去覆盖真实存在的晨昏
+    /// （赤道的民用黄昏本来就只有二十来分钟）—— 所以只在「算不出来」时才用。
+    static let nominalTwilight: TimeInterval = 45 * 60
+
     struct Window {
         var start: Date
         var end: Date
@@ -39,13 +45,14 @@ enum TimeMap {
               let next = Solar.events(on: tomorrow, at: coordinate, calendar: calendar)
         else { return nil }
 
-        let dawn = today.nauticalDawn
         let sunrise = today.sunrise
         let sunset = today.sunset
-        let dusk = today.civilDusk
+        let dawn = today.nauticalDawn ?? sunrise.addingTimeInterval(-nominalTwilight)
+        let dusk = today.civilDusk ?? sunset.addingTimeInterval(nominalTwilight)
         let nextDawn = next.nauticalDawn
+            ?? next.sunrise.addingTimeInterval(-nominalTwilight)
 
-        // 晨光 / 黄昏短于一分钟时仍给一个能切的窗口，避免除零。
+        // 仍留一个下限：极端情况下算出来的晨昏也可能贴到日出上，避免除零。
         let sunriseSpan = max(sunrise.timeIntervalSince(dawn), 60)
         let sunriseEnd = sunrise.addingTimeInterval(sunriseSpan / 3)
         let sunsetSpan = max(dusk.timeIntervalSince(sunset), 60)

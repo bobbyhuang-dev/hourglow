@@ -78,9 +78,12 @@ struct PlacePage: View {
         return "今天 日出 \(Clock.string(times.sunrise)) · 日落 \(Clock.string(times.sunset))"
     }
 
+    /// 高纬夏天这两个时刻可能不存在，此时天光分段按名义时长兜底，如实说清楚。
     private var twilightLine: String? {
         guard let events = model.solarEventsToday else { return nil }
-        return "航海晨光 \(Clock.string(events.nauticalDawn)) · 民用黄昏 \(Clock.string(events.civilDusk))"
+        let dawn = events.nauticalDawn.map(Clock.string) ?? "无"
+        let dusk = events.civilDusk.map(Clock.string) ?? "无"
+        return "航海晨光 \(dawn) · 民用黄昏 \(dusk)"
     }
 
     private var locatingHint: String? {
@@ -278,7 +281,9 @@ struct PlacePage: View {
                 if let typed { model.setManualLocation(typed) }
             }
             .controlSize(.small)
-            .disabled(typed == nil || typed == model.schedule.location)
+            // 只比坐标：`Coordinate` 的相等还包含城市名，拿它判断会让「和当前城市
+            // 一模一样的经纬度」也可点，点下去把城市名抹成一串裸数字。
+            .disabled(typed == nil || sameSpotAsCurrent)
         }
         .padding(.horizontal, Panel.inset)
         .padding(.vertical, 8)
@@ -289,6 +294,11 @@ struct PlacePage: View {
               let lon = Double(longitude.trimmingCharacters(in: .whitespaces)),
               abs(lat) <= 90, abs(lon) <= 180 else { return nil }
         return Coordinate(latitude: lat, longitude: lon)
+    }
+
+    private var sameSpotAsCurrent: Bool {
+        guard let typed, let current = model.schedule.location else { return false }
+        return typed.latitude == current.latitude && typed.longitude == current.longitude
     }
 
     private func seedFields() {

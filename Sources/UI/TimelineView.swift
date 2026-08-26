@@ -114,6 +114,12 @@ struct TimelinePage: View {
             PanelNotice(symbol: "exclamationmark.triangle.fill",
                         text: "缺少坐标，日出日落的时段会被跳过", tint: .orange,
                         action: { open(.place) })
+        } else if model.solarUnavailable {
+            // 极圈的极昼极夜：坐标没问题，是今天根本没有日出日落。天光分段一段都排不上，
+            // 壁纸会一直停着 —— 不说一声，看起来就像 app 坏了。
+            PanelNotice(symbol: "sun.max.trianglebadge.exclamationmark.fill",
+                        text: "今天是极昼或极夜，日出日落的时段全部跳过", tint: .orange,
+                        action: { open(.place) })
         } else if model.isManuallyOverridden {
             PanelNotice(symbol: "hand.raised.fill",
                         text: "壁纸被手动换过 · 下一个触发点接管", tint: .secondary)

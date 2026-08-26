@@ -47,9 +47,11 @@ under 5 MB.
 - **Human-readable JSON config** — edit `schedule.json` by hand and the engine follows
   immediately
 - **Import a 24-hour wallpaper set** — files named with sunrise / morning / day / sunset /
-  evening / night (or `01_sunrise_1.heic`, or a 24 Hour Wallpaper `.sundialScene`) become a
-  full-day timeline that tracks local sun times. Each phase can have a different number of
-  frames.
+  evening / night (or `01_sunrise_1.heic`, or a 24 Hour Wallpaper `.sundialScene`), or sorted
+  into per-phase subfolders (`sunrise/1.jpg`), become a full-day timeline that tracks local
+  sun times. Each phase can have a different number of frames. Importing replaces the whole
+  timeline and asks first; files whose phase cannot be determined are left out and reported
+  back to you.
 
 ## Download
 

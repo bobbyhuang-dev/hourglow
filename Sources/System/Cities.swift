@@ -54,17 +54,25 @@ enum Cities {
         }
     }
 
-    /// 精确名或拼音对上时取第一个；否则返回最靠前的模糊命中。
+    /// 精确名或拼音对上时取第一个，其次是从头对上的（`深` → 深圳）。
+    ///
+    /// 不拿「随便一个子串命中」兜底：`lookup("a")` 会一路命中到 Abidjan，
+    /// 用户打错一个字就被静默设到地球另一边去了。认不出就认不出，交给调用方去搜。
     static func lookup(_ query: String) -> City? {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return nil }
+        let folded = fold(q)
         let hits = search(q)
-        let folded = q.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-        return hits.first { city in
-            city.keys.contains {
-                $0.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current) == folded
-            }
-        } ?? hits.first
+        if let exact = hits.first(where: { $0.keys.contains { fold($0) == folded } }) {
+            return exact
+        }
+        // 单个拉丁字母做前缀兜底照样会命中到 Abidjan 去；中文单字（深 → 深圳）留着。
+        guard folded.count >= 2 || !folded.allSatisfy(\.isASCII) else { return nil }
+        return hits.first { $0.keys.contains { fold($0).hasPrefix(folded) } }
+    }
+
+    private static func fold(_ s: String) -> String {
+        s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
     }
 
     static let featured: [City] = curated

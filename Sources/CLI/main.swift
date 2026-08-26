@@ -212,8 +212,11 @@ func showSolar() {
     print("\(dayFormat.string(from: day))  日出 \(clockFormat.string(from: times.sunrise))"
           + "   日落 \(clockFormat.string(from: times.sunset))")
     if let events = Solar.events(on: day, at: coordinate) {
-        print("        航海晨光 \(clockFormat.string(from: events.nauticalDawn))"
-              + "   民用黄昏 \(clockFormat.string(from: events.civilDusk))")
+        // 高纬夏天太阳掉不到 −12°/−6°，这两个时刻并不存在。不要在这里编一个出来：
+        // 天光分段的兜底在 `TimeMap.nominalTwilight`，这里如实说「无」。
+        let dawn = events.nauticalDawn.map(clockFormat.string(from:)) ?? "无"
+        let dusk = events.civilDusk.map(clockFormat.string(from:)) ?? "无"
+        print("        航海晨光 \(dawn)   民用黄昏 \(dusk)")
     }
 }
 
@@ -242,7 +245,7 @@ func setLocation() {
     let query = positional.joined(separator: " ")
     let city = Cities.lookup(query) ?? PlaceSearch.nominatimBlocking(query).first
     guard let city else {
-        fail("找不到这个地方: \(query)    试试城市名，或 location <纬度> <经度>")
+        fail("找不到这个地方: \(query)    试试 hourglow-cli cities \(query)，或 location <纬度> <经度>")
     }
     schedule.location = city.asCoordinate
     do {
@@ -316,14 +319,23 @@ func runImport() {
     }
     let schedule = loadSchedule()
     do {
-        let updated = try SceneImport.apply(urls: urls, to: schedule, name: name)
-        try Store.save(updated)
-        print("已导入 \(updated.slots.count) 张")
+        let outcome = try SceneImport.apply(urls: urls, to: schedule, name: name)
+        try Store.save(outcome.schedule)
+        print("已导入 \(outcome.schedule.slots.count) 张")
         print("素材  \(SceneImport.scenesDirectory.path)")
         print("配置  \(Store.fileURL.path)")
         print("触发  天光分段（航海晨光 / 日出 / 日落 / 民用黄昏，按每段张数均分）")
-        for slot in updated.slots {
+        for slot in outcome.schedule.slots {
             print("  \(slot.trigger.description.padded(to: 14))→  \(describe(slot.wallpaper))")
+        }
+        if !outcome.skipped.isEmpty {
+            // 别的文件认得出时段、它们认不出，硬塞会把夜景排到中午。跳过可以，闷声跳过不行。
+            print("\n跳过 \(outcome.skipped.count) 张（认不出是哪一段，可以在文件名或上级文件夹名里"
+                  + "写 sunrise / day / sunset / night）")
+            for url in outcome.skipped.prefix(12) {
+                print("  \(url.lastPathComponent)")
+            }
+            if outcome.skipped.count > 12 { print("  … 还有 \(outcome.skipped.count - 12) 张") }
         }
     } catch {
         fail("导入失败: \(error.localizedDescription)")

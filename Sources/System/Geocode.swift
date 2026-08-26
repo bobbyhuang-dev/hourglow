@@ -35,32 +35,43 @@ enum PlaceSearch {
         }
     }
 
-    /// CLI 用：不经过主线程，避免和 RunLoop 互相等。
-    static func nominatimBlocking(_ query: String) -> [City] {
-        guard let request = nominatimRequest(query) else { return [] }
-        let lock = DispatchSemaphore(value: 0)
-        var cities: [City] = []
-        URLSession.shared.dataTask(with: request) { data, _, _ in
-            if let data { cities = parseNominatim(data, query: query) }
-            lock.signal()
-        }.resume()
-        _ = lock.wait(timeout: .now() + 9)
-        return cities
+    /// 收网络结果的信箱。超时返回后回调还可能再写一次，裸 `var` 会和调用方的读并发。
+    private final class Mailbox: @unchecked Sendable {
+        private let lock = NSLock()
+        private var cities: [City] = []
+
+        func put(_ value: [City]) {
+            lock.lock(); defer { lock.unlock() }
+            cities = value
+        }
+
+        func take() -> [City] {
+            lock.lock(); defer { lock.unlock() }
+            return cities
+        }
     }
 
-    static func reverse(_ location: CLLocation) async -> City {
-        if let request = MKReverseGeocodingRequest(location: location),
-           let item = try? await request.mapItems.first,
-           let city = city(from: item) {
-            return city
-        }
-        let lat = location.coordinate.latitude
-        let lon = location.coordinate.longitude
-        let name = String(format: "%.3f, %.3f", lat, lon)
-        return City(name: name,
-                    detail: "当前位置",
-                    coordinate: Coordinate(latitude: lat, longitude: lon, name: "当前位置"),
-                    keys: [name])
+    /// CLI 用：不经过主线程，避免和 RunLoop 互相等。
+    static func nominatimBlocking(_ query: String) -> [City] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        // 一个字的查询在任何地名库里都能命中一堆不相干的东西，不值得为它跑一趟网络。
+        guard q.count >= 2, let request = nominatimRequest(q) else { return [] }
+        let mailbox = Mailbox()
+        let done = DispatchSemaphore(value: 0)
+        URLSession.shared.dataTask(with: request) { data, _, _ in
+            if let data { mailbox.put(parseNominatim(data, query: q)) }
+            done.signal()
+        }.resume()
+        _ = done.wait(timeout: .now() + 9)
+        return mailbox.take()
+    }
+
+    /// 反查只用来给坐标起个名字。查不到就返回 nil —— 调用方该留住手里那个精确坐标，
+    /// 而不是拿一个编出来的地名把它换掉。
+    static func reverse(_ location: CLLocation) async -> City? {
+        guard let request = MKReverseGeocodingRequest(location: location),
+              let item = try? await request.mapItems.first else { return nil }
+        return city(from: item)
     }
 
     static func city(from item: MKMapItem) -> City? {

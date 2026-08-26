@@ -35,8 +35,9 @@ macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 
   代码签名，原位安装并自行重启
 - **配置是人类可读的 JSON** —— 手改 `schedule.json` 后引擎立刻跟上
 - **导入 24 小时壁纸组** —— 文件名带 sunrise / morning / day / sunset / evening / night
-  （或 `01_sunrise_1.heic`，或 24 Hour Wallpaper 的 `.sundialScene`）会编成一条跟着当地
-  太阳走的全天时间轴。四段张数可以各不相同
+  （或 `01_sunrise_1.heic`，或 24 Hour Wallpaper 的 `.sundialScene`），也可以按段分子目录
+  （`sunrise/1.jpg`），会编成一条跟着当地太阳走的全天时间轴。四段张数可以各不相同。
+  导入会整体替换现有时间轴，动手前会问一次；认不出属于哪一段的文件不收，但会报给你
 
 ## 下载
 
