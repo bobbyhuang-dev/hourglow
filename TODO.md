@@ -3,9 +3,9 @@
 规格见 `MVP.md`。本文件是执行清单，新会话冷启动读这两个文件即可接上，
 不需要回溯对话历史。
 
-**当前进度**：M1–M6 全部完成，1.1 开发中。`build/HourGlow.app` 可直接双击，开机自启、定位、
-首次启动预设和内建更新都已落地，`MVP.md` 第 9 节的验收清单跑过一遍（结果见 M4 末尾）；
-CI 与发版流水线见 M5，更新实现与安全边界见 M6。
+**当前进度**：M1–M6 全部完成；1.2 在做 24 Hour Wallpaper 导入与天光分段。`build/HourGlow.app`
+可直接双击，开机自启、定位、首次启动预设和内建更新都已落地，`MVP.md` 第 9 节的验收清单
+跑过一遍（结果见 M4 末尾）；CI 与发版流水线见 M5，更新实现与安全边界见 M6。
 
 ---
 
@@ -13,7 +13,7 @@ CI 与发版流水线见 M5，更新实现与安全边界见 M6。
 
 - 名字 `HourGlow`；`hourglow.app` 与 `github.com/hourglow` 均未被占用
 - Swift 6.3 + SwiftUI，`swiftc` 手工打包，不依赖 Xcode，零第三方依赖
-- 触发器：固定时刻 + 日出日落（带偏移）
+- 触发器：固定时刻 + 日出日落（带偏移）+ 天光分段（24 Hour Wallpaper 模型）
 - 壁纸来源：系统 aerial + 本地图片
 - 写入时统一保持 `linked`（桌面与屏保一起换）
 - 首次启动预设：日出→Morning、09:00→Day、日落前30分→Evening、日落后60分→Night
@@ -274,7 +274,7 @@ CI 与发版流水线见 M5，更新实现与安全边界见 M6。
 
 ## M5 — 发布 1.0（已完成）
 
-- [x] `.github/workflows/ci.yml`：每次 push / PR 在 `macos-26` 上编一遍、跑四个主靶子、
+- [x] `.github/workflows/ci.yml`：每次 push / PR 在 `macos-26` 上编一遍、跑主靶子、
       跑一遍 `verify-solar.py` 对拍星历，外加几条纯计算的 CLI 冒烟
 - [x] `.github/workflows/release.yml`：推 `v*` tag 就构建、验证、压包、建 GitHub Release
 - [x] `build.sh` 的版本号改成可注入：`HOURGLOW_VERSION` / `HOURGLOW_BUILD`（默认 1.0.1 / 1），
@@ -338,6 +338,55 @@ CI 与发版流水线见 M5，更新实现与安全边界见 M6。
 - 自动更新沿用 app 当前路径。父目录不可写（只读卷、某些标准用户的 `/Applications`）时不尝试
   提权，设置页直接给出失败原因，用户仍可打开 GitHub 发布页手动安装。
 
+## 天光分段 / 24 Hour Wallpaper 导入（1.2）
+
+24 Hour Wallpaper / Sunshift 那套：一组图按日出/白昼/日落/夜晚均分到当天太阳窗口。
+HourGlow 原先只有 clock + 日出/日落偏移，张数要手填时段，窗口也不会随晨昏长度变。
+
+- [x] `Solar.events`：同一套 NOAA 迭代，额外给出航海晨光（−12°）和民用黄昏（−6°）；
+      高纬给不出晨昏时返回 nil，由 `TimeMap.nominalTwilight`（45 分钟）兜底
+- [x] `Trigger.solarPhase { phase, index, count }`：存张数而不是钟点
+- [x] `TimeMap`：日出窗口 = 航海晨光 → 日出 + (日出−晨光)/3；
+      日落窗口 = 日落 − (黄昏−日落)/3 → 民用黄昏；每段按 count 等分
+- [x] `SceneImport`：认 `01_sunrise_1.heic`、`sunrise_1.heic`、morning/evening 别名，
+      以及 `.sundialScene/images/5120x2880/`（多分辨率留最大的）；文件名认不出时看上级
+      文件夹名（`sunrise/1.jpg`）；全都认不出才按文件名顺序均分成四段
+- [x] 各段张数可以不同（4 张日出 + 6 张白昼 + 4 张日落 + 5 张夜晚）
+- [x] CLI `import <文件夹>`；面板 ⋯ 菜单「导入 24 小时壁纸…」
+- [x] 常用城市离线表 + 地点页搜索（中国全境都是 Asia/Shanghai，时区推断永远落在上海）
+- [x] `Tests/ImportCheck` 离线覆盖文件名、多分辨率、均分、分子目录、跳过报告与旧素材清理；
+      `modelcheck` 覆盖窗口、高纬兜底、极昼与 Codable
+- [x] code review 后的修复（见下面的坑）：归并键、上级文件夹归类、跳过要报数、导入前确认、
+      高纬名义时长、极昼提示、定位保留精确坐标、旧素材清理、离线城市表不做单字母兜底
+
+### 踩到的坑（别再踩一次）
+
+- 窗口必须每天重算。用固定「日出后 20 分」近似 3 张日出，冬天晨光变短就会对不齐。
+- 夜晚最后几张的 `fireDate` 落在次日凌晨，靠 Resolver 现成的 ±1 天展开接住，
+  不要给 solarPhase 再套一层偏移锚点。
+- 文件名用 token 匹配，不要 `contains("day")`：`sunday.heic` 会被误伤。
+- 多分辨率去重的键是「去掉 `5120x2880` 那一层之后的整条路径」，不是光秃秃的文件名。
+  按 basename 去重分不清「同一张图的两个分辨率」和「`sunrise/1.jpg` 与 `night/1.jpg`」——
+  按段分子目录、文件名从 1 编号的图集会被吃掉大半（12 张进去、3 张出来，还报成功）。
+- 判断「是不是同一个目录」一律走 `canonicalPath`（`resolvingSymlinksInPath`）。
+  `standardizedFileURL` 对 `/private/tmp` 的处理不一致：自己拼的 URL 留着 `/private`，
+  `contentsOfDirectory` 拿回来的已经是 `/tmp`，按字符串比会把刚写好的素材当成别人的删掉。
+- 认不出时段的文件可以不收，但必须报数。闷声丢掉的结果是一个「已导入」对话框
+  加一条少了几张的时间轴，用户无从知道。
+- 晨昏算不出来时不要回退成日出/日落本身：那让「晨光→日出」长度为 0，被除零保护撑成
+  60 秒，一段三张壁纸挤在 20 秒里刷过去，还连着 killall 三次 WallpaperAgent。
+  用名义时长（45 分钟）兜底，并且只在算不出来时用 —— 赤道的民用黄昏本来就只有二十来分钟。
+- 极昼极夜那几天一段都排不上，壁纸会停几个星期。`needsCoordinate` 盖不住它（坐标是有的），
+  时间轴要单独给一条提示。
+- 定位拿到的精确坐标不要被反查结果替换。反查回来的是行政区中心点，大城市差几十公里，
+  而那次定位授权换来的就是这几十公里。反查只用来起名字。
+- 导入是整体替换时间轴且不可撤销，动手前问一句；素材拷贝放后台，一套几百 MB 会卡住面板。
+- 地区是调度的一部分，不是设置里的附录。时间轴右上角那颗胶囊进「选择地区」；
+  空搜时中国 / 海外分段，选完回到时间轴看今天的切换时刻。
+- 菜单栏面板点 ⋯ 的同时会把自己关掉。立刻 `NSOpenPanel.runModal` 会被一起取消，
+  对话框里「导入」像坏了。要等面板收完，临时把 `activationPolicy` 改成 `.regular`，
+  并且允许选文件、文件夹和 `.sundialScene`，不能只许选目录。
+
 ## 环境速查
 
 ```
@@ -360,6 +409,7 @@ aerial 库  ~/Library/Application Support/com.apple.wallpaper/aerials/
 open build/HourGlow.app       # 菜单栏 app（M3）
 ./build/panelshot ~/Desktop   # 把三个页面画成 PNG（固定时刻那一栏另出一张），改版式时对照
 ./build/enginecheck           # 引擎决策矩阵与定时排期
+./build/importcheck           # 24 Hour Wallpaper 文件名与导入
 ./build/updatecheck           # 更新版本、Release 解析与 SHA-256
 ./build/hourglow-cli run      # 前台常驻，Ctrl-C 退出（和 app 抢同一把 EngineLock）
 ./build/hourglow-cli status   # 上次写了什么、现在是不是还是那张

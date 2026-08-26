@@ -18,6 +18,7 @@ swiftc -O "${COMMON[@]}" Sources/CLI/*.swift          -o build/hourglow-cli
 swiftc -O "${COMMON[@]}" Tests/SolarCheck/main.swift -o build/solarcheck
 swiftc -O "${COMMON[@]}" Tests/ModelCheck/main.swift -o build/modelcheck
 swiftc -O "${COMMON[@]}" Tests/EngineCheck/main.swift -o build/enginecheck
+swiftc -O "${COMMON[@]}" Tests/ImportCheck/main.swift -o build/importcheck
 swiftc -O "${COMMON[@]}" Sources/App/SlotDraft.swift Tests/AppCheck/main.swift -o build/appcheck
 swiftc -O Sources/App/AppUpdater.swift Tests/UpdateCheck/main.swift -o build/updatecheck
 # 面板的离屏渲染，改版式时用来对照（见 Tests/PanelShot/main.swift）。
@@ -72,4 +73,4 @@ codesign --force --sign - \
     "$APP" >/dev/null 2>&1
 
 echo "built: HourGlow $VERSION ($BUILD_NUMBER)"
-echo "built: build/hourglow-cli, build/solarcheck, build/modelcheck, build/enginecheck, build/appcheck, build/updatecheck, build/panelshot, $APP"
+echo "built: build/hourglow-cli, build/solarcheck, build/modelcheck, build/enginecheck, build/importcheck, build/appcheck, build/updatecheck, build/panelshot, $APP"

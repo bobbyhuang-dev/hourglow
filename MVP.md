@@ -121,8 +121,9 @@ Slot = {
 }
 
 Trigger =
-  | clock  { hour: Int, minute: Int }
-  | solar  { event: sunrise | sunset, offsetMinutes: Int }   // offset 可负
+  | clock      { hour: Int, minute: Int }
+  | solar      { event: sunrise | sunset, offsetMinutes: Int }   // offset 可负
+  | solarPhase { phase: sunrise | day | sunset | night, index: Int, count: Int }
 
 Wallpaper =
   | aerial { assetID: String }
@@ -147,6 +148,10 @@ Wallpaper =
 5. **日出日落** —— `CLLocationManager` 取坐标后本地计算（NOAA 太阳位置算法），不联网；
    拒绝定位权限时回退为手填经纬度
 6. **杂项** —— 全局暂停 / 开机自启（`SMAppService.mainApp`）/ 内建手动与自动更新
+7. **天光分段导入** —— 选一个文件夹，按文件名归入日出 / 白昼 / 日落 / 夜晚
+   （也认 morning / evening、按段分的子目录，以及 24 Hour Wallpaper 的 `.sundialScene`），
+   每段按张数均分到当天的航海晨光 → 日出后 → 日落前 → 民用黄昏窗口。
+   存的是「第几张 / 共几张」，不是写死钟点，所以张数和季节都会自己跟上。
 
 ### 手动改壁纸的语义
 
@@ -177,7 +182,7 @@ Wallpaper =
 - 跟随系统亮暗模式的触发器
 - 天气、地理位置、Focus 模式触发
 - 锁屏壁纸
-- 配置导入导出 / iCloud 同步
+- 配置导入导出 / iCloud 同步（壁纸组文件夹导入已做，这里指整份 schedule.json）
 
 ---
 

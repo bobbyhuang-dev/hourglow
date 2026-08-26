@@ -318,6 +318,25 @@ extension View {
     }
 }
 
+// MARK: - 经纬度
+
+/// 经纬度输入框。固定宽度，等宽数字 —— 两个框并排时数字不会因为位数不同而跳。
+struct CoordinateField: View {
+    @Binding var text: String
+
+    var body: some View {
+        TextField("", text: $text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12).monospacedDigit())
+            .multilineTextAlignment(.trailing)
+            .frame(width: 62)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(.quaternary.opacity(0.7),
+                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+}
+
 // MARK: - 时刻格式
 
 enum Clock {

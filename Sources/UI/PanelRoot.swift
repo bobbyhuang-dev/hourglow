@@ -1,18 +1,20 @@
 import SwiftUI
 
 /// 面板里的一页。层级只有两层深：时间轴 → 时段 → 选壁纸。
-/// 设置与时段并排，都是从时间轴推进一层。
+/// 设置、地区与时段并排，都是从时间轴推进一层。
 enum Page: Equatable {
     case timeline
     case slot(UUID)
     case picker(UUID)
     case settings
+    case place
 
     var depth: Int {
         switch self {
         case .timeline: return 0
         case .slot:     return 1
         case .settings: return 1
+        case .place:    return 1
         case .picker:   return 2
         }
     }
@@ -27,6 +29,8 @@ struct PanelRoot: View {
     @State private var page: Page = .timeline
     /// 推进还是后退，决定转场从哪一侧进来。
     @State private var forward = true
+    /// 地区页从时间轴或设置进来，返回要回到来的那一页。
+    @State private var placeBack: Page = .timeline
 
     var body: some View {
         ZStack {
@@ -42,6 +46,9 @@ struct PanelRoot: View {
                     .transition(slide)
             case .settings:
                 SettingsPage(open: navigate)
+                    .transition(slide)
+            case .place:
+                PlacePage(open: navigate, backPage: placeBack)
                     .transition(slide)
             }
         }
@@ -63,7 +70,7 @@ struct PanelRoot: View {
                 }
             case .slot(let id), .picker(let id):
                 if !model.canContinueEditing(id) { navigate(.timeline) }
-            case .settings:
+            case .settings, .place:
                 break
             }
         }
@@ -78,7 +85,14 @@ struct PanelRoot: View {
 
     /// 回到时间轴就等于结束这次编辑：没点「应用」的改动到此为止。
     private func navigate(_ target: Page) {
-        forward = target.depth > page.depth
+        if target == .place {
+            placeBack = page == .place ? placeBack : page
+            forward = true
+        } else if page == .place {
+            forward = false
+        } else {
+            forward = target.depth > page.depth
+        }
         if target == .timeline { model.endEditing() }
         page = target
     }

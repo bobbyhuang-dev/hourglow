@@ -2,6 +2,7 @@ import AppKit
 import CoreLocation
 import Observation
 import ServiceManagement
+import UniformTypeIdentifiers
 
 /// UI 与引擎之间唯一的一层。
 ///
@@ -190,7 +191,19 @@ final class AppModel {
     /// 有 solar 时段却没有坐标，这些段会被整个跳过，得说一声。
     var needsCoordinate: Bool {
         schedule.effectiveCoordinate == nil
-            && schedule.slots.contains { if case .solar = $0.trigger { return $0.enabled } else { return false } }
+            && schedule.slots.contains { $0.enabled && $0.trigger.dependsOnSun }
+    }
+
+    /// 坐标有、但今天算不出日出日落（极圈的极昼极夜）。
+    ///
+    /// 导入一套壁纸后整张表都是天光分段，这时一段都排不上，壁纸会一动不动地
+    /// 停几个星期。`needsCoordinate` 盖不住它 —— 坐标是有的，是太阳不配合。
+    var solarUnavailable: Bool {
+        guard let coordinate = schedule.effectiveCoordinate else { return false }
+        guard schedule.slots.contains(where: { $0.enabled && $0.trigger.dependsOnSun }) else {
+            return false
+        }
+        return Solar.events(on: Date(), at: coordinate) == nil
     }
 
     // MARK: - 编辑（草稿）
@@ -451,14 +464,42 @@ final class AppModel {
 
     /// 坐标从哪来的。三条路：手填/定位写下的 > 时区推断 > 没有。
     var coordinateSource: String {
-        if schedule.location != nil { return "手动设置" }
+        if let location = schedule.location {
+            if let name = location.name, !name.isEmpty { return name }
+            return "手动设置"
+        }
         return schedule.effectiveCoordinate == nil ? "无" : "由时区推断（\(TimeZone.current.identifier)）"
+    }
+
+    /// 地点页顶上那一行：有名字用名字，否则是坐标或时区。
+    var placeLabel: String {
+        if let location = schedule.location {
+            if let name = location.name, !name.isEmpty { return name }
+            return String(format: "%.4f, %.4f", location.latitude, location.longitude)
+        }
+        if schedule.effectiveCoordinate != nil {
+            return "跟随系统时区（\(TimeZone.current.identifier)）"
+        }
+        return "没有坐标"
+    }
+
+    /// 时间轴右上角那颗胶囊：尽量短，满了就截。
+    var placeChipLabel: String {
+        if let name = schedule.location?.name, !name.isEmpty { return name }
+        if schedule.location != nil { return "自定义" }
+        if schedule.effectiveCoordinate != nil { return "时区" }
+        return "选择地区"
     }
 
     /// 今天的日出日落。设置页用它证明坐标是对的 —— 数字对不对，本地人一眼就知道。
     var solarToday: (sunrise: Date, sunset: Date)? {
         guard let coordinate = schedule.effectiveCoordinate else { return nil }
         return Solar.times(on: Date(), at: coordinate)
+    }
+
+    var solarEventsToday: Solar.Events? {
+        guard let coordinate = schedule.effectiveCoordinate else { return nil }
+        return Solar.events(on: Date(), at: coordinate)
     }
 
     /// 向系统要一次坐标。拿到就写进配置，从此不再依赖时区推断。
@@ -471,9 +512,24 @@ final class AppModel {
                 switch outcome {
                 case .coordinate(let coordinate):
                     model.locating = .idle
+                    // 先把刚拿到的精确坐标写下去。反查只是为了给它起个看得懂的名字，
+                    // 不能拿反查回来的行政区中心点替换掉它 —— 大城市能差几十公里，
+                    // 而一次定位授权换来的就是这几十公里的精度。
                     model.setManualLocation(coordinate)
                     model.show(String(format: "已定位到 %.4f, %.4f",
                                       coordinate.latitude, coordinate.longitude))
+                    Task { @MainActor [weak model] in
+                        let loc = CLLocation(latitude: coordinate.latitude,
+                                             longitude: coordinate.longitude)
+                        guard let city = await PlaceSearch.reverse(loc), let model else { return }
+                        // 期间用户可能又选了别的地方，别把人家的选择盖回去。
+                        guard model.schedule.location?.latitude == coordinate.latitude,
+                              model.schedule.location?.longitude == coordinate.longitude else { return }
+                        var named = coordinate
+                        named.name = city.name
+                        model.setManualLocation(named)
+                        model.show("已定位到 \(city.name)")
+                    }
                 case .denied:
                     model.locating = .denied
                 case .failed(let reason):
@@ -489,6 +545,105 @@ final class AppModel {
         var updated = schedule
         updated.location = coordinate
         return commit(updated)
+    }
+
+    @discardableResult
+    func setPlace(_ city: City) -> Bool {
+        setManualLocation(city.asCoordinate)
+    }
+
+    // MARK: - 导入
+
+    /// 用一组图片替换当前时间轴。
+    ///
+    /// 菜单栏面板一失焦就收起：从 ⋯ 菜单里立刻 `runModal`，对话框会被一起取消，
+    /// 看起来像「不能导入」。等这一轮 UI 收完、临时把 app 变成普通前台，
+    /// 选文件夹、一组图片或 `.sundialScene` 都能点「导入」。
+    func importSceneFromPanel() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            AppModel.shared.presentImportPanel()
+        }
+    }
+
+    func importScene(from url: URL) {
+        importScene(from: [url])
+    }
+
+    /// 导入会整体替换时间轴，而且没有撤销。素材拷贝放到后台：24HW 一套几百 MB，
+    /// 在主线程上拷会把菜单栏 app 卡住。
+    func importScene(from urls: [URL]) {
+        endEditing()
+        guard confirmReplace() else { return }
+        let current = schedule
+        Task {
+            do {
+                let outcome = try await Task.detached(priority: .userInitiated) {
+                    try SceneImport.apply(urls: urls, to: current)
+                }.value
+                guard commit(outcome.schedule) else { return }
+                var text = "已导入 \(outcome.schedule.slots.count) 张，按当天日出日落均分。"
+                if !outcome.skipped.isEmpty {
+                    text += "\n\(outcome.skipped.count) 张认不出是哪一段，没有收进来："
+                    text += "\n" + outcome.skipped.prefix(6).map(\.lastPathComponent)
+                        .joined(separator: "、")
+                    if outcome.skipped.count > 6 { text += " …" }
+                }
+                show("已导入 \(outcome.schedule.slots.count) 张"
+                     + (outcome.skipped.isEmpty ? "" : "，跳过 \(outcome.skipped.count) 张"))
+                announceImport(success: true, text: text)
+            } catch {
+                show("导入失败: \(error.localizedDescription)")
+                announceImport(success: false, text: error.localizedDescription)
+            }
+        }
+    }
+
+    /// 时间轴是整体替换的，问一句再动。面板此时已经收起，只能用对话框。
+    private func confirmReplace() -> Bool {
+        guard !schedule.slots.isEmpty else { return true }
+        let alert = NSAlert()
+        alert.messageText = "替换整条时间轴？"
+        alert.informativeText = "现在的 \(schedule.slots.count) 个时段会被导入的这一套取代，无法撤销。"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "替换")
+        alert.addButton(withTitle: "取消")
+        NSApp.activate(ignoringOtherApps: true)
+        return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func presentImportPanel() {
+        let previous = NSApp.activationPolicy()
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
+        defer { NSApp.setActivationPolicy(previous) }
+
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = true
+        panel.canCreateDirectories = false
+        panel.treatsFilePackagesAsDirectories = true
+        var types: [UTType] = [.folder, .image]
+        if let scene = UTType(filenameExtension: "sundialScene") {
+            types.append(scene)
+        }
+        panel.allowedContentTypes = types
+        panel.prompt = "导入"
+        panel.message = "选一个文件夹、一组图片，或 24 Hour Wallpaper 的 .sundialScene"
+
+        guard panel.runModal() == .OK else { return }
+        importScene(from: panel.urls)
+    }
+
+    /// 面板此时已经收起，提示条看不见，用对话框把结果说清楚。
+    private func announceImport(success: Bool, text: String) {
+        let alert = NSAlert()
+        alert.messageText = success ? "已导入" : "导入失败"
+        alert.informativeText = text
+        alert.alertStyle = success ? .informational : .warning
+        alert.addButton(withTitle: "好")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
     }
 
     // MARK: - 操作

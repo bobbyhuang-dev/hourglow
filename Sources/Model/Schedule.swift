@@ -2,9 +2,33 @@ import Foundation
 
 // MARK: - Coordinate
 
-struct Coordinate: Codable, Equatable {
+struct Coordinate: Codable, Equatable, Hashable {
     var latitude: Double
     var longitude: Double
+    /// 选地点时记下的城市名。旧配置没有这一项，解码为 nil。
+    var name: String? = nil
+
+    private enum Key: String, CodingKey { case latitude, longitude, name }
+
+    init(latitude: Double, longitude: Double, name: String? = nil) {
+        self.latitude = latitude
+        self.longitude = longitude
+        self.name = name
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Key.self)
+        latitude = try c.decode(Double.self, forKey: .latitude)
+        longitude = try c.decode(Double.self, forKey: .longitude)
+        name = try c.decodeIfPresent(String.self, forKey: .name)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: Key.self)
+        try c.encode(latitude, forKey: .latitude)
+        try c.encode(longitude, forKey: .longitude)
+        try c.encodeIfPresent(name, forKey: .name)
+    }
 }
 
 // MARK: - Trigger
@@ -13,16 +37,41 @@ enum SolarEvent: String, Codable {
     case sunrise, sunset
 }
 
+/// 一天四段天光。导入一组壁纸时按文件名归入其中一段，再按张数均分。
+enum DayPhase: String, Codable, CaseIterable {
+    case sunrise, day, sunset, night
+
+    var name: String {
+        switch self {
+        case .sunrise: return "日出"
+        case .day:     return "白昼"
+        case .sunset:  return "日落"
+        case .night:   return "夜晚"
+        }
+    }
+}
+
 /// 一个时段的触发条件。
 enum Trigger: Equatable {
     /// 固定时刻，本地时区。
     case clock(hour: Int, minute: Int)
     /// 相对日出/日落，`offsetMinutes` 可负（提前）。
     case solar(event: SolarEvent, offsetMinutes: Int)
+    /// 天光分段：把当天的一段太阳窗口按 `count` 等分，取第 `index` 张（从 0 起）。
+    /// 存的是「第几张 / 共几张」，不是写死的钟点，所以张数和季节都会自己跟上。
+    case solarPhase(phase: DayPhase, index: Int, count: Int)
+
+    /// 求值需要坐标的触发器。
+    var dependsOnSun: Bool {
+        switch self {
+        case .clock: return false
+        case .solar, .solarPhase: return true
+        }
+    }
 }
 
 extension Trigger: Codable {
-    private enum Key: String, CodingKey { case type, hour, minute, event, offsetMinutes }
+    private enum Key: String, CodingKey { case type, hour, minute, event, offsetMinutes, phase, index, count }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Key.self)
@@ -33,6 +82,17 @@ extension Trigger: Codable {
         case "solar":
             self = .solar(event: try c.decode(SolarEvent.self, forKey: .event),
                           offsetMinutes: try c.decodeIfPresent(Int.self, forKey: .offsetMinutes) ?? 0)
+        case "solarPhase":
+            let count = try c.decode(Int.self, forKey: .count)
+            let index = try c.decode(Int.self, forKey: .index)
+            if count <= 0 || index < 0 || index >= count {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .index, in: c,
+                    debugDescription: "solarPhase 的 index/count 不合法: \(index)/\(count)")
+            }
+            self = .solarPhase(phase: try c.decode(DayPhase.self, forKey: .phase),
+                               index: index,
+                               count: count)
         case let other:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: c, debugDescription: "未知的 trigger 类型: \(other)")
@@ -50,6 +110,11 @@ extension Trigger: Codable {
             try c.encode("solar", forKey: .type)
             try c.encode(e, forKey: .event)
             try c.encode(off, forKey: .offsetMinutes)
+        case .solarPhase(let phase, let index, let count):
+            try c.encode("solarPhase", forKey: .type)
+            try c.encode(phase, forKey: .phase)
+            try c.encode(index, forKey: .index)
+            try c.encode(count, forKey: .count)
         }
     }
 }
@@ -63,6 +128,8 @@ extension Trigger: CustomStringConvertible {
             let name = e == .sunrise ? "日出" : "日落"
             if off == 0 { return name }
             return off > 0 ? "\(name)后\(off)分" : "\(name)前\(-off)分"
+        case .solarPhase(let phase, let index, let count):
+            return "\(phase.name) \(index + 1)/\(count)"
         }
     }
 }

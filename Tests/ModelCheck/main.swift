@@ -129,6 +129,109 @@ check(firstRun.slots.map(\.wallpaper) == [
 check((try? Store.load())?.slots.map(\.id) == firstRun.slots.map(\.id),
       "第二次读回来的 slot ID 与首次写入的一致")
 
+check(Cities.lookup("深圳")?.isChina == true, "深圳归入中国")
+// 子串兜底会让一个字母命中到地球另一边（lookup("a") → Abidjan），打错字就被静默设错地方。
+check(Cities.lookup("a") == nil, "一个字母不做模糊兜底")
+check(Cities.lookup("深")?.name == "深圳", "从头对上的仍然算命中")
+check(Cities.lookup("东京")?.isChina == false, "东京不归入中国")
+check(Cities.lookup("shenzhen")?.name == "深圳", "拼音能搜到深圳")
+
+// MARK: - 天光分段
+
+let shenzhen = Coordinate(latitude: 22.543, longitude: 114.058, name: "深圳")
+let solstice = localDate("2026-12-21 12:00", calendar: calendar)
+guard let windows = TimeMap.windows(on: solstice, coordinate: shenzhen, calendar: calendar) else {
+    check(false, "冬至能算出天光窗口")
+    fatalError("no windows")
+}
+check(windows.sunrise.start < windows.sunrise.end, "日出窗口有长度")
+check(windows.sunrise.end == windows.day.start, "日出窗口接到白昼")
+check(windows.day.end == windows.sunset.start, "白昼接到日落")
+check(windows.sunset.end == windows.night.start, "日落接到夜晚")
+check(windows.night.end > windows.night.start, "夜晚窗口跨过午夜仍有长度")
+
+let three = TimeMap.fireDate(phase: .sunrise, index: 0, count: 3,
+                             on: solstice, coordinate: shenzhen, calendar: calendar)
+let five = TimeMap.fireDate(phase: .sunrise, index: 0, count: 5,
+                            on: solstice, coordinate: shenzhen, calendar: calendar)
+check(three == five, "3 张和 5 张日出的第一张落在同一窗口起点")
+
+let sunriseLast3 = TimeMap.fireDate(phase: .sunrise, index: 2, count: 3,
+                                    on: solstice, coordinate: shenzhen, calendar: calendar)
+let sunriseMid3 = TimeMap.fireDate(phase: .sunrise, index: 1, count: 3,
+                                   on: solstice, coordinate: shenzhen, calendar: calendar)
+if let a = three, let b = sunriseMid3, let c = sunriseLast3 {
+    let step = b.timeIntervalSince(a)
+    check(abs(c.timeIntervalSince(b) - step) < 1, "同一段内等分")
+    check(c < windows.sunrise.end, "最后一张仍在窗口内，不会顶到下一段")
+} else {
+    check(false, "三张日出都能算出触发时刻")
+}
+
+let nightLast = TimeMap.fireDate(phase: .night, index: 2, count: 3,
+                                 on: solstice, coordinate: shenzhen, calendar: calendar)
+if let nightLast {
+    check(!calendar.isDate(nightLast, inSameDayAs: solstice)
+          || nightLast >= windows.night.start,
+          "夜晚最后几张可以落在次日凌晨")
+} else {
+    check(false, "夜晚最后一张能算出来")
+}
+
+// MARK: - 高纬：晨光 / 黄昏根本不存在的那几天
+//
+// 太阳掉不到 −12°/−6° 时 `Solar.events` 给的是 nil。曾经回退成日出 / 日落本身，
+// 于是「晨光到日出」长度为 0，被 max(_, 60) 撑成 60 秒 —— 一段三张壁纸
+// 挤在 20 秒里连着刷过去，还连着 killall 三次 WallpaperAgent。
+
+var arctic = Calendar(identifier: .gregorian)
+arctic.timeZone = TimeZone(identifier: "Europe/Oslo")!
+let tromso = Coordinate(latitude: 69.65, longitude: 18.96, name: "Tromsø")
+let august = localDate("2026-08-20 12:00", calendar: arctic)
+let arcticEvents = Solar.events(on: august, at: tromso, calendar: arctic)
+check(arcticEvents?.nauticalDawn == nil, "特罗姆瑟 8 月 20 日没有航海晨光")
+if let arcticWindows = TimeMap.windows(on: august, coordinate: tromso, calendar: arctic) {
+    let span = arcticWindows.sunrise.end.timeIntervalSince(arcticWindows.sunrise.start)
+    check(span > 30 * 60, "算不出晨光时按名义时长兜底，日出段不会缩成几十秒")
+    let first = TimeMap.fireDate(phase: .sunrise, index: 0, count: 3,
+                                 on: august, coordinate: tromso, calendar: arctic)
+    let second = TimeMap.fireDate(phase: .sunrise, index: 1, count: 3,
+                                  on: august, coordinate: tromso, calendar: arctic)
+    if let first, let second {
+        check(second.timeIntervalSince(first) > 5 * 60, "三张日出彼此至少隔几分钟")
+    } else {
+        check(false, "兜底之后仍能算出触发时刻")
+    }
+    check(arcticWindows.day.start < arcticWindows.day.end, "白昼窗口没有被兜底挤成负的")
+    check(arcticWindows.night.start < arcticWindows.night.end, "夜晚窗口没有被兜底挤成负的")
+} else {
+    check(false, "特罗姆瑟 8 月能算出天光窗口")
+}
+
+let midnightSun = localDate("2026-06-21 12:00", calendar: arctic)
+check(TimeMap.windows(on: midnightSun, coordinate: tromso, calendar: arctic) == nil,
+      "极昼那天算不出窗口，天光时段整体跳过")
+
+let phaseSlot = Slot(trigger: .solarPhase(phase: .sunset, index: 1, count: 3),
+                     wallpaper: .image(path: "/sunset_2.heic"))
+let phaseSchedule = Schedule(slots: [phaseSlot], location: shenzhen)
+let dusk = localDate("2026-12-21 23:00", calendar: calendar)
+let phaseResolution = phaseSchedule.resolve(at: dusk, calendar: calendar)
+check(phaseResolution?.active.id == phaseSlot.id, "solarPhase 能被求值")
+check((phaseResolution?.next?.at ?? .distantPast) > dusk, "solarPhase 能找到下一次切换")
+
+do {
+    let encoded = try JSONEncoder().encode(phaseSlot.trigger)
+    let decoded = try JSONDecoder().decode(Trigger.self, from: encoded)
+    check(decoded == phaseSlot.trigger, "solarPhase 可以 JSON 往返")
+    let legacy = Data(#"{"type":"solarPhase","phase":"sunrise","index":0,"count":3}"#.utf8)
+    let loaded = try JSONDecoder().decode(Trigger.self, from: legacy)
+    check(loaded == .solarPhase(phase: .sunrise, index: 0, count: 3),
+          "手写的 solarPhase JSON 能解码")
+} catch {
+    check(false, "solarPhase Codable：\(error)")
+}
+
 if failures > 0 {
     FileHandle.standardError.write(Data("\n\(failures) 项测试失败\n".utf8))
     exit(1)

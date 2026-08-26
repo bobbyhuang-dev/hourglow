@@ -20,14 +20,18 @@ under 5 MB.
 
 ## Features
 
-- **Two kinds of trigger** — a fixed clock time, or relative to sunrise/sunset with a
-  signed offset (e.g. "30 minutes before sunset")
+- **Three kinds of trigger** — a fixed clock time, relative to sunrise/sunset with a
+  signed offset (e.g. "30 minutes before sunset"), or a solar-phase slice that
+  evenly divides today's twilight / day / night window by how many frames that
+  phase has (the 24 Hour Wallpaper model)
 - **Two wallpaper sources** — any of the 156 system aerials, or a local image file
 - **Any number of slots** — the Tahoe four are just the preset written on first launch;
   edit or delete them freely
 - **Sun times computed locally** — the NOAA solar position algorithm, no network. Coordinates
-  come from a one-shot system location fix or a latitude/longitude you type in; with neither,
-  they are inferred from your time zone, which needs no permission at all
+  come from a one-shot system location fix, a city you pick, or a latitude/longitude you
+  type in; with none of those, they are inferred from your time zone, which needs no
+  permission at all. China is a single `Asia/Shanghai` zone, so picking Shenzhen vs Shanghai
+  actually changes sunrise by tens of minutes.
 - **No polling** — the timer is scheduled directly at the next trigger point. Sleep/wake,
   system clock changes, time zone changes and day rollover each have their own notification,
   so sleeping through a trigger means the wallpaper catches up on wake
@@ -42,6 +46,12 @@ under 5 MB.
   verify the download and code signature, install it in place, and relaunch itself
 - **Human-readable JSON config** — edit `schedule.json` by hand and the engine follows
   immediately
+- **Import a 24-hour wallpaper set** — files named with sunrise / morning / day / sunset /
+  evening / night (or `01_sunrise_1.heic`, or a 24 Hour Wallpaper `.sundialScene`), or sorted
+  into per-phase subfolders (`sunrise/1.jpg`), become a full-day timeline that tracks local
+  sun times. Each phase can have a different number of frames. Importing replaces the whole
+  timeline and asks first; files whose phase cannot be determined are left out and reported
+  back to you.
 
 ## Download
 
@@ -104,7 +114,9 @@ Everything lands in `build/`. Every push is built and checked the same way by Gi
 ./build/hourglow-cli list                # the timeline, with today's actual times per slot
 ./build/hourglow-cli catalog Space       # list system aerials (with download state and size)
 ./build/hourglow-cli simulate 2026-12-21 # time travel: print every switch across that day
-./build/hourglow-cli solar               # today's sunrise and sunset
+./build/hourglow-cli solar               # today's sunrise, sunset, nautical dawn, civil dusk
+./build/hourglow-cli location 深圳       # set coordinates by city name
+./build/hourglow-cli import ~/Pictures/zhangjiajie   # folder of stills → solar-phase timeline
 ./build/hourglow-cli apply --dry-run     # show what would be written, without writing
 ./build/hourglow-cli run                 # run the engine in the foreground
 ./build/hourglow-cli agent install       # register as a LaunchAgent, survives reboot (headless use)
@@ -154,6 +166,12 @@ on whether a new trigger boundary has been crossed:
       "enabled": true,
       "trigger": { "type": "clock", "hour": 9, "minute": 0 },
       "wallpaper": { "type": "image", "path": "/Users/you/Pictures/noon.heic" }
+    },
+    {
+      "id": "…",
+      "enabled": true,
+      "trigger": { "type": "solarPhase", "phase": "sunrise", "index": 0, "count": 3 },
+      "wallpaper": { "type": "image", "path": "/Users/you/Library/Application Support/HourGlow/Scenes/zhangjiajie/sunrise_1.heic" }
     }
   ]
 }
@@ -170,8 +188,9 @@ There is no XCTest. Verification runs through a few separately compiled check bi
 offline, none of which touch your real wallpaper:
 
 ```bash
-./build/modelcheck             # resolution: midnight wraparound, solar triggers, Codable compatibility
+./build/modelcheck             # resolution: midnight wraparound, solar triggers, solar-phase windows, Codable compatibility
 ./build/enginecheck            # engine: the assert-vs-stand-down matrix, and timer scheduling
+./build/importcheck            # import: 24 Hour Wallpaper filenames, multi-resolution scenes, even split
 ./build/appcheck               # app state: drafts, save boundaries, external config conflicts
 ./build/updatecheck            # updater: SemVer ordering, Release parsing, SHA-256
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
@@ -181,7 +200,7 @@ python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephem
 
 ## Status
 
-**1.1 development — built-in manual and automatic updates are implemented.** The 1.0 MVP
+**1.2 development — 24 Hour Wallpaper import and solar-phase scheduling.** The 1.0 MVP
 (logic layer, scheduling engine, menu bar UI, launch at login, precise location and packaging)
 is complete, and the acceptance checklist in section 9 of `MVP.md` has been run through.
 The spec lives in `MVP.md`, progress and implementation notes in `TODO.md` — both are written

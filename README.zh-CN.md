@@ -17,11 +17,13 @@ macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 
 
 ## 功能
 
-- **两种触发条件** —— 固定时刻，或相对日出/日落（偏移可正可负，如「日落前 30 分」）
+- **三种触发条件** —— 固定时刻，相对日出/日落（偏移可正可负，如「日落前 30 分」），
+  或天光分段：把当天的晨昏/白昼/夜晚窗口按这一段有几张图等分（24 Hour Wallpaper 那套）
 - **两种壁纸来源** —— 系统自带的 156 张 aerial 动态壁纸，或本地图片
 - **时段数量不限** —— Tahoe 那四张只是首次启动写入的预设，随便改、随便删
 - **日出日落本地计算** —— NOAA 太阳位置算法，不联网。坐标可以向系统取一次精确定位，
-  也可以手填经纬度；两者都没有时，按系统时区反查一个近似坐标，免权限也能用
+  也可以搜城市或手填经纬度；都没有时，按系统时区反查一个近似坐标，免权限也能用。
+  中国全境都是 `Asia/Shanghai`，选深圳还是上海，日出能差十几到四十分钟
 - **不轮询** —— 定时器直接排到下一个触发点；睡眠唤醒、系统时钟变更、时区变更、跨日
   各有对应的系统通知，合盖睡过了某个触发时刻，醒来会补切
 - **不跟你抢** —— 你自己去系统设置里换了一张，HourGlow 不会在下一次原地求值时无声抹掉它；
@@ -32,6 +34,10 @@ macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 
 - **内建更新** —— 可以手动检查，也可以每天自动检查 GitHub Releases；下载后校验哈希与
   代码签名，原位安装并自行重启
 - **配置是人类可读的 JSON** —— 手改 `schedule.json` 后引擎立刻跟上
+- **导入 24 小时壁纸组** —— 文件名带 sunrise / morning / day / sunset / evening / night
+  （或 `01_sunrise_1.heic`，或 24 Hour Wallpaper 的 `.sundialScene`），也可以按段分子目录
+  （`sunrise/1.jpg`），会编成一条跟着当地太阳走的全天时间轴。四段张数可以各不相同。
+  导入会整体替换现有时间轴，动手前会问一次；认不出属于哪一段的文件不收，但会报给你
 
 ## 下载
 
@@ -89,7 +95,9 @@ open build/HourGlow.app
 ./build/hourglow-cli list                # 时间轴与今天各段的实际时刻
 ./build/hourglow-cli catalog Space       # 列出系统 aerial（含下载状态与体积）
 ./build/hourglow-cli simulate 2026-12-21 # 时间旅行：打印该日全天的每一次切换
-./build/hourglow-cli solar               # 今天的日出日落
+./build/hourglow-cli solar               # 今天的日出、日落、航海晨光、民用黄昏
+./build/hourglow-cli location 深圳       # 按城市名设坐标
+./build/hourglow-cli import ~/Pictures/zhangjiajie   # 一组静帧 → 天光分段时间轴
 ./build/hourglow-cli apply --dry-run     # 看会写什么，不真写
 ./build/hourglow-cli run                 # 前台常驻引擎
 ./build/hourglow-cli agent install       # 注册成 LaunchAgent，重启后仍然活着（无头场合用）
@@ -134,6 +142,12 @@ build/HourGlow.app/Contents/MacOS/HourGlow --locate              # 定位一次�
       "enabled": true,
       "trigger": { "type": "clock", "hour": 9, "minute": 0 },
       "wallpaper": { "type": "image", "path": "/Users/you/Pictures/noon.heic" }
+    },
+    {
+      "id": "…",
+      "enabled": true,
+      "trigger": { "type": "solarPhase", "phase": "sunrise", "index": 0, "count": 3 },
+      "wallpaper": { "type": "image", "path": "/Users/you/Library/Application Support/HourGlow/Scenes/zhangjiajie/sunrise_1.heic" }
     }
   ]
 }
@@ -148,8 +162,9 @@ LaunchAgent 日志 `~/Library/Logs/HourGlow.log`。整个配置目录可以用 `
 没有 XCTest。验证靠几个独立编译的靶子，全部离线、不碰真实壁纸：
 
 ```bash
-./build/modelcheck             # 求值：跨午夜回绕、solar 触发、Codable 兼容
+./build/modelcheck             # 求值：跨午夜回绕、solar 触发、天光分段、Codable 兼容
 ./build/enginecheck            # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
+./build/importcheck            # 导入：24 Hour Wallpaper 文件名、多分辨率、均分
 ./build/appcheck               # 应用状态：草稿、保存边界、外部配置冲突
 ./build/updatecheck            # 更新器：SemVer 排序、Release 解析、SHA-256
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
@@ -159,7 +174,7 @@ python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例�
 
 ## 状态
 
-**1.1 开发中 —— 手动更新与自动更新已经实现。** 1.0 的 MVP（逻辑层、调度引擎、菜单栏界面、
+**1.2 开发中 —— 24 Hour Wallpaper 导入与天光分段调度。** 1.0 的 MVP（逻辑层、调度引擎、菜单栏界面、
 开机自启、精确定位、打包收尾）已经完成，`MVP.md` 第 9 节的验收清单跑过一遍。
 规格见 `MVP.md`，进度与实现笔记见 `TODO.md`。
 

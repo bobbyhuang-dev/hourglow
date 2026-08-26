@@ -12,10 +12,36 @@ import Foundation
 /// 两者都够用，迭代只是让它更稳。
 enum Solar {
 
+    /// 官方日出日落：太阳几何中心到地平线 −50′（16′ 日面半径 + 34′ 大气折射）。
+    static let officialZenith = 90.833
+    /// 民用晨昏：太阳中心 −6°。
+    static let civilZenith = 96.0
+    /// 航海晨昏：太阳中心 −12°。
+    static let nauticalZenith = 102.0
+
+    /// 一天里天光分段要用的四个时刻。
+    ///
+    /// 航海晨光 / 民用黄昏在高纬可能不存在（太阳掉不到那么深），此时为 nil。
+    /// 不要在这里回退到日出 / 日落 —— 那会让「晨光到日出」这段长度变成 0，
+    /// 天光分段就把一整段壁纸挤进几十秒里放完（`TimeMap` 里有对应的名义时长兜底）。
+    struct Events {
+        var nauticalDawn: Date?
+        var sunrise: Date
+        var sunset: Date
+        var civilDusk: Date?
+    }
+
     /// 指定日期、指定坐标的日出与日落。极昼或极夜返回 nil。
     static func times(on day: Date,
                       at coord: Coordinate,
                       calendar: Calendar = .current) -> (sunrise: Date, sunset: Date)? {
+        guard let events = events(on: day, at: coord, calendar: calendar) else { return nil }
+        return (events.sunrise, events.sunset)
+    }
+
+    static func events(on day: Date,
+                       at coord: Coordinate,
+                       calendar: Calendar = .current) -> Events? {
 
         guard let midnight = calendar.date(bySettingHour: 0, minute: 0, second: 0, of: day)
         else { return nil }
@@ -29,12 +55,11 @@ enum Solar {
             return midnight.addingTimeInterval(minutes * 60)
         }
 
-        /// 日出时角，单位度。极昼极夜时为 nil。
-        func hourAngle(estimatedAt instant: Date) -> Double? {
+        /// 日出时角，单位度。太阳达不到该天顶距时（极昼极夜 / 不够深的晨昏）为 nil。
+        func hourAngle(estimatedAt instant: Date, zenith: Double) -> Double? {
             let declination = parameters(at: instant).declination
             let phi = coord.latitude * .pi / 180
-            // 90.833° 含大气折射与日面半径修正
-            let cosH = cos(90.833 * .pi / 180) / (cos(phi) * cos(declination))
+            let cosH = cos(zenith * .pi / 180) / (cos(phi) * cos(declination))
                      - tan(phi) * tan(declination)
             guard cosH >= -1, cosH <= 1 else { return nil }
             return acos(cosH) * 180 / .pi
@@ -43,23 +68,29 @@ enum Solar {
         var noon = midnight.addingTimeInterval(12 * 3600)
         for _ in 0..<2 { noon = solarNoon(estimatedAt: noon) }
 
-        guard let initialAngle = hourAngle(estimatedAt: noon) else { return nil }
-
-        /// `direction` 为 -1 求日出、+1 求日落。
-        func refine(direction: Double) -> Date? {
+        /// `direction` 为 -1 求升起、+1 求落下。
+        func refine(direction: Double, zenith: Double) -> Date? {
+            guard let initialAngle = hourAngle(estimatedAt: noon, zenith: zenith) else { return nil }
             var event = noon.addingTimeInterval(direction * 4 * initialAngle * 60)
             for _ in 0..<2 {
-                guard let angle = hourAngle(estimatedAt: event) else { return nil }
+                guard let angle = hourAngle(estimatedAt: event, zenith: zenith) else { return nil }
                 event = solarNoon(estimatedAt: event)
                     .addingTimeInterval(direction * 4 * angle * 60)
             }
             return event
         }
 
-        guard let sunrise = refine(direction: -1), let sunset = refine(direction: 1) else {
+        guard let sunrise = refine(direction: -1, zenith: officialZenith),
+              let sunset = refine(direction: 1, zenith: officialZenith) else {
             return nil
         }
-        return (sunrise, sunset)
+
+        return Events(
+            nauticalDawn: refine(direction: -1, zenith: nauticalZenith),
+            sunrise: sunrise,
+            sunset: sunset,
+            civilDusk: refine(direction: 1, zenith: civilZenith)
+        )
     }
 
     static func time(of event: SolarEvent,

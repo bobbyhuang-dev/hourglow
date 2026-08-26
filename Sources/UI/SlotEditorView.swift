@@ -13,6 +13,9 @@ struct SlotPage: View {
     /// 删除要点两下：面板里弹确认框太重，就地把按钮换成「再点一次」。
     @State private var confirmingDelete = false
     @State private var contentHeight: CGFloat = 320
+    /// 这一段本来的天光参数。切成固定时刻之后「天光」那一档就不该消失 ——
+    /// 消失了就再也切不回来，草稿还没应用也回不去。
+    @State private var originalPhase: (phase: DayPhase, index: Int, count: Int)?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -41,7 +44,12 @@ struct SlotPage: View {
         }
         // 页面每次出现都认领一次草稿。从选壁纸页返回时也会走到这里，
         // 但 `beginEditing` 认得同一个 id，不会把半路的改动冲掉。
-        .onAppear { model.beginEditing(slotID) }
+        .onAppear {
+            model.beginEditing(slotID)
+            if case .solarPhase(let phase, let index, let count) = model.editing(slotID)?.trigger {
+                originalPhase = (phase, index, count)
+            }
+        }
     }
 
     // MARK: - 触发
@@ -49,6 +57,9 @@ struct SlotPage: View {
     private func trigger(_ slot: Slot) -> some View {
         PanelSection(title: "触发") {
             Picker("", selection: kindBinding(slot)) {
+                if originalPhase != nil {
+                    Text("天光").tag(TriggerKind.phase)
+                }
                 Text("固定时刻").tag(TriggerKind.clock)
                 Text("日出").tag(TriggerKind.sunrise)
                 Text("日落").tag(TriggerKind.sunset)
@@ -63,6 +74,18 @@ struct SlotPage: View {
                     Spacer()
                     // 底色与留白在 `TimeField` 里，这里只负责摆位置。
                     TimeField(date: clockBinding(slot))
+                }
+            case .solarPhase(let phase, let index, let count):
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("\(phase.name) · 第 \(index + 1) / \(count) 张")
+                        .font(.system(size: 12))
+                    Text(todayLine(slot))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text("按当天航海晨光 / 日出 / 日落 / 民用黄昏均分。张数变了重新导入就会重算。")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             case .solar(let event, let offset):
                 // 与固定时刻那一栏同构：一行里左边是控件、右边是算出来的时刻。
@@ -258,13 +281,14 @@ struct SlotPage: View {
 
     // MARK: - 绑定
 
-    private enum TriggerKind: Hashable { case clock, sunrise, sunset }
+    private enum TriggerKind: Hashable { case clock, sunrise, sunset, phase }
 
     private func kindBinding(_ slot: Slot) -> Binding<TriggerKind> {
         Binding {
             switch slot.trigger {
             case .clock: return .clock
             case .solar(let event, _): return event == .sunrise ? .sunrise : .sunset
+            case .solarPhase: return .phase
             }
         } set: { kind in
             model.editDraft { updated in
@@ -282,6 +306,14 @@ struct SlotPage: View {
                     let offset: Int = { if case .solar(_, let value) = slot.trigger { return value } else { return 0 } }()
                     updated.trigger = .solar(event: kind == .sunrise ? .sunrise : .sunset,
                                              offsetMinutes: offset)
+                case .phase:
+                    // 回到天光：天光段的参数（第几张 / 共几张）是导入时定的，
+                    // 用户在这一页改不出来，所以只能还原成进来时的那一组。
+                    if let originalPhase {
+                        updated.trigger = .solarPhase(phase: originalPhase.phase,
+                                                      index: originalPhase.index,
+                                                      count: originalPhase.count)
+                    }
                 }
             }
         }

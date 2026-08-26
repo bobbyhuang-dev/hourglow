@@ -22,6 +22,14 @@ extension Trigger {
                   let base = Solar.time(of: event, on: day, at: coordinate, calendar: calendar)
             else { return nil }
             return base.addingTimeInterval(Double(offsetMinutes) * 60)
+        case .solarPhase(let phase, let index, let count):
+            guard let coordinate else { return nil }
+            return TimeMap.fireDate(phase: phase,
+                                    index: index,
+                                    count: count,
+                                    on: day,
+                                    coordinate: coordinate,
+                                    calendar: calendar)
         }
     }
 }
@@ -39,7 +47,9 @@ extension Schedule {
         for slot in slots where slot.enabled {
             let anchor: Date
             switch slot.trigger {
-            case .clock:
+            case .clock, .solarPhase:
+                // solarPhase 的触发点都落在当天窗口内（夜晚可跨过午夜），
+                // 用 now 当锚、前后各展开一天就够接到跨午夜的那几张。
                 anchor = now
             case .solar(_, let offsetMinutes):
                 // fireDate 会把相同的偏移加回来；先减掉它，便能找到真正的太阳事件日。

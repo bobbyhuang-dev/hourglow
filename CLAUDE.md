@@ -17,13 +17,14 @@ aerial 动态壁纸或本地图片。Swift 6.3 + SwiftUI，零第三方依赖，
 
 ## 构建与验证
 
-没有 XCTest，也没有 `swift test`。验证靠五个独立编译的「靶子」二进制，全部离线、不碰真实壁纸
+没有 XCTest，也没有 `swift test`。验证靠六个独立编译的「靶子」二进制，全部离线、不碰真实壁纸
 （`panelshot` 除外，它会短暂弹一个窗口）。
 
 ```bash
-./build.sh                    # 一次编出全部：CLI、五个靶子、panelshot、build/HourGlow.app
-./build/modelcheck            # 求值：跨午夜回绕、solar 触发、Codable 兼容
+./build.sh                    # 一次编出全部：CLI、六个靶子、panelshot、build/HourGlow.app
+./build/modelcheck            # 求值：跨午夜回绕、solar 触发、天光分段、Codable 兼容
 ./build/enginecheck           # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
+./build/importcheck           # 导入：文件名与分子目录归类、多分辨率、均分、跳过与清理
 ./build/appcheck              # 应用状态：草稿、保存边界、外部配置冲突
 ./build/updatecheck           # 更新器：SemVer、Release 解析、SHA-256
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
@@ -55,6 +56,8 @@ build/HourGlow.app/Contents/MacOS/HourGlow --locate              # 定位一次�
 ```bash
 ./build/hourglow-cli now                # 当前应生效的壁纸、下次切换、与实际是否一致
 ./build/hourglow-cli simulate 2026-12-21 # 时间旅行：打印该日全天每一次切换
+./build/hourglow-cli import ~/Pictures/zhangjiajie  # 一组静帧 → 天光分段时间轴
+./build/hourglow-cli location 深圳      # 按城市名设坐标
 ./build/hourglow-cli apply --dry-run    # 看会写什么，不真写
 ./build/hourglow-cli run                # 前台常驻引擎，Ctrl-C 退出
 ./build/hourglow-cli status             # 引擎视角：上次写了什么、现在是不是还是那张
@@ -67,7 +70,7 @@ open build/HourGlow.app                 # 菜单栏 app
 
 版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.1.0` / `1`），
 发版流水线用 tag 与 run number 覆盖它们。CI 与发版都在 GitHub Actions 上：
-`.github/workflows/ci.yml` 每次 push / PR 跑一遍构建 + 四个主靶子 + 星历对拍，
+`.github/workflows/ci.yml` 每次 push / PR 跑一遍构建 + 五个主靶子 + 星历对拍，
 `.github/workflows/release.yml` 见到 `v*` tag 就构建、验证、压包、建 Release。
 踩过的坑记在 `TODO.md` 的 M5 一节（runner 版本、`ditto` vs `zip`、Gatekeeper）。
 
@@ -82,7 +85,8 @@ open build/HourGlow.app                 # 菜单栏 app
 
 - `Model/` —— 纯数据与求值。`Schedule.swift` 的 `Trigger`/`Wallpaper` 用手写 `Codable`
   编成扁平 JSON（便于用户手改）。`Resolver.swift` 按每个 slot 的偏移反推基准日再前后各展开一天，
-  跨午夜回绕由此自然成立。`Store.swift` 原子写 `schedule.json`。
+  跨午夜回绕由此自然成立。`TimeMap` 把日出/白昼/日落/夜晚均分到当天的航海晨光→民用黄昏窗口；
+  `SceneImport` 按文件名（认不出时看上级文件夹名）把一组静帧编成 `solarPhase` 时段。`Store.swift` 原子写 `schedule.json`。
 - `System/` —— 与 macOS 打交道。`WallpaperWriter` 读改写 `Index.plist`（保留未知顶层字段、
   写前备份、强制 `linked`、目标一致时跳过写入以免闪屏、写后 `killall WallpaperAgent`）；
   `AerialCatalog` 解析系统的 `entries.json`；`Solar` 是 NOAA 算法。坐标有三条路，
