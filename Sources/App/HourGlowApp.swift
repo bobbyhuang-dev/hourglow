@@ -33,13 +33,23 @@ private struct MenuBarIcon: View {
 /// 引擎要在面板第一次打开之前就跑起来 —— 菜单栏 app 的常态是从不打开面板。
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
+        // 这一句要抢在任何人碰 `Store.load()` 之前（`AppModel.init` 里也有一句兜底，
+        // 谁先跑到都对）：配置文件在不在，是「这次是不是全新安装」的唯一依据。
+        Onboarding.captureFirstRun(
+            configExists: FileManager.default.fileExists(atPath: Store.fileURL.path))
         LoginItemProbe.handleIfNeeded()
+        GuideProbe.handleIfNeeded()
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 定位那条要等系统回调，得让主 run loop 转起来，所以不能在 willFinish 里做。
         LocateProbe.handleIfNeeded()
         AppModel.shared.start()
+        // 引擎先跑起来，指引再出现：全新安装的第一分钟里壁纸就该已经对了，
+        // 指引解释的是「刚才发生了什么、以后在哪儿改」。
+        if Onboarding.shouldPresentOnLaunch {
+            OnboardingWindow.shared.present()
+        }
     }
 }
 
@@ -111,5 +121,45 @@ enum LocateProbe {
             RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.2))
         }
         exit(done ? 0 : 1)
+    }
+}
+
+/// 新手指引的排障入口：
+///
+/// ```
+/// build/HourGlow.app/Contents/MacOS/HourGlow --guide [status|reset|show]
+/// ```
+///
+/// `status` / `reset` 打印完就退出，`show` 不退出 —— 它只是把这一次启动标成「无论
+/// 如何都弹」，好让改完版式直接看效果，不必先把 `schedule.json` 挪走假装全新安装。
+///
+/// 「看过了」存在 `UserDefaults` 里，`HOURGLOW_HOME` 带不走它，所以要一个干净的
+/// 首次启动得两条一起用：
+///
+/// ```
+/// HOURGLOW_HOME=/tmp/hg-guide build/HourGlow.app/Contents/MacOS/HourGlow --guide reset
+/// HOURGLOW_HOME=/tmp/hg-guide build/HourGlow.app/Contents/MacOS/HourGlow
+/// ```
+enum GuideProbe {
+    @MainActor
+    static func handleIfNeeded() {
+        let arguments = CommandLine.arguments
+        guard let index = arguments.firstIndex(of: "--guide") else { return }
+        let action = index + 1 < arguments.count ? arguments[index + 1] : "status"
+
+        switch action {
+        case "show":
+            Onboarding.forcedByFlag = true
+            return          // 继续正常启动，指引会在 didFinishLaunching 里弹出来
+        case "reset":
+            Onboarding.reset()
+        case "status":
+            break
+        default:
+            print("用法: --guide [status|reset|show]")
+            exit(2)
+        }
+        print("新手指引  \(Onboarding.describe())")
+        exit(0)
     }
 }

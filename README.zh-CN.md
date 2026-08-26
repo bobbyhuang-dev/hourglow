@@ -34,6 +34,8 @@ macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 
 - **内建更新** —— 可以手动检查，也可以每天自动检查 GitHub Releases；下载后校验哈希与
   代码签名，原位安装并自行重启
 - **配置是人类可读的 JSON** —— 手改 `schedule.json` 后引擎立刻跟上
+- **第一次打开有指引** —— 五步讲清楚：图标去哪儿了、要授权什么、系统对话框长什么样、
+  位置怎么设（不想给定位就搜城市）、时间轴怎么看。随时可以跳过，⋯ 菜单里还能再打开
 - **导入 24 小时壁纸组** —— 文件名带 sunrise / morning / day / sunset / evening / night
   （或 `01_sunrise_1.heic`，或 24 Hour Wallpaper 的 `.sundialScene`），也可以按段分子目录
   （`sunrise/1.jpg`），会编成一条跟着当地太阳走的全天时间轴。四段张数可以各不相同。
@@ -53,8 +55,10 @@ xattr -dr com.apple.quarantine /Applications/HourGlow.app
 
 或者先双击一次，再去**系统设置 › 隐私与安全性 › 仍要打开**放行。
 
-之后它常驻菜单栏 —— 没有 Dock 图标，也没有窗口。首次启动会写入 Tahoe 四段预设，
-随便改、随便删。想让它重启后自己回来，去设置页（⋯ 菜单）打开**开机自启**。
+之后它常驻菜单栏 —— 没有 Dock 图标，也没有窗口。全新安装第一次打开会弹一份五步指引：
+图标在哪儿、怎么授权定位（不想给就直接搜城市）、开机自启、时间轴怎么看。想跳过随时可以跳，
+⋯ 菜单和设置页都能再打开它。同样是这一次启动，会写入 Tahoe 四段预设，随便改、随便删。
+想让它重启后自己回来，打开**开机自启** —— 指引第三步，或设置页（⋯ 菜单）。
 
 自动更新默认开启。设置页可以关掉、手动检查，或立即安装已经发现的版本。更新会留在当前
 app 所在位置，所以请先把它放进「应用程序」再打开开机自启。
@@ -104,12 +108,17 @@ open build/HourGlow.app
 ```
 
 开机自启与定位问不到 CLI 头上 —— 登录项注册的、定位权限授予的都是「调用者自己的 bundle」，
-而 CLI 是个裸二进制。这两条入口在 app 的可执行文件上，打印完就退出：
+而 CLI 是个裸二进制。新手指引也一样：「看过了」记在 app 自己的 `UserDefaults` 里，
+不在配置目录里。这几条入口都在 app 的可执行文件上：
 
 ```bash
 build/HourGlow.app/Contents/MacOS/HourGlow --login-item status   # status | on | off
 build/HourGlow.app/Contents/MacOS/HourGlow --locate              # 定位一次，只打印不写配置
+build/HourGlow.app/Contents/MacOS/HourGlow --guide status        # 新手指引：status | reset | show
 ```
+
+`--guide status` 打印这次启动会不会弹指引、为什么；`--guide reset` 把「看过了」忘掉；
+`--guide show` 立刻打开一次。
 
 菜单栏 app 与 `hourglow-cli run` 抢同一把单实例锁：先起的那个负责排程，后起的退回从属模式，
 只编辑配置，由对方跟上。
@@ -165,17 +174,18 @@ LaunchAgent 日志 `~/Library/Logs/HourGlow.log`。整个配置目录可以用 `
 ./build/modelcheck             # 求值：跨午夜回绕、solar 触发、天光分段、Codable 兼容
 ./build/enginecheck            # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
 ./build/importcheck            # 导入：24 Hour Wallpaper 文件名、多分辨率、均分
-./build/appcheck               # 应用状态：草稿、保存边界、外部配置冲突
+./build/appcheck               # 应用状态：草稿、保存边界、外部配置冲突、新手指引的弹出规则
 ./build/updatecheck            # 更新器：SemVer 排序、Release 解析、SHA-256
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例，最大偏差 4 秒）
-./build/panelshot ~/Desktop    # 把四个界面画成 PNG，改版式时对照
+./build/panelshot ~/Desktop    # 把各个界面和新手指引五步画成 PNG，改版式时对照
 ```
 
 ## 状态
 
-**1.2 已发布 —— 24 Hour Wallpaper 导入与天光分段调度。** 1.0 的 MVP（逻辑层、调度引擎、菜单栏界面、
-开机自启、精确定位、打包收尾）已经完成，`MVP.md` 第 9 节的验收清单跑过一遍。
+**1.3 已发布 —— 第一次打开有新手指引。** 1.2 带来了 24 Hour Wallpaper 导入与天光分段调度；
+1.0 的 MVP（逻辑层、调度引擎、菜单栏界面、开机自启、精确定位、打包收尾）已经完成，
+`MVP.md` 第 9 节的验收清单跑过一遍。
 规格见 `MVP.md`，进度与实现笔记见 `TODO.md`。
 
 ## 它是怎么改壁纸的

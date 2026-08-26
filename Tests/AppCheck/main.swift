@@ -52,6 +52,36 @@ created.markApplied()
 check(!created.isNew && !created.isDirty && !created.canApply,
       "只有保存成功后新时段才变成已应用")
 
+// MARK: - 新手指引
+
+check(Onboarding.shouldPresent(seenVersion: nil, isFirstRun: true),
+      "全新安装的人第一次启动就看到指引")
+check(!Onboarding.shouldPresent(seenVersion: nil, isFirstRun: false),
+      "配置早就在的老用户升级上来不会被指引拦一道")
+check(!Onboarding.shouldPresent(seenVersion: Onboarding.version, isFirstRun: true),
+      "看过当前这一版就不再自动弹，哪怕配置被清空了")
+check(Onboarding.shouldPresent(seenVersion: Onboarding.version - 1, isFirstRun: false),
+      "指引内容有实质更新时再请他看一次")
+
+check(OnboardingStep.allCases.contains(.place) && OnboardingStep.allCases.contains(.resident),
+      "要用户去开权限的两步（定位、常驻）都在流程里")
+check(OnboardingStep.allCases.allSatisfy { !$0.title.isEmpty && $0.summary.count > 10 },
+      "每一步都有标题，也都有讲得清的正文")
+
+var guide = OnboardingFlow()
+check(guide.isFirst && !guide.isLast && guide.step == .welcome,
+      "指引从「入口在菜单栏」讲起")
+check(guide.caption == "第 1 步 / 共 \(OnboardingStep.allCases.count) 步",
+      "进度按人的数法从 1 数起")
+guide.back()
+check(guide.index == 0, "第一步没有上一步可退")
+for _ in 0..<(OnboardingStep.allCases.count * 2) { guide.advance() }
+check(guide.isLast && guide.step == .done, "一路点「继续」停在最后一步，不会越界")
+guide.back()
+check(!guide.isLast && guide.step == .timeline, "「上一步」退回时间轴那页")
+guide.jump(to: .place)
+check(guide.index == 1 && !guide.isFirst, "panelshot 能直接跳到任意一步")
+
 if failures > 0 {
     FileHandle.standardError.write(Data("\n\(failures) 项应用状态测试失败\n".utf8))
     exit(1)

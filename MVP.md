@@ -152,6 +152,11 @@ Wallpaper =
    （也认 morning / evening、按段分的子目录，以及 24 Hour Wallpaper 的 `.sundialScene`），
    每段按张数均分到当天的航海晨光 → 日出后 → 日落前 → 民用黄昏窗口。
    存的是「第几张 / 共几张」，不是写死钟点，所以张数和季节都会自己跟上。
+8. **新手指引** —— 真·全新安装时自动弹一扇 480 × 566 的独立窗，五步：入口在菜单栏哪儿、
+   位置与定位权限、开机自启与菜单栏许可、时间轴怎么改、一份完成清单。每一步都能当场做完
+   （授权、搜城市、开自启），随时可以跳过，之后从 ⋯ 菜单里的「新手指引」再看。
+   它必须是独立窗口：`MenuBarExtra` 没有「替用户点开面板」的 API，指引长在面板里，
+   就只有已经找到入口的人看得见。
 
 ### 手动改壁纸的语义
 
@@ -207,6 +212,7 @@ Sources/
 ├── App/
 │   ├── HourGlowApp.swift    // @main，MenuBarExtra 场景
 │   ├── AppModel.swift       // UI 与引擎之间唯一的一层，@Observable
+│   ├── Onboarding.swift     // 新手指引的步骤、文案与「谁该看到它」的规则（纯数据）
 │   └── AppUpdater.swift     // GitHub Release 检查、下载、校验与安装交接
 ├── Model/
 │   ├── Schedule.swift       // Slot / Trigger / Wallpaper + Codable
@@ -231,13 +237,16 @@ Sources/
 │   ├── TimelineView.swift   // 主面板
 │   ├── SlotEditorView.swift // 单个时段的编辑页
 │   ├── SettingsView.swift   // 开机自启 + 位置
-│   └── WallpaperPicker.swift// 缩略图网格
+│   ├── WallpaperPicker.swift// 缩略图网格
+│   ├── OnboardingView.swift // 新手指引的五步版式
+│   └── OnboardingWindow.swift // 装它的那扇窗（全项目唯一一扇）
 ├── Updater/main.swift       // 主进程退出后原位替换 app 并重启
 └── CLI/                     // 排障与无头常驻入口
 ```
 
 界面风格：贴 macOS 原生，版式固定。单面板 + 层级推进，宽度锁死 360 pt，
-不开第二个窗口（`Tests/PanelShot` 能把三页画成 PNG 对照）。
+不开第二个窗口 —— 唯一的例外是新手指引，理由见 §4 第 8 条
+（`Tests/PanelShot` 能把各页与指引的五步画成 PNG 对照）。
 
 ---
 
@@ -279,6 +288,8 @@ M4 收尾时跑过一遍，逐条的实测记录见 `TODO.md` 的「验收清单
 | M4 | 开机自启、暂停、首次启动预设、打包脚本（全部完成） |
 | M5 | CI、GitHub Release 与 1.0 发布 |
 | M6 | 内建手动更新与每日自动更新 |
+| 1.2 | 天光分段与 24 Hour Wallpaper 导入 |
+| 1.3 | 新手入门指引 |
 
 ---
 

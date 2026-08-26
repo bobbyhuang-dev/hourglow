@@ -22,6 +22,23 @@ enum Panel {
     static let animation: Animation = .snappy(duration: 0.22)
 }
 
+/// 新手指引那扇窗的度量。和 `Panel` 分开，因为它不是同一块画布 ——
+/// 菜单栏面板锁死 360 pt 是为了贴着状态项挂下来，而指引是一扇独立的窗，
+/// 360 pt 宽讲不清一段话。度量仍旧集中在这里，视图里不散写数字。
+enum Guide {
+    static let width: CGFloat = 480
+    /// 高度按内容最满的那一步定（第五步的清单 + 两条说明），不是随手取的整数。
+    static let height: CGFloat = 566
+    /// 顶部那条插图带。五步共用同一片天光渐变，只换上面的图。
+    static let heroHeight: CGFloat = 140
+    /// 底部：跳过 / 进度点 / 上一步 · 继续。
+    static let footerHeight: CGFloat = 54
+    static let inset: CGFloat = 24
+    /// 正文区。固定这么高，翻页时标题不会上下跳；内容多了自己滚。
+    /// 减 1 是那条分隔线。
+    static var contentHeight: CGFloat { height - heroHeight - footerHeight - 1 }
+}
+
 // MARK: - 页头
 
 /// 统一的页头：左侧返回、居中标题、右侧附件。三页都用它，标题位置不会左右跳。

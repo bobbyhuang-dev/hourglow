@@ -3,7 +3,7 @@
 规格见 `MVP.md`。本文件是执行清单，新会话冷启动读这两个文件即可接上，
 不需要回溯对话历史。
 
-**当前进度**：M1–M6 全部完成；1.2 已发布（24 Hour Wallpaper 导入与天光分段）。`build/HourGlow.app`
+**当前进度**：M1–M6 全部完成；1.3 已发布（新手入门指引）。`build/HourGlow.app`
 可直接双击，开机自启、定位、首次启动预设和内建更新都已落地，`MVP.md` 第 9 节的验收清单
 跑过一遍（结果见 M4 末尾）；CI 与发版流水线见 M5，更新实现与安全边界见 M6。
 
@@ -397,6 +397,52 @@ HourGlow 原先只有 clock + 日出/日落偏移，张数要手填时段，窗�
   对话框里「导入」像坏了。要等面板收完，临时把 `activationPolicy` 改成 `.regular`，
   并且允许选文件、文件夹和 `.sundialScene`，不能只许选目录。
 
+## 新手入门指引（1.3）
+
+第一次打开 HourGlow 的人看到的是「什么都没发生」：`LSUIElement` 没有 Dock 图标、没有窗口，
+壁纸倒是已经按 Tahoe 预设换过了，但他既不知道谁换的，也不知道去哪儿改。1.3 补的就是这一段。
+
+- [x] `App/Onboarding.swift`：五步的文案与「谁该看到它」的规则。纯 Foundation，
+      不碰 UI 也不碰 `Store`，所以能单独编进 `appcheck`
+- [x] `UI/OnboardingView.swift`：480 × 566 五步（欢迎 / 位置 / 常驻 / 时间轴 / 完成），
+      顶上一条共用的天光渐变插图带，底部跳过 + 进度点 + 上一步 · 继续
+- [x] 每一步都能当场做完：定位授权就在第二步的卡片里点，被拒了给「打开设置…」；
+      不想给定位就在同一张卡下面搜城市；开机自启的开关在第三步
+- [x] 要用户点「允许」的地方都说清楚了：定位授权对话框会长什么样、选哪个；
+      macOS 26 那句「是否允许在菜单栏中显示」不允许就没有入口；
+      app 不在「应用程序」里时先说「登录项记的是路径，先搬家再开自启」
+- [x] 插图讲的都是真事：第二步的太阳按今天的日出日落落在弧上，第四步是用户自己
+      时间轴的前五段缩略图（当前那一格描一圈）
+- [x] 只在真·全新安装时自动弹；老用户与后悔跳过的人从 ⋯ 菜单或设置页「帮助」进
+- [x] `--guide [status|reset|show]` 排障入口；`panelshot` 把五步各画一张
+- [x] `appcheck` 覆盖弹不弹的规则表、流程边界与「每一步都有文案」
+- [x] `CitySearch` 从 `PlaceView` 里提出来，指引与地点页共用同一套搜索与去重
+
+### 踩到的坑（别再踩一次）
+
+- **`MenuBarExtra` 的 label 会在 `applicationWillFinishLaunching` 之前就把 `AppModel`
+  造出来**。实测：一个在 `willFinishLaunching` 里就 `exit(0)` 的探针，跑完之后
+  `HOURGLOW_HOME` 目录里已经躺着 `schedule.json` 了 —— 那是 `AppModel.init → Store.load()`
+  写的。所以「这次是不是全新安装」不能在 delegate 里问，`AppModel.init` 的第一行才是
+  最早的时机。两处都调 `Onboarding.captureFirstRun`，第一次调用说了算。
+- **`.fullSizeContentView` 不改变 `contentRect:` → 窗框的换算**。想把天光渐变铺到顶，
+  结果 566 高的内容摆成了 598 高的窗，顶上多一条对不上的空带；`setFrame` 也压不回去
+  （`NSHostingView` 把内容尺寸变成了窗口的最小尺寸）。老老实实用系统标题栏并写上标题。
+- **指引不能自动弹给老用户**。`seenVersion` 为空只说明「没看过」，不说明「新装」——
+  1.2 自动更新到 1.3 之后突然弹一扇窗解释「什么是时间轴」是打扰。判据得是
+  配置文件存不存在。
+- **关窗就得算看过**，跳过、走完、点红灯一视同仁。少写一种，它下次启动还会来，
+  比没有这个指引更烦人。
+- **第一步那台假 Mac 是示意图，不是仿真图**。按真实比例画，菜单栏在一张 88 pt 高的
+  「屏幕」上只剩两三个像素，沙漏根本认不出来 —— 而这一步唯一要说的就是「入口是它」。
+  所以菜单栏占了整台机器三分之一高，屏幕那块只留一条能看出是桌面的窄边。
+  桌面上原先还画了一颗带光晕的太阳，删了：整张图最亮的一团在正中间，
+  视线先落那儿，再也到不了右上角。指着谁，谁最显眼。
+- `PlacePage` 里已经有一个叫 `search` 的视图属性，抽出来的 `CitySearch` 状态别也叫
+  `search` —— 同名会直接编不过。
+- 空搜时 `Cities.search("")` 会给一份常用城市。地点页那种满屏列表放得下，指引里
+  放不下：默认列表会把「搜」这个动作本身挤到屏幕外。指引里只在真的输入了才出结果。
+
 ## 环境速查
 
 ```
@@ -417,7 +463,7 @@ aerial 库  ~/Library/Application Support/com.apple.wallpaper/aerials/
 ```
 ./build.sh                    # CLI + 各验证靶子 + panelshot + HourGlow.app
 open build/HourGlow.app       # 菜单栏 app（M3）
-./build/panelshot ~/Desktop   # 把三个页面画成 PNG（固定时刻那一栏另出一张），改版式时对照
+./build/panelshot ~/Desktop   # 各页 + 新手指引五步画成 PNG（固定时刻那一栏另出一张），改版式时对照
 ./build/enginecheck           # 引擎决策矩阵与定时排期
 ./build/importcheck           # 24 Hour Wallpaper 文件名与导入
 ./build/updatecheck           # 更新版本、Release 解析与 SHA-256
@@ -427,6 +473,7 @@ open build/HourGlow.app       # 菜单栏 app（M3）
 # 只影响 app 自己那个 bundle，CLI 问不出结果
 build/HourGlow.app/Contents/MacOS/HourGlow --login-item status   # 开机自启：status|on|off
 build/HourGlow.app/Contents/MacOS/HourGlow --locate              # 定位一次，只打印不写配置
+build/HourGlow.app/Contents/MacOS/HourGlow --guide status        # 新手指引：status|reset|show
 
 # 一次性配置目录，端到端实测用它，不碰真配置
 HOURGLOW_HOME=/tmp/hg ./build/hourglow-cli list

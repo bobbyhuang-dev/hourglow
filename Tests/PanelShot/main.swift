@@ -11,16 +11,17 @@ import SwiftUI
 // 窗口以近乎全透明的方式短暂出现，画完就关掉。
 
 @MainActor
-func shoot<V: View>(_ view: V, named name: String, into directory: URL) {
+func shoot<V: View>(_ view: V, named name: String, into directory: URL,
+                    width: CGFloat = Panel.width) {
     let content = view
         .environment(AppModel.shared)
-        .frame(width: Panel.width)
+        .frame(width: width)
         .background(Color(nsColor: .windowBackgroundColor))
 
     let host = NSHostingView(rootView: content)
     // 各页高度不同（时间轴按时段数收），照它自己的意愿摆。
     let fitted = host.fittingSize
-    host.frame = NSRect(x: 0, y: 0, width: Panel.width,
+    host.frame = NSRect(x: 0, y: 0, width: width,
                         height: max(fitted.height, 120))
 
     let window = NSWindow(contentRect: host.frame,
@@ -79,4 +80,11 @@ MainActor.assumeIsolated {
     shoot(WallpaperPicker(slotID: first.id, open: { _ in }), named: "3-picker", into: directory)
     shoot(SettingsPage(open: { _ in }), named: "4-settings", into: directory)
     shoot(PlacePage(open: { _ in }), named: "5-place", into: directory)
+
+    // 新手指引不是面板的一页，宽度也不是 360 —— 它是唯一一扇独立的窗（见
+    // `OnboardingView` 的类型注释）。五步各来一张，改文案或插图时对照。
+    for (index, step) in OnboardingStep.allCases.enumerated() {
+        shoot(OnboardingView(initialStep: step, finish: {}),
+              named: "6-guide-\(index + 1)", into: directory, width: Guide.width)
+    }
 }

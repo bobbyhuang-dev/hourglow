@@ -1,5 +1,57 @@
 import SwiftUI
 
+/// 城市搜索的共用状态：离线表立刻出结果，联网的地理编码去抖 400 毫秒后补进来。
+///
+/// 地点页和新手指引的版式完全不同，但「同一个词搜出来的是哪几个城市」必须是同一套
+/// 逻辑 —— 尤其是去重：离线表和地理编码经常给出同一个城市，键是坐标而不是名字
+/// （「深圳」和「Shenzhen」是同一处）。
+@MainActor
+@Observable
+final class CitySearch {
+    private(set) var remote: [City] = []
+    private(set) var searching = false
+
+    @ObservationIgnored private var task: Task<Void, Never>?
+
+    /// 当前该显示的城市。离线表在前，联网结果补在后面。
+    func results(for query: String) -> [City] {
+        var seen = Set<String>()
+        var result: [City] = []
+        for city in Cities.search(query) + remote {
+            let key = String(format: "%.2f,%.2f",
+                             city.coordinate.latitude, city.coordinate.longitude)
+            if seen.insert(key).inserted { result.append(city) }
+        }
+        return result
+    }
+
+    /// 输入框每变一次调一次。一个字母就发一次网络请求没有意义，所以两字起、去抖。
+    func update(query: String) {
+        task?.cancel()
+        remote = []
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            searching = false
+            return
+        }
+        searching = true
+        task = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 400_000_000)
+            guard !Task.isCancelled else { return }
+            let hits = await PlaceSearch.remote(trimmed)
+            guard !Task.isCancelled else { return }
+            self?.remote = hits
+            self?.searching = false
+        }
+    }
+
+    func clear() {
+        task?.cancel()
+        remote = []
+        searching = false
+    }
+}
+
 /// 选地区：常用城市离线可搜，其余走地理编码。
 ///
 /// 中国全境都是 `Asia/Shanghai`，时区推断永远落在上海，深圳 / 张家界的日出会差
@@ -11,9 +63,7 @@ struct PlacePage: View {
     var backPage: Page = .timeline
 
     @State private var query = ""
-    @State private var remote: [City] = []
-    @State private var searching = false
-    @State private var searchTask: Task<Void, Never>?
+    @State private var finder = CitySearch()
     @State private var latitude = ""
     @State private var longitude = ""
 
@@ -30,7 +80,7 @@ struct PlacePage: View {
         }
         .frame(height: Panel.height)
         .onAppear { seedFields() }
-        .onChange(of: query) { _, _ in scheduleRemoteSearch() }
+        .onChange(of: query) { _, _ in finder.update(query: query) }
         .onChange(of: model.schedule.location) { seedFields() }
     }
 
@@ -58,12 +108,7 @@ struct PlacePage: View {
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
-            if let hint = locatingHint {
-                Text(hint)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.orange)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            locatingHint
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Panel.inset)
@@ -86,11 +131,27 @@ struct PlacePage: View {
         return "航海晨光 \(dawn) · 民用黄昏 \(dusk)"
     }
 
-    private var locatingHint: String? {
+    @ViewBuilder
+    private var locatingHint: some View {
         switch model.locating {
-        case .denied: return "定位权限被拒，搜一个城市或在下面手填"
-        case .failed(let reason): return reason
-        default: return nil
+        case .denied:
+            // 被拒之后系统不会再弹第二次框，只能自己去开。说了在哪儿改，就得能点过去。
+            HStack(spacing: 6) {
+                Text("定位权限被拒，搜一个城市、在下面手填，或去系统设置里打开")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button("打开设置…") { PreciseLocation.openPrivacySettings() }
+                    .controlSize(.small)
+            }
+        case .failed(let reason):
+            Text(reason)
+                .font(.system(size: 11))
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+        default:
+            EmptyView()
         }
     }
 
@@ -104,13 +165,13 @@ struct PlacePage: View {
             TextField("城市名，中英文或拼音", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
-            if searching {
+            if finder.searching {
                 ProgressView().controlSize(.mini)
             }
             if !query.isEmpty {
                 Button {
                     query = ""
-                    remote = []
+                    finder.clear()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 11))
@@ -181,19 +242,8 @@ struct PlacePage: View {
         var cities: [City]
     }
 
-    private var displayed: [City] {
-        var seen = Set<String>()
-        var result: [City] = []
-        for city in Cities.search(query) + remote {
-            let key = String(format: "%.2f,%.2f",
-                             city.coordinate.latitude, city.coordinate.longitude)
-            if seen.insert(key).inserted { result.append(city) }
-        }
-        return result
-    }
-
     private var sections: [Section] {
-        let items = displayed
+        let items = finder.results(for: query)
         if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return [Section(id: "hits", title: "搜索结果", cities: items)]
         }
@@ -219,7 +269,7 @@ struct PlacePage: View {
                         row(city)
                     }
                 }
-                if displayed.isEmpty, !query.isEmpty, !searching {
+                if finder.results(for: query).isEmpty, !query.isEmpty, !finder.searching {
                     Text("找不到这个地方")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -309,27 +359,5 @@ struct PlacePage: View {
         }
         latitude = String(format: "%.4f", c.latitude)
         longitude = String(format: "%.4f", c.longitude)
-    }
-
-    private func scheduleRemoteSearch() {
-        searchTask?.cancel()
-        remote = []
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard q.count >= 2 else {
-            searching = false
-            return
-        }
-        searching = true
-        let task = Task {
-            try? await Task.sleep(nanoseconds: 400_000_000)
-            guard !Task.isCancelled else { return }
-            let hits = await PlaceSearch.remote(q)
-            await MainActor.run {
-                guard !Task.isCancelled else { return }
-                remote = hits
-                searching = false
-            }
-        }
-        searchTask = task
     }
 }

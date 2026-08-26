@@ -1,3 +1,4 @@
+import AppKit
 import CoreLocation
 import Foundation
 
@@ -41,6 +42,21 @@ final class PreciseLocation: NSObject, CLLocationManagerDelegate {
 
     var isDenied: Bool {
         authorization == .denied || authorization == .restricted
+    }
+
+    /// 打开「系统设置 › 隐私与安全性 › 定位服务」。
+    ///
+    /// 被拒之后 `requestWhenInUseAuthorization` 不会再弹第二次框，UI 只能引导用户
+    /// 自己去开 —— 既然说了在哪儿改，就得能点过去。Ventura 之后 pane 的标识变了，
+    /// 旧的仍被系统映射；两条都试，谁先打得开算谁。
+    static func openPrivacySettings() {
+        let candidates = [
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocationServices",
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices",
+        ]
+        for raw in candidates {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) { return }
+        }
     }
 
     /// 请求一次坐标。已经在请求中时后来者直接顶掉前一个回调（面板上只有一个按钮）。

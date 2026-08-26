@@ -46,6 +46,10 @@ under 5 MB.
   verify the download and code signature, install it in place, and relaunch itself
 - **Human-readable JSON config** — edit `schedule.json` by hand and the engine follows
   immediately
+- **A guided first launch** — five steps that show where the menu bar icon is, which
+  permissions to grant and what the system dialogs will look like, how to set your location
+  (or skip the permission and just pick a city), and how to read the timeline. Skippable at
+  any point, and reachable again from the ⋯ menu
 - **Import a 24-hour wallpaper set** — files named with sunrise / morning / day / sunset /
   evening / night (or `01_sunrise_1.heic`, or a 24 Hour Wallpaper `.sundialScene`), or sorted
   into per-phase subfolders (`sunrise/1.jpg`), become a full-day timeline that tracks local
@@ -68,9 +72,13 @@ xattr -dr com.apple.quarantine /Applications/HourGlow.app
 Or double-click it once and then allow it under **System Settings › Privacy & Security ›
 Open Anyway**.
 
-It then lives in the menu bar — no Dock icon, no window. On first launch it writes the
-Tahoe four-slot preset; edit or delete those freely. To have it come back after a reboot,
-turn on **Launch at login** in the settings page (the ⋯ menu).
+It then lives in the menu bar — no Dock icon, no window. A brand-new install opens a
+five-step guide the first time: where the icon went, granting location access (or skipping it
+and picking a city instead), launch at login, and how to read the timeline. Skip it whenever
+you like — the ⋯ menu and the settings page both lead back to it. That same first launch
+writes the Tahoe four-slot preset; edit or delete those freely. To have HourGlow come back
+after a reboot, turn on **Launch at login** — step 3 of the guide, or the settings page
+(the ⋯ menu).
 
 Automatic updates are on by default. The settings page can turn them off, check manually,
 or install an available release immediately. Updates keep the app at its current location,
@@ -124,12 +132,18 @@ Everything lands in `build/`. Every push is built and checked the same way by Gi
 
 Launch-at-login and location can't be asked of the CLI: the login item is registered for —
 and location permission granted to — *the caller's own bundle*, and the CLI is a bare
-binary. Those two entry points live on the app's executable and exit as soon as they print:
+binary. The same goes for the onboarding guide, whose "already seen" flag lives in the app's
+`UserDefaults` rather than in the config directory. Those entry points live on the app's
+executable:
 
 ```bash
 build/HourGlow.app/Contents/MacOS/HourGlow --login-item status   # status | on | off
 build/HourGlow.app/Contents/MacOS/HourGlow --locate              # one fix, printed, never written to the config
+build/HourGlow.app/Contents/MacOS/HourGlow --guide status        # onboarding: status | reset | show
 ```
+
+`--guide status` prints whether this launch would show the guide and why, `--guide reset`
+forgets that you have seen it, and `--guide show` opens it right now.
 
 The menu bar app and `hourglow-cli run` compete for the same single-instance lock: whichever
 starts first owns scheduling, the other falls back to follower mode — it only edits the
@@ -191,18 +205,19 @@ offline, none of which touch your real wallpaper:
 ./build/modelcheck             # resolution: midnight wraparound, solar triggers, solar-phase windows, Codable compatibility
 ./build/enginecheck            # engine: the assert-vs-stand-down matrix, and timer scheduling
 ./build/importcheck            # import: 24 Hour Wallpaper filenames, multi-resolution scenes, even split
-./build/appcheck               # app state: drafts, save boundaries, external config conflicts
+./build/appcheck               # app state: drafts, save boundaries, external config conflicts, onboarding rules
 ./build/updatecheck            # updater: SemVer ordering, Release parsing, SHA-256
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephemeris (10 cases, max deviation 4s)
-./build/panelshot ~/Desktop    # render the four panel pages to PNG, for comparing layout changes
+./build/panelshot ~/Desktop    # render every panel page plus the guide's five steps to PNG, for comparing layout changes
 ```
 
 ## Status
 
-**1.2 released — 24 Hour Wallpaper import and solar-phase scheduling.** The 1.0 MVP
-(logic layer, scheduling engine, menu bar UI, launch at login, precise location and packaging)
-is complete, and the acceptance checklist in section 9 of `MVP.md` has been run through.
+**1.3 released — a guided first launch.** 1.2 brought 24 Hour Wallpaper import and
+solar-phase scheduling. The 1.0 MVP (logic layer, scheduling engine, menu bar UI, launch at
+login, precise location and packaging) is complete, and the acceptance checklist in section 9
+of `MVP.md` has been run through.
 The spec lives in `MVP.md`, progress and implementation notes in `TODO.md` — both are written
 in Chinese, as are the source comments.
 

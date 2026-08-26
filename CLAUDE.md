@@ -10,7 +10,7 @@ aerial 动态壁纸或本地图片。Swift 6.3 + SwiftUI，零第三方依赖，
 
 - `MVP.md` —— 规格。第 2 节是**实机验证过的系统事实**（`Index.plist` 结构、两种
   Provider 的写法、aerial 素材库路径、Tahoe 四张的 assetID），实现时直接依赖，不要重新推测。
-- `TODO.md` —— 执行清单与当前进度（M1–M6 全部完成，1.2 已发布）。每个里程碑末尾有
+- `TODO.md` —— 执行清单与当前进度（M1–M6 全部完成，1.3 已发布）。每个里程碑末尾有
   「踩到的坑（别再踩一次）」小节，改对应模块前务必先看。
 
 新会话冷启动读这两份即可接上，不需要回溯对话历史。做完一项工作后，把结论/进度回写进去。
@@ -30,7 +30,7 @@ aerial 动态壁纸或本地图片。Swift 6.3 + SwiftUI，零第三方依赖，
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 ./build/solarcheck            # 日出日落，被 verify-solar.py 当作被测程序调用
 python3 Tests/verify-solar.py # 以 ephem 星历对拍（需 pip install ephem，容差 30 秒）
-./build/panelshot ~/Desktop   # 四个页面画成 PNG（固定时刻那一栏另出一张），改版式时对照
+./build/panelshot ~/Desktop   # 五个页面 + 新手指引五步画成 PNG（固定时刻那一栏另出一张），改版式时对照
 ```
 
 配置目录可以用 `HOURGLOW_HOME` 整体改道（`schedule.json` / `state.json` / `run.lock` 都跟着走），
@@ -46,6 +46,16 @@ HOURGLOW_HOME=/tmp/hg ./build/hourglow-cli list   # 空目录会自动写入 Tah
 ```bash
 build/HourGlow.app/Contents/MacOS/HourGlow --login-item status   # status | on | off
 build/HourGlow.app/Contents/MacOS/HourGlow --locate              # 定位一次，只打印不写配置
+build/HourGlow.app/Contents/MacOS/HourGlow --guide status        # 新手指引：status | reset | show
+```
+
+`--guide show` 是唯一不退出的一个：它把这一次启动标成「无论如何都弹指引」，改完版式直接看效果。
+「看过了」存在 `UserDefaults`（`onboarding.seenVersion`），`HOURGLOW_HOME` 带不走它，
+所以要演一次干净的首次启动得两条一起用：
+
+```bash
+HOURGLOW_HOME=/tmp/hg-guide build/HourGlow.app/Contents/MacOS/HourGlow --guide reset
+HOURGLOW_HOME=/tmp/hg-guide build/HourGlow.app/Contents/MacOS/HourGlow   # 配置目录是空的 → 指引自动弹
 ```
 
 单跑某一项检查：靶子里没有过滤机制，改 `Tests/<Name>/main.swift` 里的 `check(...)` 调用即可；
@@ -68,7 +78,7 @@ open build/HourGlow.app                 # 菜单栏 app
 `Resources/HourGlow.icns`，产物已提交进仓库，`build.sh` 只负责拷进 bundle。改图标才需要
 按那个文件头上的用法重跑一次。
 
-版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.2.0` / `1`），
+版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.3.0` / `1`），
 发版流水线用 tag 与 run number 覆盖它们。CI 与发版都在 GitHub Actions 上：
 `.github/workflows/ci.yml` 每次 push / PR 跑一遍构建 + 五个主靶子 + 星历对拍，
 `.github/workflows/release.yml` 见到 `v*` tag 就构建、验证、压包、建 Release。
@@ -96,10 +106,13 @@ open build/HourGlow.app                 # 菜单栏 app
   （唤醒 / 时钟变更 / 时区变更 / 跨日）补齐意外情况，外加最长 6 小时的安全网。
   `EngineState` 的 `state.json` 记录「我们上次写的是哪张」，是判断用户有没有手动换过的唯一依据。
 - `App/AppModel.swift` —— UI 与引擎之间唯一的一层，`@MainActor @Observable`。
+- `App/Onboarding.swift` —— 新手指引的步骤、文案与「谁该看到它」这条规则。纯 Foundation，
+  不碰 UI 也不碰 `Store`，所以能单独编进 `appcheck`；版式在 `UI/OnboardingView.swift`，
+  窗口在 `UI/OnboardingWindow.swift`。
 - `App/AppUpdater.swift` —— 从 GitHub Releases 查正式版、比较 SemVer、下载并校验 asset digest，
   解压后同时核对 bundle ID / 版本 / 代码签名；`Updater/main.swift` 在主进程退出后原位替换 app。
 - `UI/` —— 单面板左右推进（时间轴 → 时段 → 选壁纸；设置与时段并排在第一层），
-  不开第二个窗口。
+  不开第二个窗口 —— 唯一的例外是新手指引，理由见「UI 约定」末尾。
 
 ### 两条必须守住的语义
 
@@ -127,12 +140,21 @@ open build/HourGlow.app                 # 菜单栏 app
 （`endEditing`），没应用的改动到此为止。删除是就地两段式确认，不弹对话框
 （菜单栏面板里弹框太重），确认后立即生效。
 
+**新手指引是全项目唯一一扇独立的窗**（`UI/OnboardingWindow.swift`，480 × 566，度量在
+`PanelKit` 的 `Guide` 里，与 `Panel` 分开）。破例的理由只有一条：`LSUIElement` 的 app
+首次启动后屏幕上什么都不会出现，入口只是菜单栏里一个沙漏，而 `MenuBarExtra` 没有
+「替用户点开」的 API —— 指引要是长在面板里，就只有已经找到入口的人看得见，
+正好把最需要它的人挡在外面。它**只在真·全新安装时自动弹**（`schedule.json` 不存在），
+1.2 升上来的老用户不打扰；入口在 ⋯ 菜单和设置页的「帮助」。关窗即算看过 ——
+跳过、走完、点红灯一视同仁。别拿 `OnboardingWindow` 去开第二扇窗。
+
 ## 运行时路径
 
 ```
 ~/Library/Application Support/HourGlow/schedule.json   # 配置（HOURGLOW_HOME 可整体改道）
 ~/Library/Application Support/HourGlow/state.json      # 上次写了哪张
 ~/Library/Application Support/HourGlow/run.lock        # 单实例锁
+UserDefaults dev.bobbyhuang.hourglow onboarding.seenVersion            # 新手指引看过没（不在 HOURGLOW_HOME 里）
 ~/Library/Application Support/com.apple.wallpaper/Store/Index.plist  # 系统壁纸配置
 ~/Library/Application Support/com.apple.wallpaper/aerials/           # aerial 素材库
 ~/Library/Logs/HourGlow.log                            # LaunchAgent 日志

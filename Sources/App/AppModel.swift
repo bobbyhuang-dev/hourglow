@@ -72,6 +72,10 @@ final class AppModel {
     @ObservationIgnored private var updateTask: Task<Void, Never>?
 
     private init() {
+        // 必须赶在 `Store.load()` 之前问一次「配置文件在不在」—— 那个调用会顺手
+        // 把 Tahoe 预设写下去，之后再问就永远是「在」，新手指引也就永远弹不出来。
+        Onboarding.captureFirstRun(
+            configExists: FileManager.default.fileExists(atPath: Store.fileURL.path))
         catalog = (try? AerialCatalog.load()) ?? []
         assetNames = Dictionary(catalog.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
 
@@ -321,6 +325,18 @@ final class AppModel {
 
     /// 只有从 `.app` 里跑起来才谈得上「开机自启」（`panelshot` 是裸二进制）。
     var canLaunchAtLogin: Bool { LaunchAtLogin.isAvailable }
+
+    /// 在不在「应用程序」里。登录项记的是 bundle 的**路径**，所以「先搬家、再开自启」
+    /// 是有先后的 —— 新手指引要在开关旁边先说这一句，别等自启失效了再解释。
+    var runsFromApplicationsFolder: Bool {
+        Bundle.main.bundleURL.path.hasPrefix("/Applications/")
+    }
+
+    /// app 现在待的那个文件夹叫什么（「下载」「桌面」…）。只用来把上面那句话说具体。
+    var enclosingFolderName: String {
+        let parent = Bundle.main.bundleURL.deletingLastPathComponent()
+        return FileManager.default.displayName(atPath: parent.path)
+    }
 
     /// 读一次系统状态。设置页 `onAppear` 调，别在 body 里问。
     func refreshSettings() {

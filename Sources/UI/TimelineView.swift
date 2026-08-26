@@ -248,6 +248,7 @@ struct TimelinePage: View {
                     open(.settings)
                     model.checkForUpdates()
                 }
+                Button("新手指引…") { OnboardingWindow.shared.present() }
                 Button("在访达中显示配置…") { model.revealConfigInFinder() }
                 Divider()
                 Button("退出 HourGlow") { NSApplication.shared.terminate(nil) }

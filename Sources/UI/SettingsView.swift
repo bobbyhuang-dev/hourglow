@@ -25,6 +25,7 @@ struct SettingsPage: View {
                     updates
                     location
                     sceneImport
+                    help
                     about
                 }
                 .padding(Panel.inset)
@@ -219,6 +220,25 @@ struct SettingsPage: View {
                 Button(model.importingScene ? "导入中…" : "导入…") { model.importSceneFromPanel() }
                     .controlSize(.small)
                     .disabled(model.importingScene)
+            }
+        }
+    }
+
+    // MARK: - 帮助
+
+    /// 新手指引是一扇独立的窗（理由见 `OnboardingView`），它只在全新安装时自动出现 ——
+    /// 老用户和后悔跳过的人得有个地方找回来，就是这一行。
+    private var help: some View {
+        PanelSection(title: "帮助") {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("新手指引").font(.system(size: 12))
+                    Text("五步：入口在哪儿、位置、常驻、时间轴")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Button("打开") { OnboardingWindow.shared.present() }
+                    .controlSize(.small)
             }
         }
     }

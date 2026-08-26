@@ -5,13 +5,13 @@ cd "$(dirname "$0")"
 mkdir -p build
 
 # 版本号。发布流水线用 tag 覆盖（如 HOURGLOW_VERSION=1.0.1），本地构建就用这里的默认值。
-VERSION="${HOURGLOW_VERSION:-1.2.0}"
+VERSION="${HOURGLOW_VERSION:-1.3.0}"
 BUILD_NUMBER="${HOURGLOW_BUILD:-1}"
 BUNDLE_ID="dev.bobbyhuang.hourglow"
 
 COMMON=(Sources/Model/*.swift Sources/System/*.swift Sources/Engine/*.swift)
 # 入口单列：panelshot 要复用界面代码，但不能把 @main 一起拖进去。
-UI=(Sources/App/SlotDraft.swift Sources/App/AppUpdater.swift Sources/App/AppModel.swift Sources/UI/*.swift)
+UI=(Sources/App/SlotDraft.swift Sources/App/Onboarding.swift Sources/App/AppUpdater.swift Sources/App/AppModel.swift Sources/UI/*.swift)
 ENTRY=(Sources/App/HourGlowApp.swift)
 
 swiftc -O "${COMMON[@]}" Sources/CLI/*.swift          -o build/hourglow-cli
@@ -19,7 +19,7 @@ swiftc -O "${COMMON[@]}" Tests/SolarCheck/main.swift -o build/solarcheck
 swiftc -O "${COMMON[@]}" Tests/ModelCheck/main.swift -o build/modelcheck
 swiftc -O "${COMMON[@]}" Tests/EngineCheck/main.swift -o build/enginecheck
 swiftc -O "${COMMON[@]}" Tests/ImportCheck/main.swift -o build/importcheck
-swiftc -O "${COMMON[@]}" Sources/App/SlotDraft.swift Tests/AppCheck/main.swift -o build/appcheck
+swiftc -O "${COMMON[@]}" Sources/App/SlotDraft.swift Sources/App/Onboarding.swift Tests/AppCheck/main.swift -o build/appcheck
 swiftc -O Sources/App/AppUpdater.swift Tests/UpdateCheck/main.swift -o build/updatecheck
 # 面板的离屏渲染，改版式时用来对照（见 Tests/PanelShot/main.swift）。
 swiftc -O "${COMMON[@]}" "${UI[@]}" Tests/PanelShot/main.swift -o build/panelshot
