@@ -1,4 +1,33 @@
+# 构建产物 —— build.sh 的东西全部落在 build/
 build/
-.venv/
-.DS_Store
 dist/
+
+# 发布压包（release.yml 在 runner 上生成，本地手工试压时也会有）
+HourGlow-*.zip
+hourglow-cli-*.zip
+
+# 本项目不使用 Xcode 工程；这些是有人误开一个时的产物
+.build/
+.swiftpm/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+*.dSYM/
+
+# Tests/verify-solar.py 的 ephem 装在虚拟环境里
+.venv/
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+
+# 编辑器与工具的本地状态
+.vscode/
+.idea/
+*.swp
+*~
+.claude/settings.local.json

@@ -5,7 +5,7 @@
 [![CI](https://github.com/bobbyhuang-dev/hourglow/actions/workflows/ci.yml/badge.svg)](https://github.com/bobbyhuang-dev/hourglow/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/bobbyhuang-dev/hourglow?label=release)](https://github.com/bobbyhuang-dev/hourglow/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](#requirements)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
 A macOS wallpaper scheduler that follows the daylight.
 
@@ -208,18 +208,33 @@ offline, none of which touch your real wallpaper:
 ./build/appcheck               # app state: drafts, save boundaries, external config conflicts, onboarding rules
 ./build/updatecheck            # updater: SemVer ordering, Release parsing, SHA-256
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
+bash Tests/verify-app-signature.sh build/HourGlow.app   # signature and its stable designated requirement
 python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephemeris (10 cases, max deviation 4s)
 ./build/panelshot ~/Desktop    # render every panel page plus the guide's five steps to PNG, for comparing layout changes
 ```
 
 ## Status
 
-**1.3 released — a guided first launch.** 1.2 brought 24 Hour Wallpaper import and
-solar-phase scheduling. The 1.0 MVP (logic layer, scheduling engine, menu bar UI, launch at
-login, precise location and packaging) is complete, and the acceptance checklist in section 9
-of `MVP.md` has been run through.
-The spec lives in `MVP.md`, progress and implementation notes in `TODO.md` — both are written
-in Chinese, as are the source comments.
+Stable, and in daily use. **1.3 is the current release** — a guided first launch. 1.2 brought
+24 Hour Wallpaper import and solar-phase scheduling, 1.1 added built-in updates, and 1.0
+covered the scheduling engine, the menu bar UI, launch at login and precise location.
+
+Implementation notes live in [CLAUDE.md](CLAUDE.md): the layering, the verified facts about
+the macOS wallpaper store, and the mistakes already made once so they don't get made again.
+That file is in Chinese, as are the source comments and the UI.
+
+### Not planned
+
+Deliberately out of scope, so you know what you're getting:
+
+- per-display or per-Space wallpapers — the desktop and the screen saver always change
+  together, because HourGlow writes the slot as `linked`
+- controlling desktop and screen saver separately
+- random or folder shuffle
+- triggers based on light/dark mode, weather, or Focus
+- lock screen wallpaper
+- exporting or syncing the whole schedule (importing a wallpaper *set* is supported; this
+  means `schedule.json` itself)
 
 ## How it actually changes the wallpaper
 
@@ -228,11 +243,21 @@ macOS keeps wallpaper configuration in
 applies it once `WallpaperAgent` is killed. HourGlow reads, modifies and writes that file:
 preserving every unknown field, backing it up first, always writing the slot as `linked`
 (desktop and screen saver change together), and skipping the write entirely when the target
-already matches — which avoids the flicker. The format details are in section 2 of `MVP.md`,
-all verified on a real machine.
+already matches — which avoids the flicker. The format details, all verified on a real
+machine, are in [CLAUDE.md](CLAUDE.md).
 
 This is not a public API. The risk of it changing across macOS point releases is yours.
 
+## Contributing
+
+Bug reports, feature requests and pull requests are welcome — see
+[CONTRIBUTING.md](CONTRIBUTING.md) for how to build, how to verify a change, and the
+conventions this codebase follows (notably: comments, UI strings and CLI output are written
+in Chinese).
+
+Found a security problem? Don't open a public issue — [SECURITY.md](SECURITY.md) explains how
+to report it privately.
+
 ## License
 
-MIT
+[Apache License 2.0](LICENSE). Copyright 2026 Bobby Huang.

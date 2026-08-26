@@ -5,7 +5,7 @@
 [![CI](https://github.com/bobbyhuang-dev/hourglow/actions/workflows/ci.yml/badge.svg)](https://github.com/bobbyhuang-dev/hourglow/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/bobbyhuang-dev/hourglow?label=release)](https://github.com/bobbyhuang-dev/hourglow/releases/latest)
 [![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](#要求)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
 跟着天光走的 macOS 壁纸调度器。
 
@@ -177,26 +177,47 @@ LaunchAgent 日志 `~/Library/Logs/HourGlow.log`。整个配置目录可以用 `
 ./build/appcheck               # 应用状态：草稿、保存边界、外部配置冲突、新手指引的弹出规则
 ./build/updatecheck            # 更新器：SemVer 排序、Release 解析、SHA-256
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
+bash Tests/verify-app-signature.sh build/HourGlow.app   # 签名与稳定的 designated requirement
 python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例，最大偏差 4 秒）
 ./build/panelshot ~/Desktop    # 把各个界面和新手指引五步画成 PNG，改版式时对照
 ```
 
 ## 状态
 
-**1.3 已发布 —— 第一次打开有新手指引。** 1.2 带来了 24 Hour Wallpaper 导入与天光分段调度；
-1.0 的 MVP（逻辑层、调度引擎、菜单栏界面、开机自启、精确定位、打包收尾）已经完成，
-`MVP.md` 第 9 节的验收清单跑过一遍。
-规格见 `MVP.md`，进度与实现笔记见 `TODO.md`。
+稳定，作者本人每天在用。**当前版本 1.3** —— 第一次打开有新手指引。1.2 带来了
+24 Hour Wallpaper 导入与天光分段调度，1.1 加了内建更新，1.0 完成了调度引擎、菜单栏界面、
+开机自启与精确定位。
+
+实现笔记在 [CLAUDE.md](CLAUDE.md)：分层、实机验证过的 macOS 壁纸存储格式，
+以及已经踩过一次、不该再踩第二次的坑。
+
+### 不打算做的
+
+明说边界，免得你抱着错的期待下载：
+
+- 多显示器 / 多 Space 分别设置 —— 桌面与屏保永远一起换，因为写入时统一保持 `linked`
+- 桌面与屏保拆开控制
+- 随机 / 文件夹轮播
+- 跟随系统亮暗模式、天气、Focus 模式的触发器
+- 锁屏壁纸
+- 整份日程的导出与同步（导入壁纸**组**是支持的，这里说的是 `schedule.json` 本身）
 
 ## 它是怎么改壁纸的
 
 macOS 把壁纸配置存在 `~/Library/Application Support/com.apple.wallpaper/Store/Index.plist`
 （binary plist），改完 `killall WallpaperAgent` 生效。HourGlow 读改写这个文件：保留所有
 未知字段、写入前备份、统一写成 `linked`（桌面与屏保一起换）、目标与当前一致时跳过写入以免闪屏。
-格式细节见 `MVP.md` 第 2 节，都是实机验证过的。
+格式细节见 [CLAUDE.md](CLAUDE.md)，都是实机验证过的。
 
 这是没有公开 API 的做法，随 macOS 小版本变动的风险自负。
 
+## 参与
+
+欢迎提 issue 和 PR —— 怎么构建、怎么验证一处改动、这份代码遵循哪些约定，
+见 [CONTRIBUTING.md](CONTRIBUTING.md)（那份文件是英文的，给外部读者看）。
+
+发现安全问题请**不要**开公开 issue，按 [SECURITY.md](SECURITY.md) 私下上报。
+
 ## License
 
-MIT
+[Apache License 2.0](LICENSE)。Copyright 2026 Bobby Huang。
