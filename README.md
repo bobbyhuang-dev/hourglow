@@ -200,7 +200,7 @@ python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephem
 
 ## Status
 
-**1.2 development — 24 Hour Wallpaper import and solar-phase scheduling.** The 1.0 MVP
+**1.2 released — 24 Hour Wallpaper import and solar-phase scheduling.** The 1.0 MVP
 (logic layer, scheduling engine, menu bar UI, launch at login, precise location and packaging)
 is complete, and the acceptance checklist in section 9 of `MVP.md` has been run through.
 The spec lives in `MVP.md`, progress and implementation notes in `TODO.md` — both are written

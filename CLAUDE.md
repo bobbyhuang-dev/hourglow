@@ -10,7 +10,7 @@ aerial 动态壁纸或本地图片。Swift 6.3 + SwiftUI，零第三方依赖，
 
 - `MVP.md` —— 规格。第 2 节是**实机验证过的系统事实**（`Index.plist` 结构、两种
   Provider 的写法、aerial 素材库路径、Tahoe 四张的 assetID），实现时直接依赖，不要重新推测。
-- `TODO.md` —— 执行清单与当前进度（M1–M6 全部完成，1.1 开发中）。每个里程碑末尾有
+- `TODO.md` —— 执行清单与当前进度（M1–M6 全部完成，1.2 已发布）。每个里程碑末尾有
   「踩到的坑（别再踩一次）」小节，改对应模块前务必先看。
 
 新会话冷启动读这两份即可接上，不需要回溯对话历史。做完一项工作后，把结论/进度回写进去。
@@ -68,7 +68,7 @@ open build/HourGlow.app                 # 菜单栏 app
 `Resources/HourGlow.icns`，产物已提交进仓库，`build.sh` 只负责拷进 bundle。改图标才需要
 按那个文件头上的用法重跑一次。
 
-版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.1.0` / `1`），
+版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.2.0` / `1`），
 发版流水线用 tag 与 run number 覆盖它们。CI 与发版都在 GitHub Actions 上：
 `.github/workflows/ci.yml` 每次 push / PR 跑一遍构建 + 五个主靶子 + 星历对拍，
 `.github/workflows/release.yml` 见到 `v*` tag 就构建、验证、压包、建 Release。

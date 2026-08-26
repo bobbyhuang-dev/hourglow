@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 mkdir -p build
 
 # 版本号。发布流水线用 tag 覆盖（如 HOURGLOW_VERSION=1.0.1），本地构建就用这里的默认值。
-VERSION="${HOURGLOW_VERSION:-1.1.0}"
+VERSION="${HOURGLOW_VERSION:-1.2.0}"
 BUILD_NUMBER="${HOURGLOW_BUILD:-1}"
 BUNDLE_ID="dev.bobbyhuang.hourglow"
 

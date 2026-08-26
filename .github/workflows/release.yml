@@ -123,12 +123,6 @@ jobs:
           updates off or run a manual check from its settings page.
           HourGlow 每天从 GitHub Releases 检查后续更新；可以在设置页关闭自动更新或手动检查。
 
-          Older builds used a one-build-only ad-hoc identity. This release migrates to a stable
-          identity so macOS 26 keeps the menu-bar permission across upgrades. Existing schedules
-          are retained; location and Launch at Login may need to be enabled once again.
-          旧版的 ad-hoc 身份只对当次构建有效。本版迁移到稳定身份，避免 macOS 26 在升级后
-          误屏蔽菜单栏项。旧日程会保留；定位和开机自启可能需要重新开启一次。
-
           Requires macOS 26 (Tahoe) or later. 需要 macOS 26 (Tahoe) 及以上。
 
           **hourglow-cli-$VERSION.zip** is the optional command line tool (troubleshooting + headless daemon).
