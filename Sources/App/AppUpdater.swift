@@ -260,8 +260,8 @@ enum AppUpdater {
         }
     }
 
-    private static func runProcess(_ executable: String,
-                                   _ arguments: [String]) throws -> (status: Int32, output: String) {
+    static func runProcess(_ executable: String,
+                           _ arguments: [String]) throws -> (status: Int32, output: String) {
         let pipe = Pipe()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
@@ -269,8 +269,10 @@ enum AppUpdater {
         process.standardOutput = pipe
         process.standardError = pipe
         try process.run()
-        process.waitUntilExit()
+        // 必须边等边把管道排空。先 waitUntilExit 再读时，子进程一旦写满管道缓冲区，
+        // 就会等父进程读取；父进程又在等它退出，更新会永久卡住。
         let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
         return (process.terminationStatus, output.trimmingCharacters(in: .whitespacesAndNewlines))
     }
 

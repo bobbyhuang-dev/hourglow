@@ -35,6 +35,22 @@ let clockResolution = clockSchedule.resolve(at: afterMidnight, calendar: calenda
 check(clockResolution?.active.id == night.id, "固定时刻在午夜后承接前一天")
 check(clockResolution?.next?.slot.id == morning.id, "固定时刻能找到当天的下一次切换")
 
+// 两段同刻时必须有稳定规则，而且“下次”预告的必须就是到点后真正生效的那一段。
+// 旧实现只按 Date 排序，相等元素的先后不受保证；next 还会取第一个、active 取最后一个。
+let sameTimeFirst = Slot(trigger: .clock(hour: 9, minute: 0),
+                         wallpaper: .image(path: "/same-first"))
+let sameTimeLast = Slot(trigger: .clock(hour: 9, minute: 0),
+                        wallpaper: .image(path: "/same-last"))
+let sameTimeSchedule = Schedule(slots: [sameTimeFirst, sameTimeLast])
+let beforeSameTime = localDate("2026-08-22 08:00", calendar: calendar)
+let afterSameTime = localDate("2026-08-22 10:00", calendar: calendar)
+check(sameTimeSchedule.resolve(at: beforeSameTime, calendar: calendar)?.next?.slot.id
+      == sameTimeLast.id,
+      "同刻时段的下一次切换预告配置中靠后的胜出者")
+check(sameTimeSchedule.resolve(at: afterSameTime, calendar: calendar)?.active.id
+      == sameTimeLast.id,
+      "同刻时段到点后由配置中靠后的稳定胜出")
+
 // 偏移可以跨越不止一个日历日。旧实现统一围绕 now 展开 ±1 天，
 // 因此“日出后 48 小时”在触发当日会完全求值失败。
 let delayed = Slot(trigger: .solar(event: .sunrise, offsetMinutes: 48 * 60),

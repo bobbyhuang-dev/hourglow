@@ -102,6 +102,28 @@ check(seconds(engine.wakeUpTarget(from: now,
                                   resolved: true)) == 1,
       "触发时刻已经过去时至少等 1 秒，不空转")
 
+// MARK: - 领跑 / 从属接管
+
+do {
+    let lockDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("hourglow-lock-\(UUID().uuidString)")
+    let previousHome = getenv("HOURGLOW_HOME").flatMap { String(validatingCString: $0) }
+    setenv("HOURGLOW_HOME", lockDirectory.path, 1)
+    defer {
+        if let previousHome { setenv("HOURGLOW_HOME", previousHome, 1) }
+        else { unsetenv("HOURGLOW_HOME") }
+        try? FileManager.default.removeItem(at: lockDirectory)
+    }
+
+    let leader = EngineLock.acquire()
+    check(leader != nil, "第一个引擎取得排程锁")
+    check(EngineLock.acquire() == nil, "领跑者存活时第二个引擎保持从属")
+    leader?.release()
+    let successor = EngineLock.acquire()
+    check(successor != nil, "领跑者退出后从属引擎可以接管")
+    successor?.release()
+}
+
 // MARK: - 配置文件监听
 
 private func waitUntil(timeout: TimeInterval = 2, _ condition: () -> Bool) -> Bool {

@@ -43,8 +43,8 @@ extension Schedule {
     func firings(around now: Date,
                  coordinate: Coordinate?,
                  calendar: Calendar = .current) -> [(date: Date, slot: Slot)] {
-        var result: [(date: Date, slot: Slot)] = []
-        for slot in slots where slot.enabled {
+        var result: [(date: Date, slot: Slot, order: Int)] = []
+        for (order, slot) in slots.enumerated() where slot.enabled {
             let anchor: Date
             switch slot.trigger {
             case .clock, .solarPhase:
@@ -63,11 +63,15 @@ extension Schedule {
                 if let date = slot.trigger.fireDate(on: day,
                                                     coordinate: coordinate,
                                                     calendar: calendar) {
-                    result.append((date, slot))
+                    result.append((date, slot, order))
                 }
             }
         }
-        return result.sorted { $0.date < $1.date }
+        // 用户可以手写两个完全相同的触发时刻。Swift 的 sort 不保证相等元素稳定，
+        // 不补第二排序键的话，重启之后谁胜出可能改变；这里明确让配置中靠后的时段胜出。
+        return result.sorted {
+            $0.date == $1.date ? $0.order < $1.order : $0.date < $1.date
+        }.map { (date: $0.date, slot: $0.slot) }
     }
 
     /// 取「不晚于此刻」的最后一次触发；若全都在未来，说明还没轮到今天的第一段，
@@ -78,7 +82,14 @@ extension Schedule {
         let coord = coordinate ?? effectiveCoordinate
         let all = firings(around: now, coordinate: coord, calendar: calendar)
         guard let current = all.last(where: { $0.date <= now }) else { return nil }
-        let upcoming = all.first(where: { $0.date > now })
+        // 同一时刻有多个时段时，`current` 会取配置中靠后的一个；“下一次切换”也必须
+        // 报同一个胜出者，不能先预告 A，到点后却解析成 B。
+        let upcoming: (date: Date, slot: Slot)?
+        if let nextDate = all.first(where: { $0.date > now })?.date {
+            upcoming = all.last(where: { $0.date == nextDate })
+        } else {
+            upcoming = nil
+        }
         return Resolution(active: current.slot,
                           since: current.date,
                           next: upcoming.map { (slot: $0.slot, at: $0.date) })

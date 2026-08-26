@@ -113,8 +113,11 @@ final class Scheduler {
     // MARK: - 生命周期
 
     /// 注册所有观察者、启动配置监听，并立即求值一次。
-    func start() {
+    func start(schedule initialSchedule: Schedule? = nil) {
         guard !isRunning else { return }
+        // 从属者接管时，构造 Scheduler 之后配置可能已被别的进程改过；必须以抢锁成功
+        // 那一刻重新读到的版本启动，不能先写回旧快照。
+        if let initialSchedule { schedule = initialSchedule }
         isRunning = true
         observeSystemEvents()
         startWatchingConfig()

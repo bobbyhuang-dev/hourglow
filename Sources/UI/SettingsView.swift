@@ -216,8 +216,9 @@ struct SettingsPage: View {
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                Button("导入…") { model.importSceneFromPanel() }
+                Button(model.importingScene ? "导入中…" : "导入…") { model.importSceneFromPanel() }
                     .controlSize(.small)
+                    .disabled(model.importingScene)
             }
         }
     }

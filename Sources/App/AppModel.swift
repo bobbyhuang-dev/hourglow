@@ -37,7 +37,7 @@ final class AppModel {
     private(set) var message: String?
 
     let catalog: [AerialAsset]
-    let isFollower: Bool
+    private(set) var isFollower: Bool
 
     /// 开机自启与 LaunchAgent 的现状。两者都要问系统（`SMAppService` 是同步 IPC、
     /// LaunchAgent 更是要 fork 一个 `launchctl`），所以只在设置页出现时刷一次，
@@ -51,6 +51,7 @@ final class AppModel {
     /// 更新与壁纸调度彼此独立；这里仅保存设置页要展示的状态。
     private(set) var updateState = AppUpdateState.idle
     private(set) var automaticUpdatesEnabled = AppUpdater.automaticUpdatesEnabled
+    private(set) var importingScene = false
 
     /// 正在编辑的那个时段。改动先落在这里，点「应用」才写进 `schedule`。
     ///
@@ -63,7 +64,7 @@ final class AppModel {
 
     private let assetNames: [String: String]
     private let scheduler: Scheduler
-    private let lock: EngineLock?
+    private var lock: EngineLock?
     private var watcher: ConfigWatcher?
     private var ticker: Timer?
     private var messageExpiry: DispatchWorkItem?
@@ -78,8 +79,9 @@ final class AppModel {
         schedule = loaded
         // 面板可能比 start() 先被打开，先把当前时段算出来，别闪一下「没有生效的时段」。
         resolution = loaded.resolve()
-        lock = EngineLock.acquire()
-        isFollower = lock == nil
+        let acquiredLock = EngineLock.acquire()
+        lock = acquiredLock
+        isFollower = acquiredLock == nil
         scheduler = Scheduler(schedule: loaded)
     }
 
@@ -108,7 +110,10 @@ final class AppModel {
 
         // 面板里的「现在 / 下次」是随时间走的，定期重算一遍。求值是纯计算，很便宜。
         let ticker = Timer(timeInterval: 30, repeats: true) { _ in
-            MainActor.assumeIsolated { AppModel.shared.refresh() }
+            MainActor.assumeIsolated {
+                AppModel.shared.promoteIfPossible()
+                AppModel.shared.refresh()
+            }
         }
         RunLoop.main.add(ticker, forMode: .common)
         self.ticker = ticker
@@ -366,6 +371,9 @@ final class AppModel {
         let note = LaunchAgentInstaller.uninstall()
         show(note.map { "已卸载后台守护进程（\($0)）" } ?? "已卸载后台守护进程")
         refreshSettings()
+        // 如果被卸掉的正是当前领跑者，尽快接班；bootout 尚未释放锁时，30 秒 ticker
+        // 还会继续尝试，不会让这个 app 永久停在从属模式。
+        promoteIfPossible()
     }
 
     // MARK: - 设置：更新
@@ -572,23 +580,38 @@ final class AppModel {
     /// 导入会整体替换时间轴，而且没有撤销。素材拷贝放到后台：24HW 一套几百 MB，
     /// 在主线程上拷会把菜单栏 app 卡住。
     func importScene(from urls: [URL]) {
+        guard !importingScene else {
+            show("已有一套壁纸正在导入")
+            return
+        }
         endEditing()
         guard confirmReplace() else { return }
+        importingScene = true
         let current = schedule
         Task {
+            defer { importingScene = false }
             do {
                 let outcome = try await Task.detached(priority: .userInitiated) {
                     try SceneImport.apply(urls: urls, to: current)
                 }.value
-                guard commit(outcome.schedule) else { return }
-                var text = "已导入 \(outcome.schedule.slots.count) 张，按当天日出日落均分。"
+                // 拷贝期间位置或暂停状态可能被另一个进程改过。导入只承诺替换时间轴，
+                // 因此把新 slots 合到此刻最新的配置里，不能拿任务开始前的整份快照覆盖回来。
+                var updated = schedule
+                updated.slots = outcome.schedule.slots
+                guard commit(updated) else {
+                    await Task.detached(priority: .utility) { SceneImport.discard(outcome) }.value
+                    return
+                }
+                // 只有配置成功落盘后旧素材才不再被引用。清理可能涉及几百 MB，留在后台做。
+                await Task.detached(priority: .utility) { SceneImport.finalize(outcome) }.value
+                var text = "已导入 \(updated.slots.count) 张，按当天日出日落均分。"
                 if !outcome.skipped.isEmpty {
                     text += "\n\(outcome.skipped.count) 张认不出是哪一段，没有收进来："
                     text += "\n" + outcome.skipped.prefix(6).map(\.lastPathComponent)
                         .joined(separator: "、")
                     if outcome.skipped.count > 6 { text += " …" }
                 }
-                show("已导入 \(outcome.schedule.slots.count) 张"
+                show("已导入 \(updated.slots.count) 张"
                      + (outcome.skipped.isEmpty ? "" : "，跳过 \(outcome.skipped.count) 张"))
                 announceImport(success: true, text: text)
             } catch {
@@ -713,6 +736,25 @@ final class AppModel {
         guard let reloaded = try? Store.load() else { return }
         replaceSchedule(reloaded)
         refresh()
+    }
+
+    /// 另一个引擎退出后从属者必须能接班。否则 app 在 CLI/LaunchAgent 之后启动，
+    /// 后者再被用户卸载或退出时，菜单栏仍会永远显示“从属”，实际上已经没人排程。
+    private func promoteIfPossible() {
+        guard isFollower, let acquired = EngineLock.acquire() else { return }
+        guard let latest = try? Store.load() else {
+            acquired.release()
+            show("后台引擎已退出，但配置读取失败，稍后重试")
+            return
+        }
+
+        watcher?.stop()
+        watcher = nil
+        lock = acquired
+        isFollower = false
+        replaceSchedule(latest)
+        scheduler.start(schedule: latest)
+        show("后台引擎已退出，菜单栏 app 已接管调度")
     }
 
     private func replaceSchedule(_ updated: Schedule) {

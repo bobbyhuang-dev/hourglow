@@ -22,6 +22,17 @@ check(AppUpdater.sha256(of: Data("abc".utf8))
       == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
       "SHA-256 与标准向量一致")
 
+do {
+    // 20 万字节远大于 macOS 管道缓冲区。旧实现先等进程退出再读输出，父子会在这里互等。
+    let result = try AppUpdater.runProcess(
+        "/usr/bin/awk",
+        [#"BEGIN { for (i = 0; i < 20000; i++) printf "0123456789" }"#])
+    check(result.status == 0 && result.output.utf8.count == 200_000,
+          "子进程大量输出不会堵满管道而卡死")
+} catch {
+    check(false, "大量子进程输出可以完整读取：\(error)")
+}
+
 let fixture = Data(#"""
 {
   "tag_name": "v1.2.0",

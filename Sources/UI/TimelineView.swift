@@ -233,7 +233,8 @@ struct TimelinePage: View {
                 model.setPaused(!model.schedule.paused)
             }
 
-            Button("导入…") { model.importSceneFromPanel() }
+            Button(model.importingScene ? "导入中…" : "导入…") { model.importSceneFromPanel() }
+                .disabled(model.importingScene)
 
             Spacer(minLength: 0)
 
@@ -242,6 +243,7 @@ struct TimelinePage: View {
                     .keyboardShortcut(",")
                 Button("选择地区…") { open(.place) }
                 Button("导入 24 小时壁纸…") { model.importSceneFromPanel() }
+                    .disabled(model.importingScene)
                 Button("检查更新…") {
                     open(.settings)
                     model.checkForUpdates()

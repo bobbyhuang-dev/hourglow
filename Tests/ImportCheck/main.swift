@@ -213,6 +213,7 @@ do {
     check(Set(outcome.skipped.map(\.lastPathComponent))
           == Set(["IMG_0041.jpg", "IMG_0042.jpg", "IMG_0043.jpg", "IMG_0044.jpg"]),
           "报出来的正是认不出的那几张")
+    try Store.save(outcome.schedule)
 } catch {
     check(false, "混合文件夹 apply 成功：\(error)")
 }
@@ -223,15 +224,54 @@ do {
     let scenes = SceneImport.scenesDirectory
     let stale = scenes.appendingPathComponent("mixed")
     check(FileManager.default.fileExists(atPath: stale.path), "上一套素材此刻还在")
-    _ = try SceneImport.apply(folder: numbered, to: Schedule(), name: "latest")
+    let latest = try SceneImport.apply(folder: numbered, to: Schedule(), name: "latest")
+    check(FileManager.default.fileExists(atPath: stale.path),
+          "新素材写好但配置尚未提交时不会提前删除旧素材")
+    try Store.save(latest.schedule)
+    SceneImport.finalize(latest)
     check(!FileManager.default.fileExists(atPath: stale.path), "导入新的一套后旧素材被清掉")
     check(FileManager.default.fileExists(atPath:
         scenes.appendingPathComponent("latest/sunrise_1.heic").path), "新素材在位")
-    let fresh = try SceneImport.apply(folder: numbered, to: Schedule(), name: "again").schedule
-    check(fresh.slots.allSatisfy { slot in
+    let fresh = try SceneImport.apply(folder: numbered, to: Schedule(), name: "again")
+    try Store.save(fresh.schedule)
+    SceneImport.finalize(fresh)
+    check(fresh.schedule.slots.allSatisfy { slot in
         guard case .image(let path) = slot.wallpaper else { return false }
         return FileManager.default.fileExists(atPath: path)
     }, "清理之后，时间轴引用的每一张图都还在盘上")
+
+    // 同名再次导入不能先覆盖 `again/`：保存若失败，旧配置仍会引用那一目录。
+    // 新实现先写唯一目录，调用方可以 discard，旧时间轴完全不受影响。
+    let replacement = FileManager.default.temporaryDirectory
+        .appendingPathComponent("hourglow-scene-replacement-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: replacement) }
+    touch(replacement.appendingPathComponent("sunrise_1.jpg"), bytes: 64)
+    let pending = try SceneImport.apply(folder: replacement, to: fresh.schedule, name: "again")
+    check(pending.destination.path != fresh.destination.path,
+          "同名导入写入新目录，不覆盖仍被旧配置引用的素材")
+    check(fresh.schedule.slots.allSatisfy { slot in
+        guard case .image(let path) = slot.wallpaper else { return false }
+        return FileManager.default.fileExists(atPath: path)
+    }, "同名导入提交前旧时间轴的全部图片仍在")
+    SceneImport.discard(pending)
+    check(!FileManager.default.fileExists(atPath: pending.destination.path),
+          "配置保存失败时撤掉本次新素材")
+    check(fresh.schedule.slots.allSatisfy { slot in
+        guard case .image(let path) = slot.wallpaper else { return false }
+        return FileManager.default.fileExists(atPath: path)
+    }, "撤销失败导入后旧时间轴仍可用")
+
+    // 两个进程可能同时导入。A 先复制、B 后提交成磁盘上的权威配置；A 随后清理时
+    // 必须重新读配置，不能按自己的 outcome 把 B 的素材删掉。
+    let raceA = try SceneImport.apply(folder: numbered, to: fresh.schedule, name: "race-a")
+    let raceB = try SceneImport.apply(folder: numbered, to: fresh.schedule, name: "race-b")
+    try Store.save(raceB.schedule)
+    SceneImport.finalize(raceA)
+    check(FileManager.default.fileExists(atPath: raceB.destination.path),
+          "并发导入的旧任务清理时会保留磁盘配置正在引用的新素材")
+    check(!FileManager.default.fileExists(atPath: raceA.destination.path),
+          "并发导入中没有提交的素材会被清掉")
+    SceneImport.finalize(raceB)
 } catch {
     check(false, "清理旧素材：\(error)")
 }

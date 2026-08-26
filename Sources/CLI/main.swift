@@ -320,7 +320,14 @@ func runImport() {
     let schedule = loadSchedule()
     do {
         let outcome = try SceneImport.apply(urls: urls, to: schedule, name: name)
-        try Store.save(outcome.schedule)
+        do {
+            try Store.save(outcome.schedule)
+        } catch {
+            // 配置没落盘，旧时间轴仍是权威；撤掉本次新素材，不能提前清旧目录。
+            SceneImport.discard(outcome)
+            throw error
+        }
+        SceneImport.finalize(outcome)
         print("已导入 \(outcome.schedule.slots.count) 张")
         print("素材  \(SceneImport.scenesDirectory.path)")
         print("配置  \(Store.fileURL.path)")

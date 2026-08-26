@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 struct SceneImportError: LocalizedError {
@@ -29,6 +30,9 @@ enum SceneImport {
     struct Outcome {
         var schedule: Schedule
         var skipped: [URL]
+        /// 这次新写好的素材目录。配置成功落盘后才能据此清理旧素材。
+        var destination: URL
+        fileprivate var protectedSources: Set<String>
     }
 
     static var scenesDirectory: URL {
@@ -60,50 +64,84 @@ enum SceneImport {
 
         let (grouped, skipped) = group(files, root: commonRoot(of: urls))
         let slug = slugify(name ?? defaultName(for: urls))
-        let dest = scenesDirectory.appendingPathComponent(slug, isDirectory: true)
+        let baseDestination = scenesDirectory.appendingPathComponent(slug, isDirectory: true)
+        // 永远不覆盖已有目录。旧时间轴可能仍引用它；只有新配置成功落盘后，调用方
+        // 才能 finalize 并清理。相同名字再次导入时先写到带后缀的新目录。
+        let dest = try reserveDestination(basedOn: baseDestination)
         let fm = FileManager.default
 
-        // 源目录就是目标时只重写时段，别先把自己删掉。
-        //
-        // 判断「是不是同一个目录」一律走 `canonicalPath`：`standardizedFileURL` 对
-        // `/private/tmp` 这种前缀的处理并不一致 —— 自己拼出来的 URL 留着 `/private`，
-        // 从 `contentsOfDirectory` 拿回来的却已经是 `/tmp`，直接比字符串会判成两个目录。
         let sources = Set(urls.map(canonicalPath))
-        if !sources.contains(canonicalPath(dest)), fm.fileExists(atPath: dest.path) {
-            try fm.removeItem(at: dest)
-        }
-        try fm.createDirectory(at: dest, withIntermediateDirectories: true)
-
-        var slots: [Slot] = []
-        for phase in DayPhase.allCases {
-            let urls = grouped[phase] ?? []
-            let count = urls.count
-            for (index, url) in urls.enumerated() {
-                let ext = url.pathExtension.lowercased()
-                let fileName = "\(phase.rawValue)_\(index + 1).\(ext)"
-                let destURL = dest.appendingPathComponent(fileName)
-                if canonicalPath(destURL) != canonicalPath(url) {
-                    if fm.fileExists(atPath: destURL.path) {
-                        try fm.removeItem(at: destURL)
-                    }
+        do {
+            var slots: [Slot] = []
+            for phase in DayPhase.allCases {
+                let urls = grouped[phase] ?? []
+                let count = urls.count
+                for (index, url) in urls.enumerated() {
+                    let ext = url.pathExtension.lowercased()
+                    let fileName = "\(phase.rawValue)_\(index + 1).\(ext)"
+                    let destURL = dest.appendingPathComponent(fileName)
                     try fm.copyItem(at: url, to: destURL)
+                    slots.append(Slot(
+                        trigger: .solarPhase(phase: phase, index: index, count: count),
+                        wallpaper: .image(path: destURL.path)
+                    ))
                 }
-                slots.append(Slot(
-                    trigger: .solarPhase(phase: phase, index: index, count: count),
-                    wallpaper: .image(path: destURL.path)
-                ))
             }
-        }
-        guard !slots.isEmpty else {
-            throw SceneImportError(message: "没有识别到可用的图片")
-        }
+            guard !slots.isEmpty else {
+                throw SceneImportError(message: "没有识别到可用的图片")
+            }
 
-        // 导入会整体替换时间轴，上一套素材从此没人引用。24HW 一套几百 MB，不扫会一直堆着。
-        pruneScenes(keeping: dest, sources: sources)
+            var updated = schedule
+            updated.slots = slots
+            return Outcome(schedule: updated,
+                           skipped: skipped,
+                           destination: dest,
+                           protectedSources: sources)
+        } catch {
+            // 复制到一半失败时只删这次新建的目录；既有目录和旧时间轴仍然完整。
+            try? fm.removeItem(at: dest)
+            throw error
+        }
+    }
 
-        var updated = schedule
-        updated.slots = slots
-        return Outcome(schedule: updated, skipped: skipped)
+    /// 配置已经成功落盘：现在旧时间轴不再会被恢复，可以清掉无人引用的旧素材。
+    static func finalize(_ outcome: Outcome) {
+        // 重新读磁盘而不是盲信 outcome：两个进程可能同时导入，后提交者已经成为权威。
+        // 清理只以此刻真正落盘的时间轴为准，先完成的任务不能删掉后完成者的新素材。
+        guard let current = try? Store.load() else { return }
+        pruneScenes(keeping: referencedSceneItems(in: current),
+                    sources: outcome.protectedSources)
+    }
+
+    /// 配置保存失败：撤掉本次新素材，旧时间轴及其素材保持原样。
+    static func discard(_ outcome: Outcome) {
+        let destination = canonicalPath(outcome.destination)
+        let parent = canonicalPath(scenesDirectory)
+        guard outcome.destination.deletingLastPathComponent().resolvingSymlinksInPath()
+                .standardizedFileURL.path == parent,
+              destination != parent else { return }
+        try? FileManager.default.removeItem(at: outcome.destination)
+    }
+
+    /// 找一个从未存在过的目标目录，避免配置提交前破坏旧时间轴引用的同名素材。
+    private static func reserveDestination(basedOn base: URL) throws -> URL {
+        let fm = FileManager.default
+        try fm.createDirectory(at: base.deletingLastPathComponent(),
+                               withIntermediateDirectories: true)
+        let parent = base.deletingLastPathComponent()
+        let stem = base.lastPathComponent
+        var candidate = base
+        while true {
+            // `fileExists` 后再 `createDirectory` 有竞态：两个导入会同时认领同一个目录，
+            // 其中一个失败清理时还可能把另一个已经复制的文件一起删掉。mkdir 的 EEXIST
+            // 检查与创建是一个原子操作，正好用来认领目录。
+            if mkdir(candidate.path, 0o755) == 0 { return candidate }
+            guard errno == EEXIST else {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+            }
+            let suffix = UUID().uuidString.prefix(8).lowercased()
+            candidate = parent.appendingPathComponent("\(stem)-\(suffix)", isDirectory: true)
+        }
     }
 
     /// 优先按时段关键词归类（先看文件名，再看导入目录里的上级文件夹）；都认不出时才均分成四段。
@@ -298,18 +336,35 @@ enum SceneImport {
         return Array(file.dropFirst(base.count).dropLast())
     }
 
+    /// 配置里仍被引用的 `Scenes/` 直属项。通常是一整个场景目录；也兼容手写配置
+    /// 直接引用 `Scenes/foo.jpg` 的情况。
+    private static func referencedSceneItems(in schedule: Schedule) -> Set<String> {
+        let root = canonicalPath(scenesDirectory)
+        let prefix = root + "/"
+        var result = Set<String>()
+        for slot in schedule.slots {
+            guard case .image(let rawPath) = slot.wallpaper else { continue }
+            let expanded = (rawPath as NSString).expandingTildeInPath
+            let path = canonicalPath(URL(fileURLWithPath: expanded))
+            guard path.hasPrefix(prefix) else { continue }
+            let remainder = path.dropFirst(prefix.count)
+            guard let item = remainder.split(separator: "/").first else { continue }
+            result.insert(prefix + item)
+        }
+        return result
+    }
+
     /// 换一套壁纸后，上一套的素材没有任何时段引用了 —— 时间轴是整体替换的。
     /// 只扫我们自己的 `Scenes/`，并且躲开这次导入的源目录。
-    private static func pruneScenes(keeping dest: URL, sources: Set<String>) {
+    private static func pruneScenes(keeping keep: Set<String>, sources: Set<String>) {
         let fm = FileManager.default
         guard let children = try? fm.contentsOfDirectory(at: scenesDirectory,
                                                          includingPropertiesForKeys: nil) else {
             return
         }
-        let keep = canonicalPath(dest)
         for child in children {
             let path = canonicalPath(child)
-            if path == keep { continue }
+            if keep.contains(path) { continue }
             // 直接从 `Scenes/` 里的某一套导入时，那一套就是源，别把脚下的地板拆了。
             let isSource = sources.contains { $0 == path || $0.hasPrefix(path + "/") }
             if isSource { continue }

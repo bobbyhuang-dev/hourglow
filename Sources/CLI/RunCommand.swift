@@ -18,20 +18,36 @@ func runDaemon() {
     // launchd 把 stdout 重定向到文件时它是全缓冲的，不改成行缓冲的话日志会积着不落盘。
     setvbuf(stdout, nil, _IOLBF, 0)
 
-    // 单实例锁见 `Engine/EngineLock.swift`：菜单栏 app 也来抢同一把。
-    guard let lock = EngineLock.acquire() else {
-        fail("已经有一个 HourGlow 引擎在跑了（\(EngineLock.fileURL.path)）")
+    // 菜单栏 app 与 CLI 都可能后退出。抢不到锁时进程不能直接失败：LaunchAgent 的
+    // KeepAlive 会把失败退出当崩溃反复拉起；原领跑者退出后也需要由从属者接班。
+    var lock: EngineLock?
+    var scheduler: Scheduler?
+    var promotionTimer: Timer?
+
+    @discardableResult
+    func becomeLeader() -> Bool {
+        guard lock == nil, let acquired = EngineLock.acquire() else { return false }
+        let schedule: Schedule
+        do {
+            schedule = try Store.load()
+        } catch {
+            acquired.release()
+            stamped("读取配置失败，10 秒后重试: \(error)")
+            return false
+        }
+
+        lock = acquired
+        let engine = Scheduler(schedule: schedule)
+        engine.onLog = { stamped($0) }
+        scheduler = engine
+        promotionTimer?.invalidate()
+        promotionTimer = nil
+        stamped("取得排程锁，开始领跑  pid \(ProcessInfo.processInfo.processIdentifier)")
+        engine.start()
+        return true
     }
-    // 持有到进程结束；这里只是让编译器别把它当成没用的局部变量。
-    defer { lock.release() }
 
-    let schedule: Schedule
-    do { schedule = try Store.load() } catch { fail("读取配置失败: \(error)") }
-
-    let scheduler = Scheduler(schedule: schedule)
-    scheduler.onLog = { stamped($0) }
-
-    stamped("HourGlow 引擎启动  pid \(ProcessInfo.processInfo.processIdentifier)")
+    stamped("HourGlow 常驻进程启动  pid \(ProcessInfo.processInfo.processIdentifier)")
     stamped("配置  \(Store.fileURL.path)")
 
     // 默认的 SIGINT/SIGTERM 处理会直接砍掉进程，DispatchSource 收不到；先忽略再自己接管。
@@ -40,13 +56,22 @@ func runDaemon() {
         let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
         source.setEventHandler {
             stamped("收到信号，退出")
-            scheduler.stop()
+            promotionTimer?.invalidate()
+            scheduler?.stop()
+            lock?.release()
             exit(0)
         }
         source.resume()
         return source
     }
-    scheduler.start()
+
+    if !becomeLeader() {
+        stamped("另一个 HourGlow 引擎正在排程，进入从属模式；对方退出后自动接管")
+        let timer = Timer(timeInterval: 10, repeats: true) { _ in becomeLeader() }
+        RunLoop.main.add(timer, forMode: .common)
+        promotionTimer = timer
+    }
+
     // signal source 必须活到 run loop 退出；空的 withExtendedLifetime 会立刻结束，
     // 编译器随后可以释放 sources，导致 Ctrl-C / SIGTERM 不再走清理逻辑。
     withExtendedLifetime(sources) {
