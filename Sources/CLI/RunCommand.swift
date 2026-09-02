@@ -32,7 +32,7 @@ func runDaemon() {
             schedule = try Store.load()
         } catch {
             acquired.release()
-            stamped("读取配置失败，10 秒后重试: \(error)")
+            stamped(L10n.t("cli.run.loadFailed", "\(error)"))
             return false
         }
 
@@ -42,20 +42,20 @@ func runDaemon() {
         scheduler = engine
         promotionTimer?.invalidate()
         promotionTimer = nil
-        stamped("取得排程锁，开始领跑  pid \(ProcessInfo.processInfo.processIdentifier)")
+        stamped(L10n.t("cli.run.leader", ProcessInfo.processInfo.processIdentifier))
         engine.start()
         return true
     }
 
-    stamped("HourGlow 常驻进程启动  pid \(ProcessInfo.processInfo.processIdentifier)")
-    stamped("配置  \(Store.fileURL.path)")
+    stamped(L10n.t("cli.run.started", ProcessInfo.processInfo.processIdentifier))
+    stamped(labeled("cli.label.config", Store.fileURL.path))
 
     // 默认的 SIGINT/SIGTERM 处理会直接砍掉进程，DispatchSource 收不到；先忽略再自己接管。
     for sig in [SIGINT, SIGTERM] { signal(sig, SIG_IGN) }
     let sources = [SIGINT, SIGTERM].map { sig -> DispatchSourceSignal in
         let source = DispatchSource.makeSignalSource(signal: sig, queue: .main)
         source.setEventHandler {
-            stamped("收到信号，退出")
+            stamped(L10n.t("cli.run.signal"))
             promotionTimer?.invalidate()
             scheduler?.stop()
             lock?.release()
@@ -66,7 +66,7 @@ func runDaemon() {
     }
 
     if !becomeLeader() {
-        stamped("另一个 HourGlow 引擎正在排程，进入从属模式；对方退出后自动接管")
+        stamped(L10n.t("cli.run.follower"))
         let timer = Timer(timeInterval: 10, repeats: true) { _ in becomeLeader() }
         RunLoop.main.add(timer, forMode: .common)
         promotionTimer = timer
@@ -84,10 +84,10 @@ func runDaemon() {
 func runPause() {
     do {
         var schedule = try Store.load()
-        guard !schedule.paused else { print("已经是暂停状态"); return }
+        guard !schedule.paused else { print(L10n.t("cli.pause.already")); return }
         schedule.paused = true
         try Store.save(schedule)
-        print("已暂停。壁纸停在当前这张，恢复时会立刻校正。")
+        print(L10n.t("cli.pause.done"))
     } catch { fail("\(error)") }
 }
 
@@ -113,25 +113,28 @@ func runStatus() {
     }()
 
     let schedule = (try? Store.load()) ?? Schedule()
-    print("调度  \(schedule.paused ? "已暂停" : "启用")")
-    print("引擎  \(EngineLock.isHeldByAnotherProcess ? "在跑" : "没在跑（hourglow-cli run 或 HourGlow.app）")")
-    print("常驻  \(LaunchAgentInstaller.isLoaded ? "已注册 LaunchAgent" : "未注册（hourglow-cli agent install）")")
+    print(L10n.t("cli.status.schedule",
+                 L10n.t(schedule.paused ? "cli.state.paused" : "cli.status.enabled")))
+    print(L10n.t("cli.status.engine",
+                 L10n.t(EngineLock.isHeldByAnotherProcess ? "cli.status.engine.running"
+                                                          : "cli.status.engine.stopped")))
+    print(L10n.t("cli.status.agent",
+                 L10n.t(LaunchAgentInstaller.isLoaded ? "cli.status.agent.installed"
+                                                      : "cli.status.agent.missing")))
 
     guard let written = state.lastWritten else {
-        print("引擎还没有写过壁纸（\(EngineState.fileURL.path) 不存在或为空）")
+        print(L10n.t("cli.status.neverWrote", EngineState.fileURL.path))
         return
     }
-    print("上次写入  \(Scheduler.describe(written))"
-          + "   触发于 \(state.lastFiredAt.map(clock.string(from:)) ?? "—")"
-          + "   落地于 \(state.lastAppliedAt.map(clock.string(from:)) ?? "—")")
+    print(L10n.t("cli.status.lastWrite",
+                 Scheduler.describe(written),
+                 state.lastFiredAt.map(clock.string(from:)) ?? "—",
+                 state.lastAppliedAt.map(clock.string(from:)) ?? "—"))
 
     if let actual = try? WallpaperWriter.current() {
-        if WallpaperWriter.normalized(actual) == WallpaperWriter.normalized(written) {
-            print("当前壁纸  \(Scheduler.describe(actual))   ✓ 仍是我们写的那张")
-        } else {
-            print("当前壁纸  \(Scheduler.describe(actual))   ✗ 被手动换过"
-                  + " —— 原地重新求值时会让位，下一个触发点才接管")
-        }
+        let same = WallpaperWriter.normalized(actual) == WallpaperWriter.normalized(written)
+        print(L10n.t(same ? "cli.status.stillOurs" : "cli.status.overridden",
+                     Scheduler.describe(actual)))
     }
 }
 
@@ -147,16 +150,17 @@ func runAgent(_ subcommand: String?) {
         do {
             try LaunchAgentInstaller.install(binary: URL(fileURLWithPath: binary.path).standardizedFileURL)
         } catch { fail("\(error.localizedDescription)") }
-        print("已安装  \(LaunchAgentInstaller.plistURL.path)")
-        print("日志    \(LaunchAgentInstaller.logURL.path)")
+        print(L10n.t("cli.agent.installed", LaunchAgentInstaller.plistURL.path))
+        print(labeled("cli.label.log", LaunchAgentInstaller.logURL.path))
     case "uninstall":
         if let note = LaunchAgentInstaller.uninstall() { print(note) }
-        print("已卸载 \(LaunchAgentInstaller.label)")
+        print(L10n.t("cli.agent.uninstalled", LaunchAgentInstaller.label))
     case "status", nil:
-        print(LaunchAgentInstaller.isLoaded ? "已加载 \(LaunchAgentInstaller.label)" : "未加载")
-        print("plist  \(LaunchAgentInstaller.plistURL.path)")
-        print("日志   \(LaunchAgentInstaller.logURL.path)")
+        print(LaunchAgentInstaller.isLoaded ? L10n.t("cli.agent.loaded", LaunchAgentInstaller.label)
+                                            : L10n.t("cli.agent.notLoaded"))
+        print(labeled("cli.label.plist", LaunchAgentInstaller.plistURL.path))
+        print(labeled("cli.label.log", LaunchAgentInstaller.logURL.path))
     case let other?:
-        fail("未知子命令 \(other)，可用: install / uninstall / status")
+        fail(L10n.t("cli.unknownSubcommand", other))
     }
 }

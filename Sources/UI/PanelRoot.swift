@@ -52,6 +52,9 @@ struct PanelRoot: View {
                     .transition(slide)
             }
         }
+        // 换语言时把这一层整棵重建。`.id` 挂在页面上而不是 `PanelRoot` 自己身上，
+        // 所以 `page` 留在原地 —— 在设置页改完语言，人还在设置页。
+        .id(model.languageGeneration)
         // 宽度锁死；高度由各页自己决定（时间轴按时段数收，选壁纸那页固定铺满）。
         .frame(width: Panel.width)
         .animation(Panel.animation, value: page)

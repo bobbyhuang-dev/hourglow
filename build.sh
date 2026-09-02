@@ -5,11 +5,13 @@ cd "$(dirname "$0")"
 mkdir -p build
 
 # 版本号。发布流水线用 tag 覆盖（如 HOURGLOW_VERSION=1.0.1），本地构建就用这里的默认值。
-VERSION="${HOURGLOW_VERSION:-1.3.0}"
+VERSION="${HOURGLOW_VERSION:-1.4.0}"
 BUILD_NUMBER="${HOURGLOW_BUILD:-1}"
 BUNDLE_ID="dev.bobbyhuang.hourglow"
 
-COMMON=(Sources/Model/*.swift Sources/System/*.swift Sources/Engine/*.swift)
+# 文案表编进每一个产物：裸二进制没有 bundle，`Localizable.strings` 在它们身上查不到词。
+L10N=(Sources/L10n/L10n.swift Sources/L10n/Catalogs/*.swift)
+COMMON=("${L10N[@]}" Sources/Model/*.swift Sources/System/*.swift Sources/Engine/*.swift)
 # 入口单列：panelshot 要复用界面代码，但不能把 @main 一起拖进去。
 UI=(Sources/App/SlotDraft.swift Sources/App/Onboarding.swift Sources/App/AppUpdater.swift Sources/App/AppModel.swift Sources/UI/*.swift)
 ENTRY=(Sources/App/HourGlowApp.swift)
@@ -19,8 +21,9 @@ swiftc -O "${COMMON[@]}" Tests/SolarCheck/main.swift -o build/solarcheck
 swiftc -O "${COMMON[@]}" Tests/ModelCheck/main.swift -o build/modelcheck
 swiftc -O "${COMMON[@]}" Tests/EngineCheck/main.swift -o build/enginecheck
 swiftc -O "${COMMON[@]}" Tests/ImportCheck/main.swift -o build/importcheck
+swiftc -O "${L10N[@]}" Tests/L10nCheck/main.swift  -o build/l10ncheck
 swiftc -O "${COMMON[@]}" Sources/App/SlotDraft.swift Sources/App/Onboarding.swift Tests/AppCheck/main.swift -o build/appcheck
-swiftc -O Sources/App/AppUpdater.swift Tests/UpdateCheck/main.swift -o build/updatecheck
+swiftc -O "${L10N[@]}" Sources/App/AppUpdater.swift Tests/UpdateCheck/main.swift -o build/updatecheck
 # 面板的离屏渲染，改版式时用来对照（见 Tests/PanelShot/main.swift）。
 swiftc -O "${COMMON[@]}" "${UI[@]}" Tests/PanelShot/main.swift -o build/panelshot
 
@@ -31,10 +34,18 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
 
 swiftc -O "${COMMON[@]}" "${UI[@]}" "${ENTRY[@]}" -o "$APP/Contents/MacOS/HourGlow"
-swiftc -O Sources/Updater/main.swift -o "$APP/Contents/Helpers/HourGlowUpdater"
+swiftc -O "${L10N[@]}" Sources/Updater/main.swift -o "$APP/Contents/Helpers/HourGlowUpdater"
 
 # 图标已经生成好提交在仓库里，改它才需要重跑 `Tools/makeicon.swift`（用法见文件头）。
 cp Resources/HourGlow.icns "$APP/Contents/Resources/HourGlow.icns"
+
+# 支持的语言从文案表里数出来，不在这里另立一份名单：加一门语言只该改
+# `Sources/L10n/`。少了这一条，系统会把 app 当成只有开发语言的单语应用，
+# 「语言与地区 › 应用程序」里也不会出现 HourGlow 这一行。
+LOCALIZATIONS=$(grep -h -o 'code: "[^"]*"' Sources/L10n/Catalogs/*.swift \
+    | sed -e 's/code: "//' -e 's/"//' \
+    | sort \
+    | awk '{ printf "        <string>%s</string>\n", $0 }')
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -51,6 +62,11 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key>              <string>$BUILD_NUMBER</string>
     <key>CFBundleIconFile</key>             <string>HourGlow</string>
     <key>LSMinimumSystemVersion</key>       <string>26.0</string>
+    <key>CFBundleDevelopmentRegion</key>    <string>zh-Hans</string>
+    <key>CFBundleLocalizations</key>
+    <array>
+$LOCALIZATIONS
+    </array>
     <key>NSHighResolutionCapable</key>      <true/>
     <!-- 菜单栏常驻：没有 Dock 图标，也没有主窗口。 -->
     <key>LSUIElement</key>                  <true/>
@@ -73,4 +89,4 @@ codesign --force --sign - \
     "$APP" >/dev/null 2>&1
 
 echo "built: HourGlow $VERSION ($BUILD_NUMBER)"
-echo "built: build/hourglow-cli, build/solarcheck, build/modelcheck, build/enginecheck, build/importcheck, build/appcheck, build/updatecheck, build/panelshot, $APP"
+echo "built: build/hourglow-cli, build/solarcheck, build/modelcheck, build/enginecheck, build/importcheck, build/l10ncheck, build/appcheck, build/updatecheck, build/panelshot, $APP"

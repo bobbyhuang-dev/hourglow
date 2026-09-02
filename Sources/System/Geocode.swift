@@ -79,7 +79,7 @@ enum PlaceSearch {
         let name = item.name
             ?? item.address?.shortAddress
         guard let name, !name.isEmpty else { return nil }
-        let detail = item.address?.fullAddress ?? "搜索结果"
+        let detail = item.address?.fullAddress ?? L10n.t("geocode.result")
         return City(
             name: name,
             detail: detail,

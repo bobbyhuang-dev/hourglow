@@ -1,12 +1,43 @@
 import Foundation
 
 /// 一个可选的地点：展示名 + 搜索用的别名 + 坐标。
+///
+/// 展示名按当前语言挑，**搜索永远两种都认** —— 界面切成英文之后仍然打得出「深圳」，
+/// 反过来也一样。`keys` 里因此中文名、拼音、拉丁名全在。
 struct City: Equatable, Identifiable, Hashable {
-    var name: String
-    var detail: String
+    /// 名字的两种写法。离线表里都有；`zone.tab` 与地理编码只有一种，那时它是空的。
+    var names: [PlaceNames: String]
+    /// 当前语言那一种缺席时用它。
+    var fallbackName: String
+    /// 中文的省 / 直辖市 / 国家名。分组与翻译都按它走；`nil` 表示这条不是离线表里的。
+    var region: String?
+    var fallbackDetail: String
     var coordinate: Coordinate
     var keys: [String]
-    var id: String { "\(name)|\(coordinate.latitude)|\(coordinate.longitude)" }
+
+    var name: String { names[L10n.placeNames] ?? fallbackName }
+    var detail: String { region.map(Cities.regionName) ?? fallbackDetail }
+
+    /// id 用不随语言变的那个名字：换语言不该让它变成另一个城市。
+    var id: String { "\(fallbackName)|\(coordinate.latitude)|\(coordinate.longitude)" }
+
+    init(names: [PlaceNames: String], fallbackName: String,
+         region: String?, fallbackDetail: String,
+         coordinate: Coordinate, keys: [String]) {
+        self.names = names
+        self.fallbackName = fallbackName
+        self.region = region
+        self.fallbackDetail = fallbackDetail
+        self.coordinate = coordinate
+        self.keys = keys
+    }
+
+    /// 只有一种写法的来源（`zone.tab`、系统地理编码）走这条。
+    init(name: String, detail: String, coordinate: Coordinate, keys: [String]) {
+        self.init(names: [:], fallbackName: name,
+                  region: nil, fallbackDetail: detail,
+                  coordinate: coordinate, keys: keys)
+    }
 
     func matches(_ query: String) -> Bool {
         if query.isEmpty { return true }
@@ -23,19 +54,10 @@ struct City: Equatable, Identifiable, Hashable {
         return c
     }
 
-    /// 离线表里中国城市的 `detail` 是省 / 直辖市 / 特别行政区。
     /// 用来把地点页拆成「中国 / 海外」两段，空搜时不混成一长串。
-    var isChina: Bool { Self.chineseRegions.contains(detail) }
-
-    private static let chineseRegions: Set<String> = [
-        "北京", "上海", "天津", "重庆",
-        "河北", "山西", "辽宁", "吉林", "黑龙江",
-        "江苏", "浙江", "安徽", "福建", "江西", "山东",
-        "河南", "湖北", "湖南", "广东", "海南",
-        "四川", "贵州", "云南", "陕西", "甘肃", "青海",
-        "台湾", "内蒙古", "广西", "西藏", "宁夏", "新疆",
-        "香港", "澳门",
-    ]
+    /// 判据是中文的行政区名，不是展示出来的那个 —— 英文界面下 `detail` 是
+    /// 「Guangdong」，按它比对会把整个中国段判没。
+    var isChina: Bool { region.map(Cities.chineseRegions.contains) ?? false }
 }
 
 /// 离线城市表：常用中文城市（含拼音）加上 `zone.tab` 里每个时区的代表点。
@@ -97,10 +119,31 @@ enum Cities {
         return (3, city.name)
     }
 
+    /// 行政区 / 国家名。表里存的是中文，拉丁字母的语言查下面那张对照表。
+    ///
+    /// 地名不放进语言表：翻一门新语言不该顺带翻译七十多个省和国家，
+    /// 而「Guangdong」对任何拉丁字母的语言都一样能用。
+    static func regionName(_ chinese: String) -> String {
+        guard L10n.placeNames == .latin else { return chinese }
+        return latinRegions[chinese] ?? chinese
+    }
+
+    static let chineseRegions: Set<String> = [
+        "北京", "上海", "天津", "重庆",
+        "河北", "山西", "辽宁", "吉林", "黑龙江",
+        "江苏", "浙江", "安徽", "福建", "江西", "山东",
+        "河南", "湖北", "湖南", "广东", "海南",
+        "四川", "贵州", "云南", "陕西", "甘肃", "青海",
+        "台湾", "内蒙古", "广西", "西藏", "宁夏", "新疆",
+        "香港", "澳门",
+    ]
+
     // name, pinyin, english, lat, lon, region
     private static let curated: [City] = rows.map { row in
-        City(name: row.0,
-             detail: row.5,
+        City(names: [.chinese: row.0, .latin: row.2],
+             fallbackName: row.0,
+             region: row.5,
+             fallbackDetail: row.5,
              coordinate: Coordinate(latitude: row.3, longitude: row.4, name: row.0),
              keys: [row.0, row.1, row.2, row.1.replacingOccurrences(of: " ", with: "")])
     }
@@ -211,6 +254,32 @@ enum Cities {
         ("布宜诺斯艾利斯", "buyinuosai", "Buenos Aires", -34.604, -58.382, "阿根廷"),
         ("圣地亚哥", "shengdiyage", "Santiago", -33.449, -70.669, "智利"),
         ("雷克雅未克", "leikeyawieke", "Reykjavik", 64.147, -21.943, "冰岛"),
+    ]
+
+    /// 中文行政区 / 国家名 → 拉丁字母写法。只在 `placeNames == .latin` 时用。
+    private static let latinRegions: [String: String] = [
+        "北京": "Beijing", "上海": "Shanghai", "天津": "Tianjin", "重庆": "Chongqing",
+        "河北": "Hebei", "山西": "Shanxi", "辽宁": "Liaoning", "吉林": "Jilin",
+        "黑龙江": "Heilongjiang", "江苏": "Jiangsu", "浙江": "Zhejiang", "安徽": "Anhui",
+        "福建": "Fujian", "江西": "Jiangxi", "山东": "Shandong", "河南": "Henan",
+        "湖北": "Hubei", "湖南": "Hunan", "广东": "Guangdong", "海南": "Hainan",
+        "四川": "Sichuan", "贵州": "Guizhou", "云南": "Yunnan",
+        // 陕西 / 山西 的拼音只差声调，英文里靠这个多出来的 a 分辨。
+        "陕西": "Shaanxi", "甘肃": "Gansu", "青海": "Qinghai", "台湾": "Taiwan",
+        "内蒙古": "Inner Mongolia", "广西": "Guangxi", "西藏": "Tibet", "宁夏": "Ningxia",
+        "新疆": "Xinjiang", "香港": "Hong Kong", "澳门": "Macau",
+
+        "日本": "Japan", "韩国": "South Korea", "新加坡": "Singapore", "泰国": "Thailand",
+        "马来西亚": "Malaysia", "印度尼西亚": "Indonesia", "菲律宾": "Philippines",
+        "越南": "Vietnam", "澳大利亚": "Australia", "新西兰": "New Zealand",
+        "英国": "United Kingdom", "法国": "France", "德国": "Germany", "荷兰": "Netherlands",
+        "意大利": "Italy", "西班牙": "Spain", "瑞士": "Switzerland", "瑞典": "Sweden",
+        "挪威": "Norway", "丹麦": "Denmark", "芬兰": "Finland", "奥地利": "Austria",
+        "捷克": "Czechia", "波兰": "Poland", "俄罗斯": "Russia", "土耳其": "Türkiye",
+        "阿联酋": "United Arab Emirates", "印度": "India", "埃及": "Egypt",
+        "南非": "South Africa", "肯尼亚": "Kenya", "美国": "United States",
+        "加拿大": "Canada", "墨西哥": "Mexico", "巴西": "Brazil", "阿根廷": "Argentina",
+        "智利": "Chile", "冰岛": "Iceland",
     ]
 
     /// `zone.tab` 每个时区一行代表城市，补上「东京 / 伦敦」这类没单独写进中文表的点。

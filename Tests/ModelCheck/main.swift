@@ -1,5 +1,11 @@
 import Foundation
 
+// 断言里写着中文原文（城市名、指引文案），所以靶子必须跑在原文语言下：
+// 不钉住的话，英文系统上会挂在 `深圳` vs `Shenzhen` 这种地方。
+// 换语言本身由 `l10ncheck` 单独覆盖。
+setenv("HOURGLOW_LANG", L10n.sourceCode, 1)
+L10n.invalidate()
+
 private var failures = 0
 
 private func check(_ condition: @autoclosure () -> Bool, _ message: String) {

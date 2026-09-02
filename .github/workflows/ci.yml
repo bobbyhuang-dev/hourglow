@@ -41,6 +41,8 @@ jobs:
           ./build/importcheck
           ./build/appcheck
           ./build/updatecheck
+          # 带上 Sources：除了对表本身，还把代码里写死的 key 与原文表对一遍。
+          ./build/l10ncheck Sources
           bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 
       - uses: actions/setup-python@v5
@@ -67,3 +69,14 @@ jobs:
           ./build/hourglow-cli solar
           ./build/hourglow-cli cities 深圳
           ./build/hourglow-cli simulate 2026-12-21
+          # 每门语言都跑一遍：漏词与占位符由 l10ncheck 挡，
+          # 这里挡的是「某门语言下 CLI 直接崩了」这种只有真跑才暴露的问题。
+          # 语言清单从文案表里数出来（`build.sh` 生成 CFBundleLocalizations 用的是同一招），
+          # 加一门语言不用回来改这里。
+          for lang in $(grep -h -o 'code: "[^"]*"' Sources/L10n/Catalogs/*.swift \
+                        | sed -e 's/code: "//' -e 's/"//'); do
+            HOURGLOW_LANG="$lang" ./build/hourglow-cli language
+            HOURGLOW_LANG="$lang" ./build/hourglow-cli list
+            HOURGLOW_LANG="$lang" ./build/hourglow-cli simulate 2026-12-21
+            HOURGLOW_LANG="$lang" ./build/hourglow-cli help
+          done

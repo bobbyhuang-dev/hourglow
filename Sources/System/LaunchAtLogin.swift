@@ -46,11 +46,11 @@ enum LaunchAtLogin {
     /// 给 UI 和 CLI 共用的一句话状态。
     static func describe(_ status: SMAppService.Status = LaunchAtLogin.status) -> String {
         switch status {
-        case .enabled:          return "已开启"
-        case .notRegistered:    return "未开启"
-        case .requiresApproval: return "已被系统设置关闭"
-        case .notFound:         return "登录项指向的 app 已不在原位"
-        @unknown default:       return "未知状态 (\(status.rawValue))"
+        case .enabled:          return L10n.t("launchAtLogin.enabled")
+        case .notRegistered:    return L10n.t("launchAtLogin.off")
+        case .requiresApproval: return L10n.t("launchAtLogin.requiresApproval")
+        case .notFound:         return L10n.t("launchAtLogin.notFound")
+        @unknown default:       return L10n.t("launchAtLogin.unknown", status.rawValue)
         }
     }
 }

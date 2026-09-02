@@ -47,7 +47,7 @@ final class OnboardingWindow: NSObject, NSWindowDelegate {
                               backing: .buffered,
                               defer: false)
         window.contentView = host
-        window.title = "HourGlow 新手指引"
+        window.title = L10n.t("guide.window.title")
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.center()

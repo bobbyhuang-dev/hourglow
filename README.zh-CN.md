@@ -14,6 +14,7 @@ macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 
 通用的「触发条件 → 壁纸」调度器：你定义若干时段，每段绑一张壁纸，它负责在正确的时刻切换。
 
 菜单栏常驻，无 Dock 图标。Swift 6.3 + SwiftUI，零第三方依赖，二进制不到 5 MB。
+界面有简体中文与英文两种。
 
 ## 功能
 
@@ -34,6 +35,8 @@ macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 
 - **内建更新** —— 可以手动检查，也可以每天自动检查 GitHub Releases；下载后校验哈希与
   代码签名，原位安装并自行重启
 - **配置是人类可读的 JSON** —— 手改 `schedule.json` 后引擎立刻跟上
+- **简体中文与 English** —— 默认跟随系统语言，面板、新手指引与命令行一起切换。
+  加一门语言只是加一个文件、加一行，见[怎么加一门语言](CONTRIBUTING.md#adding-a-language)
 - **第一次打开有指引** —— 五步讲清楚：图标去哪儿了、要授权什么、系统对话框长什么样、
   位置怎么设（不想给定位就搜城市）、时间轴怎么看。随时可以跳过，⋯ 菜单里还能再打开
 - **导入 24 小时壁纸组** —— 文件名带 sunrise / morning / day / sunset / evening / night
@@ -101,6 +104,7 @@ open build/HourGlow.app
 ./build/hourglow-cli simulate 2026-12-21 # 时间旅行：打印该日全天的每一次切换
 ./build/hourglow-cli solar               # 今天的日出、日落、航海晨光、民用黄昏
 ./build/hourglow-cli location 深圳       # 按城市名设坐标
+./build/hourglow-cli language en         # 界面与命令行的语言（不带参数只打印现状）
 ./build/hourglow-cli import ~/Pictures/zhangjiajie   # 一组静帧 → 天光分段时间轴
 ./build/hourglow-cli apply --dry-run     # 看会写什么，不真写
 ./build/hourglow-cli run                 # 前台常驻引擎
@@ -122,6 +126,27 @@ build/HourGlow.app/Contents/MacOS/HourGlow --guide status        # 新手指引�
 
 菜单栏 app 与 `hourglow-cli run` 抢同一把单实例锁：先起的那个负责排程，后起的退回从属模式，
 只编辑配置，由对方跟上。
+
+## 语言
+
+界面有简体中文与英文两种，默认跟随系统语言。两种都对不上时用英文。
+
+想钉死一种，走设置页（⋯ 菜单 › 设置 › 语言），或者走命令行。app 与 CLI 共用同一份偏好，
+面板不用重启就跟着变：
+
+```bash
+hourglow-cli language            # 现在是哪门、偏好存的是什么、有哪些可选
+hourglow-cli language en         # 钉死英文
+hourglow-cli language system     # 改回跟随系统
+```
+
+`HOURGLOW_LANG=en hourglow-cli list` 压过上面两者，只影响这一条命令、不写任何设置 ——
+截图和提 issue 的时候用得上。
+
+**加一门语言**只需要在 `Sources/L10n/Catalogs/` 里加一个文件、在 `Sources/L10n/L10n.swift`
+里加一行 —— 除了把一张字典填满，不用写别的 Swift，还有一个靶子会告诉你到底还缺哪几条。
+步骤见 [CONTRIBUTING.md › Adding a language](CONTRIBUTING.md#adding-a-language)。
+非常欢迎翻译。
 
 ## 手动改壁纸时谁说了算
 
@@ -176,6 +201,7 @@ LaunchAgent 日志 `~/Library/Logs/HourGlow.log`。整个配置目录可以用 `
 ./build/importcheck            # 导入：24 Hour Wallpaper 文件名、多分辨率、均分
 ./build/appcheck               # 应用状态：草稿、保存边界、外部配置冲突、新手指引的弹出规则
 ./build/updatecheck            # 更新器：SemVer 排序、Release 解析、SHA-256
+./build/l10ncheck Sources      # 文案表：不漏词、不空、不多词，占位符对得上，代码里用到的 key 都存在
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 bash Tests/verify-app-signature.sh build/HourGlow.app   # 签名与稳定的 designated requirement
 python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例，最大偏差 4 秒）
@@ -184,12 +210,14 @@ python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例�
 
 ## 状态
 
-稳定，作者本人每天在用。**当前版本 1.3** —— 第一次打开有新手指引。1.2 带来了
-24 Hour Wallpaper 导入与天光分段调度，1.1 加了内建更新，1.0 完成了调度引擎、菜单栏界面、
-开机自启与精确定位。
+稳定，作者本人每天在用。**当前版本 1.4** —— 除了一开始就有的简体中文，界面现在也有英文。
+1.3 加了新手指引，1.2 带来了 24 Hour Wallpaper 导入与天光分段调度，1.1 加了内建更新，
+1.0 完成了调度引擎、菜单栏界面、开机自启与精确定位。
 
 实现笔记在 [CLAUDE.md](CLAUDE.md)：分层、实机验证过的 macOS 壁纸存储格式，
 以及已经踩过一次、不该再踩第二次的坑。
+
+面向用户的文案不写在视图里，全部集中在 `Sources/L10n/`。
 
 ### 不打算做的
 
@@ -215,6 +243,9 @@ macOS 把壁纸配置存在 `~/Library/Application Support/com.apple.wallpaper/S
 
 欢迎提 issue 和 PR —— 怎么构建、怎么验证一处改动、这份代码遵循哪些约定，
 见 [CONTRIBUTING.md](CONTRIBUTING.md)（那份文件是英文的，给外部读者看）。
+
+把 HourGlow 翻成另一门语言是最小的一种参与：抄一个文件、填一张字典、加一行。
+步骤见 [Adding a language](CONTRIBUTING.md#adding-a-language)。
 
 发现安全问题请**不要**开公开 issue，按 [SECURITY.md](SECURITY.md) 私下上报。
 

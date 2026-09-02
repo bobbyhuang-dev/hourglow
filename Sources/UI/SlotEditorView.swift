@@ -19,7 +19,8 @@ struct SlotPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(title: model.draftIsNew ? "新时段" : "时段", back: { open(.timeline) })
+            PanelHeader(title: L10n.t(model.draftIsNew ? "slot.title.new" : "slot.title"),
+                        back: { open(.timeline) })
             Divider()
 
             if let slot = model.editing(slotID) {
@@ -38,7 +39,7 @@ struct SlotPage: View {
                 footer
             } else {
                 Spacer()
-                Text("这个时段已经不在了").font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(L10n.t("slot.gone")).font(.system(size: 12)).foregroundStyle(.secondary)
                 Spacer()
             }
         }
@@ -55,14 +56,16 @@ struct SlotPage: View {
     // MARK: - 触发
 
     private func trigger(_ slot: Slot) -> some View {
-        PanelSection(title: "触发") {
+        PanelSection(title: L10n.t("slot.section.trigger")) {
             Picker("", selection: kindBinding(slot)) {
                 if originalPhase != nil {
-                    Text("天光").tag(TriggerKind.phase)
+                    Text(L10n.t("slot.kind.phase")).tag(TriggerKind.phase)
                 }
-                Text("固定时刻").tag(TriggerKind.clock)
-                Text("日出").tag(TriggerKind.sunrise)
-                Text("日落").tag(TriggerKind.sunset)
+                Text(L10n.t("slot.kind.clock")).tag(TriggerKind.clock)
+                // 与「固定时刻」并排的是按钮标题，不是句子里的一个词 ——
+                // 英文里前者要大写、后者不要，中文两处同形。
+                Text(L10n.t("slot.kind.sunrise")).tag(TriggerKind.sunrise)
+                Text(L10n.t("slot.kind.sunset")).tag(TriggerKind.sunset)
             }
             .pickerStyle(.segmented)
             .labelsHidden()
@@ -70,19 +73,19 @@ struct SlotPage: View {
             switch slot.trigger {
             case .clock:
                 HStack {
-                    Text("每天").font(.system(size: 12))
+                    Text(L10n.t("slot.everyDay")).font(.system(size: 12))
                     Spacer()
                     // 底色与留白在 `TimeField` 里，这里只负责摆位置。
                     TimeField(date: clockBinding(slot))
                 }
             case .solarPhase(let phase, let index, let count):
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("\(phase.name) · 第 \(index + 1) / \(count) 张")
+                    Text(L10n.t("slot.phase.position", phase.name, index + 1, count))
                         .font(.system(size: 12))
                     Text(todayLine(slot))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
-                    Text("按当天航海晨光 / 日出 / 日落 / 民用黄昏均分。张数变了重新导入就会重算。")
+                    Text(L10n.t("slot.phase.note"))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -132,28 +135,29 @@ struct SlotPage: View {
     }
 
     private func offsetLabel(event: SolarEvent, offset: Int) -> String {
-        let name = event == .sunrise ? "日出" : "日落"
-        if offset == 0 { return "正好在\(name)" }
-        return offset > 0 ? "\(name)后 \(offset) 分钟" : "\(name)前 \(-offset) 分钟"
+        let name = L10n.t("sun.\(event.rawValue)")
+        if offset == 0 { return L10n.t("slot.offset.exact", name) }
+        return offset > 0 ? L10n.t("slot.offset.after", name, offset)
+                          : L10n.t("slot.offset.before", name, -offset)
     }
 
     /// 偏移是相对量，光看「日落前 30 分」不知道今天几点。把算出来的时刻摆在同一行的右端。
     private func todayLine(_ slot: Slot) -> String {
         guard let coordinate = model.schedule.effectiveCoordinate else {
-            return "缺少坐标，会跳过"
+            return L10n.t("slot.today.noCoordinate")
         }
         guard let date = slot.trigger.fireDate(on: Date(),
                                                coordinate: coordinate,
                                                calendar: .current) else {
-            return "极昼或极夜，会跳过"
+            return L10n.t("slot.today.polar")
         }
-        return "今天是 \(Clock.string(date))"
+        return L10n.t("slot.today", Clock.string(date))
     }
 
     // MARK: - 壁纸
 
     private func wallpaper(_ slot: Slot) -> some View {
-        PanelSection(title: "壁纸") {
+        PanelSection(title: L10n.t("slot.section.wallpaper")) {
             Button {
                 open(.picker(slotID))
             } label: {
@@ -170,7 +174,7 @@ struct SlotPage: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: 4)
-                    Text("更换…").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(L10n.t("slot.change")).font(.system(size: 11)).foregroundStyle(.secondary)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.tertiary)
@@ -185,9 +189,12 @@ struct SlotPage: View {
     private func kindLine(_ wallpaper: Wallpaper) -> String {
         switch wallpaper {
         case .aerial(let id):
-            guard let asset = model.catalog.first(where: { $0.id == id }) else { return "系统动态壁纸" }
+            guard let asset = model.catalog.first(where: { $0.id == id }) else {
+                return L10n.t("slot.wallpaper.aerial")
+            }
             let categories = asset.categories.map(Category.localized).joined(separator: " · ")
-            return asset.isDownloaded ? categories : "\(categories) · 未下载"
+            return asset.isDownloaded ? categories
+                                      : L10n.t("slot.wallpaper.notDownloaded", categories)
         case .image(let path):
             return (path as NSString).deletingLastPathComponent
         }
@@ -196,11 +203,11 @@ struct SlotPage: View {
     // MARK: - 启用 / 删除
 
     private func enabled(_ slot: Slot) -> some View {
-        PanelSection(title: "状态") {
+        PanelSection(title: L10n.t("slot.section.state")) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("启用这个时段").font(.system(size: 12))
-                    Text("停用后求值会跳过它，配置仍然留着")
+                    Text(L10n.t("slot.enable")).font(.system(size: 12))
+                    Text(L10n.t("slot.enable.note"))
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
@@ -218,7 +225,7 @@ struct SlotPage: View {
     @ViewBuilder
     private var delete: some View {
         if !model.draftIsNew {
-            Button(confirmingDelete ? "再点一次以删除" : "删除这个时段") {
+            Button(L10n.t(confirmingDelete ? "slot.delete.confirm" : "slot.delete")) {
                 if confirmingDelete {
                     if model.delete(slotID) { open(.timeline) }
                 } else {
@@ -248,16 +255,16 @@ struct SlotPage: View {
             Spacer(minLength: 4)
 
             if model.draftIsNew {
-                Button("取消") {
+                Button(L10n.t("common.cancel")) {
                     model.endEditing()
                     open(.timeline)
                 }
             } else {
-                Button("撤销") { model.discardDraft() }
+                Button(L10n.t("slot.discard")) { model.discardDraft() }
                     .disabled(!model.draftCanDiscard)
             }
 
-            Button(model.draftIsNew ? "添加" : "应用") {
+            Button(L10n.t(model.draftIsNew ? "slot.add" : "slot.apply")) {
                 // 落盘之后草稿就不「新」了，先记下来再应用。
                 let wasNew = model.draftIsNew
                 guard model.applyDraft() else { return }
@@ -274,9 +281,9 @@ struct SlotPage: View {
     }
 
     private var statusLine: String {
-        if model.draftHasConflict { return "配置已在别处更改，请先撤销" }
-        if model.draftIsNew { return "点「添加」才会写进日程" }
-        return model.draftIsDirty ? "有改动尚未应用" : "已应用"
+        if model.draftHasConflict { return L10n.t("slot.status.conflict") }
+        if model.draftIsNew { return L10n.t("slot.status.new") }
+        return L10n.t(model.draftIsDirty ? "slot.status.dirty" : "slot.status.clean")
     }
 
     // MARK: - 绑定

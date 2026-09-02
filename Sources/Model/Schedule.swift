@@ -41,14 +41,7 @@ enum SolarEvent: String, Codable {
 enum DayPhase: String, Codable, CaseIterable {
     case sunrise, day, sunset, night
 
-    var name: String {
-        switch self {
-        case .sunrise: return "日出"
-        case .day:     return "白昼"
-        case .sunset:  return "日落"
-        case .night:   return "夜晚"
-        }
-    }
+    var name: String { L10n.t("phase.\(rawValue)") }
 }
 
 /// 一个时段的触发条件。
@@ -125,11 +118,12 @@ extension Trigger: CustomStringConvertible {
         case .clock(let h, let m):
             return String(format: "%02d:%02d", h, m)
         case .solar(let e, let off):
-            let name = e == .sunrise ? "日出" : "日落"
+            let name = L10n.t("sun.\(e.rawValue)")
             if off == 0 { return name }
-            return off > 0 ? "\(name)后\(off)分" : "\(name)前\(-off)分"
+            return off > 0 ? L10n.t("trigger.solar.after", name, off)
+                           : L10n.t("trigger.solar.before", name, -off)
         case .solarPhase(let phase, let index, let count):
-            return "\(phase.name) \(index + 1)/\(count)"
+            return L10n.t("trigger.phase", phase.name, index + 1, count)
         }
     }
 }

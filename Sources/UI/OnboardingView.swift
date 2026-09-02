@@ -139,13 +139,13 @@ struct OnboardingView: View {
 
     private var welcomeDetail: some View {
         VStack(alignment: .leading, spacing: 12) {
-            bullet("cursorarrow.rays", "点那个沙漏，面板就挂下来",
-                   "再点一下收起。点到别处它也会自己收起来 —— 这是菜单栏应用的常态，不是出错。")
-            bullet("clock.arrow.circlepath", "剩下的时间它在后台算下一次切换",
-                   "不轮询、几乎不耗电。合盖睡过了某个时刻，醒来会把那一次补上。")
-            bullet("hand.raised", "你自己换的壁纸，它不抢",
-                   "在系统设置里挑了别的，那张会一直留到下一个切换点。")
-            Text("接下来三步，大概一分钟。随时可以点左下角跳过。")
+            bullet("cursorarrow.rays", L10n.t("guide.welcome.open.title"),
+                   L10n.t("guide.welcome.open.body"))
+            bullet("clock.arrow.circlepath", L10n.t("guide.welcome.background.title"),
+                   L10n.t("guide.welcome.background.body"))
+            bullet("hand.raised", L10n.t("guide.welcome.manual.title"),
+                   L10n.t("guide.welcome.manual.body"))
+            Text(L10n.t("guide.welcome.footnote"))
                 .font(.system(size: 11.5))
                 .foregroundStyle(.tertiary)
         }
@@ -170,14 +170,13 @@ struct OnboardingView: View {
                     if model.locating == .requesting {
                         ProgressView().controlSize(.small)
                     } else {
-                        Button("使用当前位置") { model.requestPreciseLocation() }
+                        Button(L10n.t("place.useCurrent")) { model.requestPreciseLocation() }
                             .controlSize(.small)
                     }
                 }
 
                 // 权限要说在按钮旁边：点下去会发生什么、系统会问什么、该按哪个。
-                Text("点它会弹出系统的定位授权对话框，选「允许」。只取一次坐标，"
-                     + "算完就存在本机，不上传。")
+                Text(L10n.t("guide.place.permission"))
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -185,14 +184,12 @@ struct OnboardingView: View {
                 if model.locating == .denied {
                     Divider()
                     HStack(alignment: .top, spacing: 8) {
-                        Text("定位权限被拒了。系统不会再问第二次 —— 要么去"
-                             + "「隐私与安全性 › 定位服务」里把 HourGlow 打开，"
-                             + "要么在下面搜一个城市，效果一样够用。")
+                        Text(L10n.t("guide.place.denied"))
                             .font(.system(size: 11))
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
-                        Button("打开设置…") { PreciseLocation.openPrivacySettings() }
+                        Button(L10n.t("common.openSettings")) { PreciseLocation.openPrivacySettings() }
                             .controlSize(.small)
                     }
                 }
@@ -205,14 +202,13 @@ struct OnboardingView: View {
             }
 
             VStack(alignment: .leading, spacing: 6) {
-                Text("不想给定位？搜个城市就行")
+                Text(L10n.t("guide.place.search.title"))
                     .font(.system(size: 12, weight: .medium))
                 citySearchField
                 cityResults
             }
 
-            Text("以后随时能改：面板右上角那颗地点胶囊。中国全境同一个时区，"
-                 + "不选城市就一直按上海算 —— 深圳的日出差二十来分钟。")
+            Text(L10n.t("guide.place.footnote"))
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -221,10 +217,10 @@ struct OnboardingView: View {
 
     private var sunLine: String {
         guard model.schedule.effectiveCoordinate != nil else {
-            return "还没有坐标，日出日落的时段会被跳过"
+            return L10n.t("place.sun.noCoordinate")
         }
-        guard let times = model.solarToday else { return "今天是极昼或极夜" }
-        return "今天 日出 \(Clock.string(times.sunrise)) · 日落 \(Clock.string(times.sunset))"
+        guard let times = model.solarToday else { return L10n.t("place.sun.polar") }
+        return L10n.t("place.sun.today", Clock.string(times.sunrise), Clock.string(times.sunset))
     }
 
     private var citySearchField: some View {
@@ -232,7 +228,7 @@ struct OnboardingView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            TextField("城市名，中英文或拼音", text: $query)
+            TextField(L10n.t("place.search"), text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
             if finder.searching {
@@ -256,7 +252,7 @@ struct OnboardingView: View {
         let hits = typed ? Array(finder.results(for: query).prefix(4)) : []
         if hits.isEmpty {
             if typed, !finder.searching {
-                Text("找不到这个地方")
+                Text(L10n.t("place.notFound"))
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 4)
@@ -302,9 +298,9 @@ struct OnboardingView: View {
                 if model.canLaunchAtLogin {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("开机自启")
+                            Text(L10n.t("settings.launchAtLogin"))
                                 .font(.system(size: 12.5, weight: .medium))
-                            Text("登录后自动回到菜单栏")
+                            Text(L10n.t("settings.launchAtLogin.note"))
                                 .font(.system(size: 11.5))
                                 .foregroundStyle(.secondary)
                         }
@@ -323,7 +319,7 @@ struct OnboardingView: View {
                                 .foregroundStyle(.orange)
                                 .fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
-                            Button("打开设置…") { model.openLoginItemsSettings() }
+                            Button(L10n.t("common.openSettings")) { model.openLoginItemsSettings() }
                                 .controlSize(.small)
                         }
                     }
@@ -332,25 +328,22 @@ struct OnboardingView: View {
                     // 之后一拖进「应用程序」，那条登录项就指向一个不存在的 app。
                     if !model.runsFromApplicationsFolder {
                         Divider()
-                        Text("现在从「\(model.enclosingFolderName)」运行。登录项记的是路径，"
-                             + "app 一挪就失效 —— 建议先把 HourGlow 拖进「应用程序」，"
-                             + "再回来打开这个开关。")
+                        Text(L10n.t("guide.resident.folder", model.enclosingFolderName))
                             .font(.system(size: 11))
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 } else {
-                    Text("当前不是从 HourGlow.app 启动的，开机自启不可用。")
+                    Text(L10n.t("guide.resident.unavailable"))
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
                 }
             }
 
-            bullet("menubar.arrow.up.rectangle", "系统问「是否允许在菜单栏中显示」时，选「允许」",
-                   "不允许的话菜单栏上不会出现沙漏，你就没有入口了。"
-                   + "改：系统设置 › 控制中心 › 菜单栏。")
-            bullet("bolt.slash", "退出了就不切了",
-                   "⋯ 菜单里的「退出 HourGlow」是真的退出。想临时停一会儿，用「暂停」。")
+            bullet("menubar.arrow.up.rectangle", L10n.t("guide.resident.menubar.title"),
+                   L10n.t("guide.resident.menubar.body"))
+            bullet("bolt.slash", L10n.t("guide.resident.quit.title"),
+                   L10n.t("guide.resident.quit.body"))
         }
     }
 
@@ -358,15 +351,14 @@ struct OnboardingView: View {
 
     private var timelineDetail: some View {
         VStack(alignment: .leading, spacing: 12) {
-            bullet("hand.tap", "点一行 → 改时刻，或者换一张壁纸",
-                   "改完点底部的「应用」才算数。不点就什么都没变 —— 试错不用真的换过去。")
-            bullet("plus", "「添加时段」→ 一天想切几次都行",
-                   "固定时刻，或者「日落前 30 分」这种跟着太阳走的；后者每天自己漂移。")
-            bullet("photo.stack", "「导入…」→ 一整套 24 小时壁纸",
-                   "选一个装满静帧的文件夹，自动按当天的日出日落均分成一天。"
-                   + "会替换整条时间轴，动手前会问一句。")
-            bullet("pause.circle", "「暂停」→ 临时不切",
-                   "菜单栏图标会变成半满的沙漏，一眼看得出调度停了。")
+            bullet("hand.tap", L10n.t("guide.timeline.edit.title"),
+                   L10n.t("guide.timeline.edit.body"))
+            bullet("plus", L10n.t("guide.timeline.add.title"),
+                   L10n.t("guide.timeline.add.body"))
+            bullet("photo.stack", L10n.t("guide.timeline.import.title"),
+                   L10n.t("guide.timeline.import.body"))
+            bullet("pause.circle", L10n.t("guide.timeline.pause.title"),
+                   L10n.t("guide.timeline.pause.body"))
         }
     }
 
@@ -376,30 +368,34 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 12) {
             card {
                 checklist(done: model.schedule.location != nil,
-                          title: "位置",
+                          title: L10n.t("guide.done.place"),
                           detail: model.schedule.location != nil
                               ? model.placeLabel
                               : (model.schedule.effectiveCoordinate != nil
-                                 ? "\(model.placeLabel) · 按时区估的，选个城市更准"
-                                 : "还没有坐标，日出日落的时段会被跳过"))
+                                 ? L10n.t("guide.done.place.rough", model.placeLabel)
+                                 : L10n.t("place.sun.noCoordinate")))
                 Divider()
                 checklist(done: model.launchAtLogin == .enabled,
-                          title: "开机自启",
+                          title: L10n.t("guide.done.launch"),
                           detail: model.canLaunchAtLogin
-                              ? (model.launchAtLogin == .enabled ? "已打开" : "还没开，设置里随时能补")
-                              : "当前不是从 HourGlow.app 启动的")
+                              ? L10n.t(model.launchAtLogin == .enabled ? "guide.done.launch.on"
+                                                                      : "guide.done.launch.off")
+                              : L10n.t("guide.done.launch.unavailable"))
                 Divider()
                 checklist(done: !model.schedule.slots.isEmpty,
-                          title: "时间轴",
-                          detail: "\(model.schedule.slots.count) 个时段，"
-                              + (model.resolution.map { "现在这一段是 \(model.name(for: $0.active.wallpaper))" }
-                                 ?? "还没有能生效的时段"))
+                          title: L10n.t("guide.done.timeline"),
+                          detail: L10n.t(count: model.schedule.slots.count,
+                                         "guide.done.timeline.count", model.schedule.slots.count)
+                              + (model.resolution.map {
+                                    L10n.t("guide.done.timeline.active",
+                                           model.name(for: $0.active.wallpaper))
+                                 } ?? L10n.t("guide.done.timeline.none")))
             }
 
-            bullet("menubar.rectangle", "入口在菜单栏右上角那个沙漏",
-                   "点一下打开，再点一下收起。")
-            bullet("questionmark.circle", "想再看一遍这套指引",
-                   "面板底部的 ⋯ 菜单 › 新手指引。")
+            bullet("menubar.rectangle", L10n.t("guide.done.entry.title"),
+                   L10n.t("guide.done.entry.body"))
+            bullet("questionmark.circle", L10n.t("guide.done.again.title"),
+                   L10n.t("guide.done.again.body"))
         }
     }
 
@@ -426,20 +422,20 @@ struct OnboardingView: View {
             dots
             HStack(spacing: 8) {
                 if !flow.isLast {
-                    Button("跳过指引") { finish() }
+                    Button(L10n.t("guide.skip")) { finish() }
                         .buttonStyle(.plain)
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 if !flow.isFirst {
-                    Button("上一步") {
+                    Button(L10n.t("guide.back")) {
                         forward = false
                         flow.back()
                     }
                     .controlSize(.regular)
                 }
-                Button(flow.isLast ? "开始使用" : "继续") {
+                Button(L10n.t(flow.isLast ? "guide.start" : "guide.next")) {
                     if flow.isLast {
                         finish()
                     } else {
@@ -657,8 +653,8 @@ private struct SunArcArt: View {
             .frame(width: 300, height: 104)
         }
         .frame(width: 300, height: 104)
-        .overlay(alignment: .bottomLeading) { label("日出", sunrise) }
-        .overlay(alignment: .bottomTrailing) { label("日落", sunset) }
+        .overlay(alignment: .bottomLeading) { label(L10n.t("sun.sunrise"), sunrise) }
+        .overlay(alignment: .bottomTrailing) { label(L10n.t("sun.sunset"), sunset) }
     }
 
     private func label(_ name: String, _ date: Date?) -> some View {
@@ -688,7 +684,7 @@ private struct FilmstripArt: View {
     var body: some View {
         HStack(spacing: 8) {
             if frames.isEmpty {
-                Text("时间轴还是空的")
+                Text(L10n.t("guide.timeline.empty"))
                     .font(.system(size: 11))
                     .foregroundStyle(.white.opacity(0.7))
             } else {

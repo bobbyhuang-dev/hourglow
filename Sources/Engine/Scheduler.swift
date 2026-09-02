@@ -42,20 +42,7 @@ final class Scheduler {
         case launch, timer, wake, clockChange, timeZoneChange, dayChange
         case configChange, pause, resume, manual
 
-        var label: String {
-            switch self {
-            case .launch:         return "启动"
-            case .timer:          return "到点"
-            case .wake:           return "唤醒"
-            case .clockChange:    return "系统时钟变更"
-            case .timeZoneChange: return "时区变更"
-            case .dayChange:      return "跨日"
-            case .configChange:   return "配置变更"
-            case .pause:          return "暂停"
-            case .resume:         return "恢复"
-            case .manual:         return "手动"
-            }
-        }
+        var label: String { L10n.t("engine.reason.\(rawValue)") }
 
         /// 这些触发源代表用户的明确意图，无条件覆盖。
         var isAssertive: Bool { self == .resume || self == .manual }
@@ -277,7 +264,7 @@ final class Scheduler {
         let watcher = ConfigWatcher(fileURL: Store.fileURL) { [weak self] in
             guard let self else { return }
             guard let reloaded = try? Store.load() else {
-                self.onLog?("配置解析失败，沿用内存里的旧配置")
+                self.onLog?(L10n.t("engine.log.configUnreadable"))
                 return
             }
             self.schedule = reloaded
@@ -336,24 +323,25 @@ final class Scheduler {
         let message: String
         switch outcome {
         case .applied(let slot):
-            message = "已切换  \(name(slot))"
+            message = L10n.t("engine.log.applied", name(slot))
         case .unchanged(let slot):
-            message = "已经是  \(name(slot))，跳过写入"
+            message = L10n.t("engine.log.unchanged", name(slot))
         case .deferredToManual(let slot, let actual):
-            let now = actual.map(Scheduler.describe) ?? "未知"
-            message = "让位给手动选择（当前 \(now)，排定 \(name(slot))）"
+            let now = actual.map(Scheduler.describe) ?? L10n.t("common.unknown")
+            message = L10n.t("engine.log.deferred", now, name(slot))
         case .paused:
-            message = "已暂停"
+            message = L10n.t("engine.log.paused")
         case .unresolvable:
-            message = "求不出当前时段：没有启用的时段，或 solar 触发缺坐标"
+            message = L10n.t("engine.log.unresolvable")
         case .failed(let error):
-            message = "失败: \(error)"
+            message = L10n.t("engine.log.failed", "\(error)")
         }
 
         var line = "[\(reason.label)] \(message)"
         if let next = lastResolution?.next {
-            line += "；下次 \(Scheduler.stamp(next.at))"
-                  + " → \(Scheduler.describe(next.slot.wallpaper))"
+            line += L10n.t("engine.log.next",
+                           Scheduler.stamp(next.at),
+                           Scheduler.describe(next.slot.wallpaper))
         }
         onLog?(line)
     }
@@ -370,7 +358,7 @@ final class Scheduler {
     private static func stamp(_ date: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) { return clockFormat.string(from: date) }
-        if calendar.isDateInTomorrow(date) { return "明天 " + clockFormat.string(from: date) }
+        if calendar.isDateInTomorrow(date) { return L10n.t("clock.tomorrow", clockFormat.string(from: date)) }
         return dayClockFormat.string(from: date)
     }
 

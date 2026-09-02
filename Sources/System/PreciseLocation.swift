@@ -117,7 +117,7 @@ final class PreciseLocation: NSObject, CLLocationManagerDelegate {
     private func arm(seconds: TimeInterval) {
         timeout?.cancel()
         let item = DispatchWorkItem { [weak self] in
-            MainActor.assumeIsolated { self?.finish(.failed("定位超时")) }
+            MainActor.assumeIsolated { self?.finish(.failed(L10n.t("location.error.timeout"))) }
         }
         timeout = item
         DispatchQueue.main.asyncAfter(deadline: .now() + seconds, execute: item)

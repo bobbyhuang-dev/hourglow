@@ -31,7 +31,7 @@ struct TimelinePage: View {
             Spacer(minLength: 0)
             placeChip
             if model.schedule.paused {
-                Label("已暂停", systemImage: "pause.fill")
+                Label(L10n.t("timeline.paused"), systemImage: "pause.fill")
                     .font(.system(size: 10, weight: .medium))
                     .labelStyle(.titleAndIcon)
                     .foregroundStyle(.orange)
@@ -57,7 +57,7 @@ struct TimelinePage: View {
             .background(.quaternary.opacity(0.5), in: Capsule())
         }
         .buttonStyle(.plain)
-        .help("选择计算日出日落的地区")
+        .help(L10n.t("timeline.place.help"))
     }
 
     /// 当前生效的那一段。缩略图 + 名字 + 下次切换，一眼看完。
@@ -73,7 +73,8 @@ struct TimelinePage: View {
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
-                Text(model.resolution.map { model.name(for: $0.active.wallpaper) } ?? "没有生效的时段")
+                Text(model.resolution.map { model.name(for: $0.active.wallpaper) }
+                     ?? L10n.t("timeline.noActive"))
                     .font(.system(size: 13, weight: .semibold))
                     .lineLimit(1)
                 Text(subtitle)
@@ -93,16 +94,20 @@ struct TimelinePage: View {
     /// 那时候只能说它是「排程中的」——具体差在哪由下面的提示条负责。
     private var caption: String? {
         guard model.resolution != nil else { return nil }
-        return model.activeIsActual ? "目前壁纸" : "排程中的壁纸"
+        return L10n.t(model.activeIsActual ? "timeline.caption.actual"
+                                          : "timeline.caption.scheduled")
     }
 
     private var subtitle: String {
-        if model.schedule.paused { return "暂停中 · 到点不会切换" }
+        if model.schedule.paused { return L10n.t("timeline.subtitle.paused") }
         guard let next = model.resolution?.next else {
-            return model.resolution == nil ? "添加一个时段就能开始" : "只有这一段，不会再切换"
+            return L10n.t(model.resolution == nil ? "timeline.subtitle.empty"
+                                                  : "timeline.subtitle.single")
         }
-        return "\(Clock.string(next.at)) 切换到 \(model.name(for: next.slot.wallpaper))"
-            + " · \(Clock.remaining(until: next.at))"
+        return L10n.t("timeline.subtitle.next",
+                      Clock.string(next.at),
+                      model.name(for: next.slot.wallpaper),
+                      Clock.remaining(until: next.at))
     }
 
     @ViewBuilder
@@ -112,20 +117,20 @@ struct TimelinePage: View {
         } else if model.needsCoordinate {
             // 这条提示本身就是入口：点进设置页去定位或手填经纬度。
             PanelNotice(symbol: "exclamationmark.triangle.fill",
-                        text: "缺少坐标，日出日落的时段会被跳过", tint: .orange,
+                        text: L10n.t("timeline.notice.noCoordinate"), tint: .orange,
                         action: { open(.place) })
         } else if model.solarUnavailable {
             // 极圈的极昼极夜：坐标没问题，是今天根本没有日出日落。天光分段一段都排不上，
             // 壁纸会一直停着 —— 不说一声，看起来就像 app 坏了。
             PanelNotice(symbol: "sun.max.trianglebadge.exclamationmark.fill",
-                        text: "今天是极昼或极夜，日出日落的时段全部跳过", tint: .orange,
+                        text: L10n.t("timeline.notice.polar"), tint: .orange,
                         action: { open(.place) })
         } else if model.isManuallyOverridden {
             PanelNotice(symbol: "hand.raised.fill",
-                        text: "壁纸被手动换过 · 下一个触发点接管", tint: .secondary)
+                        text: L10n.t("timeline.notice.manual"), tint: .secondary)
         } else if model.isFollower {
             PanelNotice(symbol: "bolt.horizontal.circle",
-                        text: "由后台守护进程排程，这里只负责编辑", tint: .secondary)
+                        text: L10n.t("timeline.notice.follower"), tint: .secondary)
         }
     }
 
@@ -170,7 +175,7 @@ struct TimelinePage: View {
                                 .foregroundStyle(.secondary)
                         }
                         if !slot.enabled {
-                            Text("已停用")
+                            Text(L10n.t("timeline.slot.disabled"))
                                 .font(.system(size: 10))
                                 .foregroundStyle(.tertiary)
                         }
@@ -213,7 +218,7 @@ struct TimelinePage: View {
                     .font(.system(size: 11, weight: .semibold))
                     .frame(width: 44, height: 28)
                     .foregroundStyle(.secondary)
-                Text("添加时段")
+                Text(L10n.t("timeline.addSlot"))
                     .font(.system(size: 12.5))
                 Spacer(minLength: 0)
             }
@@ -229,29 +234,31 @@ struct TimelinePage: View {
     /// 到点、唤醒、改配置都会重新求值 —— 按下去多半什么也不会变，白占一个主按钮的位置。
     private var footer: some View {
         HStack(spacing: 8) {
-            Button(model.schedule.paused ? "继续" : "暂停") {
+            Button(L10n.t(model.schedule.paused ? "timeline.resume" : "timeline.pause")) {
                 model.setPaused(!model.schedule.paused)
             }
 
-            Button(model.importingScene ? "导入中…" : "导入…") { model.importSceneFromPanel() }
-                .disabled(model.importingScene)
+            Button(L10n.t(model.importingScene ? "timeline.importing" : "timeline.import")) {
+                model.importSceneFromPanel()
+            }
+            .disabled(model.importingScene)
 
             Spacer(minLength: 0)
 
             Menu {
-                Button("设置…") { open(.settings) }
+                Button(L10n.t("menu.settings")) { open(.settings) }
                     .keyboardShortcut(",")
-                Button("选择地区…") { open(.place) }
-                Button("导入 24 小时壁纸…") { model.importSceneFromPanel() }
+                Button(L10n.t("menu.place")) { open(.place) }
+                Button(L10n.t("menu.import")) { model.importSceneFromPanel() }
                     .disabled(model.importingScene)
-                Button("检查更新…") {
+                Button(L10n.t("menu.checkUpdates")) {
                     open(.settings)
                     model.checkForUpdates()
                 }
-                Button("新手指引…") { OnboardingWindow.shared.present() }
-                Button("在访达中显示配置…") { model.revealConfigInFinder() }
+                Button(L10n.t("menu.guide")) { OnboardingWindow.shared.present() }
+                Button(L10n.t("menu.revealConfig")) { model.revealConfigInFinder() }
                 Divider()
-                Button("退出 HourGlow") { NSApplication.shared.terminate(nil) }
+                Button(L10n.t("menu.quit")) { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")
             } label: {
                 Image(systemName: "ellipsis.circle")

@@ -332,20 +332,25 @@ enum AppUpdater {
 
         var errorDescription: String? {
             switch self {
-            case .invalidVersion(let version): return "发布版本号无效：\(version)"
-            case .missingAsset(let name): return "发布页缺少 \(name)"
-            case .missingDigest: return "发布包没有 SHA-256 校验值"
-            case .unexpectedDownloadURL: return "发布包不是来自 HourGlow 的 GitHub 仓库"
+            case .invalidVersion(let version): return L10n.t("update.error.invalidVersion", version)
+            case .missingAsset(let name): return L10n.t("update.error.missingAsset", name)
+            case .missingDigest: return L10n.t("update.error.missingDigest")
+            case .unexpectedDownloadURL: return L10n.t("update.error.unexpectedURL")
             case .badResponse(let status):
-                return status.map { "更新服务器返回 HTTP \($0)" } ?? "更新服务器响应无效"
-            case .noCacheDirectory: return "找不到系统缓存目录"
-            case .digestMismatch: return "下载包的 SHA-256 校验失败"
-            case .unarchiveFailed(let detail): return "更新包解压失败\(detail.isEmpty ? "" : "：\(detail)")"
-            case .bundleMismatch: return "更新包的应用身份或版本不匹配"
-            case .invalidSignature(let detail): return "更新包签名无效\(detail.isEmpty ? "" : "：\(detail)")"
-            case .notRunningAsApp: return "只有从 HourGlow.app 启动时才能更新"
+                return status.map { L10n.t("update.error.http", $0) }
+                    ?? L10n.t("update.error.badResponse")
+            case .noCacheDirectory: return L10n.t("update.error.noCacheDirectory")
+            case .digestMismatch: return L10n.t("update.error.digestMismatch")
+            case .unarchiveFailed(let detail):
+                return detail.isEmpty ? L10n.t("update.error.unarchive")
+                                      : L10n.t("update.error.unarchive.detail", detail)
+            case .bundleMismatch: return L10n.t("update.error.bundleMismatch")
+            case .invalidSignature(let detail):
+                return detail.isEmpty ? L10n.t("update.error.signature")
+                                      : L10n.t("update.error.signature.detail", detail)
+            case .notRunningAsApp: return L10n.t("update.error.notApp")
             case .installDirectoryNotWritable(let path):
-                return "无法写入 \(path)，请把 HourGlow.app 移到可写目录"
+                return L10n.t("update.error.readOnly", path)
             }
         }
     }

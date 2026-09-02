@@ -48,6 +48,12 @@ final class AppModel {
     private(set) var launchAtLoginNote: String?
     private(set) var locating = LocatingState.idle
 
+    /// 语言换了就 +1。`PanelRoot` 拿它当 `.id`，整棵面板重建一次。
+    ///
+    /// 文案是各视图在自己的 body 里查表拿到的，不经过任何 `@Observable` 属性 ——
+    /// 换句话说 SwiftUI 追不到「语言变了」这件事，得由这个计数器替它说一声。
+    private(set) var languageGeneration = 0
+
     /// 更新与壁纸调度彼此独立；这里仅保存设置页要展示的状态。
     private(set) var updateState = AppUpdateState.idle
     private(set) var automaticUpdatesEnabled = AppUpdater.automaticUpdatesEnabled
@@ -70,6 +76,7 @@ final class AppModel {
     private var messageExpiry: DispatchWorkItem?
     @ObservationIgnored private var updateTicker: Timer?
     @ObservationIgnored private var updateTask: Task<Void, Never>?
+    @ObservationIgnored private var languageObserver: NSObjectProtocol?
 
     private init() {
         // 必须赶在 `Store.load()` 之前问一次「配置文件在不在」—— 那个调用会顺手
@@ -110,6 +117,13 @@ final class AppModel {
             scheduler.start()
         }
 
+        // 语言是从设置页改的，但改完之后整块面板都要跟着换 —— 谁改的不重要，
+        // 只认「变了」这件事本身。
+        languageObserver = NotificationCenter.default.addObserver(
+            forName: L10n.didChangeNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { AppModel.shared.languageGeneration += 1 }
+            }
+
         refresh()
 
         // 面板里的「现在 / 下次」是随时间走的，定期重算一遍。求值是纯计算，很便宜。
@@ -140,7 +154,7 @@ final class AppModel {
 
     func name(for wallpaper: Wallpaper) -> String {
         switch wallpaper {
-        case .aerial(let id): return assetNames[id] ?? "未知壁纸"
+        case .aerial(let id): return assetNames[id] ?? L10n.t("model.unknownWallpaper")
         case .image(let path): return (path as NSString).lastPathComponent
         }
     }
@@ -277,7 +291,7 @@ final class AppModel {
             updated.slots.append(session.slot)
         } else {
             guard let index = updated.slots.firstIndex(where: { $0.id == session.slot.id }) else {
-                show("这个时段已在别处删除")
+                show(L10n.t("model.slotDeletedElsewhere"))
                 return false
             }
             updated.slots[index] = session.slot
@@ -346,7 +360,7 @@ final class AppModel {
             // 一上来就是这个状态，照样能注册成功。所以它与 `.notRegistered` 一样，
             // 只表示「没开」，不该在界面上报警。真正要说的只有被系统设置关掉那一种。
             launchAtLoginNote = switch launchAtLogin {
-            case .requiresApproval: "已在「系统设置 › 登录项」里被关掉，要去那里打开"
+            case .requiresApproval: L10n.t("model.launchAtLogin.requiresApproval")
             case .enabled, .notRegistered, .notFound: nil
             @unknown default: LaunchAtLogin.describe(launchAtLogin)
             }
@@ -359,7 +373,7 @@ final class AppModel {
         do {
             try LaunchAtLogin.set(on)
         } catch {
-            failure = "设置失败: \((error as NSError).localizedDescription)"
+            failure = L10n.t("model.launchAtLogin.failed", (error as NSError).localizedDescription)
         }
         // 系统说了算：注册完再读回来，被用户在系统设置里关过的话这里仍然是关着的。
         // 报错要在这之后再写回去 —— `refreshSettings` 会按状态重算这行说明，
@@ -370,6 +384,17 @@ final class AppModel {
 
     func openLoginItemsSettings() { LaunchAtLogin.openSystemSettings() }
 
+    // MARK: - 设置：语言
+
+    var languagePreference: L10n.Preference { L10n.storedPreference }
+
+    /// 即时生效。写盘与广播都在 `L10n` 里，这里只负责把「没变」挡掉，
+    /// 免得点回原来那一项也让面板整个重建一次。
+    func setLanguage(_ preference: L10n.Preference) {
+        guard preference != L10n.storedPreference else { return }
+        L10n.setPreference(preference)
+    }
+
     /// 注册的是**当前这个 bundle 的路径**。`build.sh` 每次都 `rm -rf` 重建
     /// `build/HourGlow.app`，登录项就此指向一个不存在的 bundle；把 app 挪个地方也一样。
     /// 所以不在「应用程序」里跑的时候要说一声 —— 这不是错误，是个容易忘的前提。
@@ -377,7 +402,7 @@ final class AppModel {
         guard canLaunchAtLogin, launchAtLogin == .enabled else { return nil }
         let path = Bundle.main.bundleURL.path
         guard !path.hasPrefix("/Applications/") else { return nil }
-        return "自启指向 \(path) · 移动或重建 app 后要回来重开一次"
+        return L10n.t("model.launchAtLogin.path", path)
     }
 
     /// 卸掉 M2 那条 LaunchAgent。app 自己会开机自启之后它就是多余的一份 ——
@@ -385,7 +410,8 @@ final class AppModel {
     func uninstallAgent() {
         // 提示条只有一行、后来的会顶掉先来的，所以说明和结果拼成一句再显示。
         let note = LaunchAgentInstaller.uninstall()
-        show(note.map { "已卸载后台守护进程（\($0)）" } ?? "已卸载后台守护进程")
+        show(note.map { L10n.t("model.agent.uninstalled.note", $0) }
+             ?? L10n.t("model.agent.uninstalled"))
         refreshSettings()
         // 如果被卸掉的正是当前领跑者，尽快接班；bootout 尚未释放锁时，30 秒 ticker
         // 还会继续尝试，不会让这个 app 永久停在从属模式。
@@ -416,7 +442,7 @@ final class AppModel {
     /// 等用户点「更新并重启」，避免他正在看设置页时 app 突然消失。
     func checkForUpdates(manual: Bool = true, force: Bool = false) {
         guard canUpdate else {
-            if manual { updateState = .failed("只有从 HourGlow.app 启动时才能更新") }
+            if manual { updateState = .failed(L10n.t("update.error.notApp")) }
             return
         }
         guard !updateState.isBusy else { return }
@@ -490,9 +516,11 @@ final class AppModel {
     var coordinateSource: String {
         if let location = schedule.location {
             if let name = location.name, !name.isEmpty { return name }
-            return "手动设置"
+            return L10n.t("model.place.manual")
         }
-        return schedule.effectiveCoordinate == nil ? "无" : "由时区推断（\(TimeZone.current.identifier)）"
+        return schedule.effectiveCoordinate == nil
+            ? L10n.t("common.none")
+            : L10n.t("model.place.fromTimeZone", TimeZone.current.identifier)
     }
 
     /// 地点页顶上那一行：有名字用名字，否则是坐标或时区。
@@ -502,17 +530,17 @@ final class AppModel {
             return String(format: "%.4f, %.4f", location.latitude, location.longitude)
         }
         if schedule.effectiveCoordinate != nil {
-            return "跟随系统时区（\(TimeZone.current.identifier)）"
+            return L10n.t("model.place.followTimeZone", TimeZone.current.identifier)
         }
-        return "没有坐标"
+        return L10n.t("model.place.none")
     }
 
     /// 时间轴右上角那颗胶囊：尽量短，满了就截。
     var placeChipLabel: String {
         if let name = schedule.location?.name, !name.isEmpty { return name }
-        if schedule.location != nil { return "自定义" }
-        if schedule.effectiveCoordinate != nil { return "时区" }
-        return "选择地区"
+        if schedule.location != nil { return L10n.t("model.place.chip.custom") }
+        if schedule.effectiveCoordinate != nil { return L10n.t("model.place.chip.timeZone") }
+        return L10n.t("model.place.chip.choose")
     }
 
     /// 今天的日出日落。设置页用它证明坐标是对的 —— 数字对不对，本地人一眼就知道。
@@ -540,7 +568,7 @@ final class AppModel {
                     // 不能拿反查回来的行政区中心点替换掉它 —— 大城市能差几十公里，
                     // 而一次定位授权换来的就是这几十公里的精度。
                     model.setManualLocation(coordinate)
-                    model.show(String(format: "已定位到 %.4f, %.4f",
+                    model.show(L10n.t("model.located",
                                       coordinate.latitude, coordinate.longitude))
                     Task { @MainActor [weak model] in
                         let loc = CLLocation(latitude: coordinate.latitude,
@@ -552,7 +580,7 @@ final class AppModel {
                         var named = coordinate
                         named.name = city.name
                         model.setManualLocation(named)
-                        model.show("已定位到 \(city.name)")
+                        model.show(L10n.t("model.located.named", city.name))
                     }
                 case .denied:
                     model.locating = .denied
@@ -597,7 +625,7 @@ final class AppModel {
     /// 在主线程上拷会把菜单栏 app 卡住。
     func importScene(from urls: [URL]) {
         guard !importingScene else {
-            show("已有一套壁纸正在导入")
+            show(L10n.t("import.busy"))
             return
         }
         endEditing()
@@ -620,18 +648,23 @@ final class AppModel {
                 }
                 // 只有配置成功落盘后旧素材才不再被引用。清理可能涉及几百 MB，留在后台做。
                 await Task.detached(priority: .utility) { SceneImport.finalize(outcome) }.value
-                var text = "已导入 \(updated.slots.count) 张，按当天日出日落均分。"
+                let imported = updated.slots.count
+                var text = L10n.t(count: imported, "import.done.detail", imported)
                 if !outcome.skipped.isEmpty {
-                    text += "\n\(outcome.skipped.count) 张认不出是哪一段，没有收进来："
+                    let skipped = outcome.skipped.count
+                    text += "\n" + L10n.t(count: skipped, "import.skipped.detail", skipped)
                     text += "\n" + outcome.skipped.prefix(6).map(\.lastPathComponent)
-                        .joined(separator: "、")
-                    if outcome.skipped.count > 6 { text += " …" }
+                        .joined(separator: L10n.t("list.separator"))
+                    if skipped > 6 { text += " …" }
                 }
-                show("已导入 \(updated.slots.count) 张"
-                     + (outcome.skipped.isEmpty ? "" : "，跳过 \(outcome.skipped.count) 张"))
+                show(L10n.t(count: imported, "import.done", imported)
+                     + (outcome.skipped.isEmpty
+                        ? ""
+                        : L10n.t(count: outcome.skipped.count, "import.skipped.suffix",
+                                 outcome.skipped.count)))
                 announceImport(success: true, text: text)
             } catch {
-                show("导入失败: \(error.localizedDescription)")
+                show(L10n.t("import.failed", error.localizedDescription))
                 announceImport(success: false, text: error.localizedDescription)
             }
         }
@@ -641,11 +674,12 @@ final class AppModel {
     private func confirmReplace() -> Bool {
         guard !schedule.slots.isEmpty else { return true }
         let alert = NSAlert()
-        alert.messageText = "替换整条时间轴？"
-        alert.informativeText = "现在的 \(schedule.slots.count) 个时段会被导入的这一套取代，无法撤销。"
+        alert.messageText = L10n.t("import.replace.title")
+        alert.informativeText = L10n.t(count: schedule.slots.count, "import.replace.body",
+                                       schedule.slots.count)
         alert.alertStyle = .warning
-        alert.addButton(withTitle: "替换")
-        alert.addButton(withTitle: "取消")
+        alert.addButton(withTitle: L10n.t("import.replace.confirm"))
+        alert.addButton(withTitle: L10n.t("common.cancel"))
         NSApp.activate(ignoringOtherApps: true)
         return alert.runModal() == .alertFirstButtonReturn
     }
@@ -667,8 +701,8 @@ final class AppModel {
             types.append(scene)
         }
         panel.allowedContentTypes = types
-        panel.prompt = "导入"
-        panel.message = "选一个文件夹、一组图片，或 24 Hour Wallpaper 的 .sundialScene"
+        panel.prompt = L10n.t("import.open.prompt")
+        panel.message = L10n.t("import.open.message")
 
         guard panel.runModal() == .OK else { return }
         importScene(from: panel.urls)
@@ -677,10 +711,10 @@ final class AppModel {
     /// 面板此时已经收起，提示条看不见，用对话框把结果说清楚。
     private func announceImport(success: Bool, text: String) {
         let alert = NSAlert()
-        alert.messageText = success ? "已导入" : "导入失败"
+        alert.messageText = L10n.t(success ? "import.result.ok" : "import.result.failed")
         alert.informativeText = text
         alert.alertStyle = success ? .informational : .warning
-        alert.addButton(withTitle: "好")
+        alert.addButton(withTitle: L10n.t("common.ok"))
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
     }
@@ -699,7 +733,7 @@ final class AppModel {
             do {
                 try paused ? scheduler.pause() : scheduler.resume()
             } catch {
-                show("保存失败: \(error)")
+                show(L10n.t("model.saveFailed", "\(error)"))
             }
         }
         refresh()
@@ -722,7 +756,7 @@ final class AppModel {
                 try scheduler.update(schedule: updated)
             }
         } catch {
-            show("保存失败: \(error)")
+            show(L10n.t("model.saveFailed", "\(error)"))
             return false
         }
         // 引擎也是先落盘再提交内存；UI 遵守同一个顺序，失败时不会显示一份磁盘上不存在的配置。
@@ -760,7 +794,7 @@ final class AppModel {
         guard isFollower, let acquired = EngineLock.acquire() else { return }
         guard let latest = try? Store.load() else {
             acquired.release()
-            show("后台引擎已退出，但配置读取失败，稍后重试")
+            show(L10n.t("model.promote.configFailed"))
             return
         }
 
@@ -770,7 +804,7 @@ final class AppModel {
         isFollower = false
         replaceSchedule(latest)
         scheduler.start(schedule: latest)
-        show("后台引擎已退出，菜单栏 app 已接管调度")
+        show(L10n.t("model.promote.tookOver"))
     }
 
     private func replaceSchedule(_ updated: Schedule) {

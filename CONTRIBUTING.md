@@ -19,6 +19,10 @@ include:
 
 Do **not** open a public issue for a security problem — see [SECURITY.md](SECURITY.md).
 
+**Translations.** HourGlow speaks Simplified Chinese and English. Adding a third language is
+one new file plus one line — see [Adding a language](#adding-a-language). No Swift beyond
+filling in a dictionary, and you do not need to be able to build the app to start.
+
 **Feature requests.** Open an issue describing the problem you hit, not just the feature you
 have in mind. Check the non-goals list first (see below); if your request is on it, say why
 the trade-off should change.
@@ -70,6 +74,7 @@ the only one that puts anything on screen, and only briefly.
 ./build/importcheck    # import: filename and subfolder classification, multi-resolution, even split
 ./build/appcheck       # app state: drafts, save boundaries, config conflicts, onboarding rules
 ./build/updatecheck    # updater: SemVer ordering, Release parsing, SHA-256
+./build/l10ncheck Sources   # strings: nothing missing, empty or extra; placeholders match; every key used in code exists
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 bash Tests/verify-app-signature.sh build/HourGlow.app
 python3 Tests/verify-solar.py   # sun times cross-checked against the ephem ephemeris
@@ -94,12 +99,121 @@ If you changed the UI, render the panels and compare the layout before and after
 ./build/panelshot ~/Desktop
 ```
 
+## Adding a language
+
+Every user-visible string lives in `Sources/L10n/`, and a language is one Swift file holding
+one dictionary. Nothing else in the tree needs to change.
+
+`Sources/L10n/Catalogs/zh-Hans.swift` is the **source text**: new strings are written there
+first, and `l10ncheck` measures every other language against it. English
+(`Catalogs/en.swift`) is the fallback when the system language matches nothing we have.
+
+### 1. Copy the English catalog
+
+```bash
+cp Sources/L10n/Catalogs/en.swift Sources/L10n/Catalogs/fr.swift
+```
+
+Use the [BCP 47](https://www.rfc-editor.org/rfc/rfc5646) tag as the file name: `fr`, `ja`,
+`de`, `pt-BR`, `zh-Hant`. Include the script subtag only when it distinguishes something real
+(`zh-Hant` yes, `fr-FR` no — a plain `fr` already matches `fr-CA` and `fr-BE`).
+
+### 2. Fill it in
+
+```swift
+extension StringCatalog {
+    static let fr = StringCatalog(
+        code: "fr",              // must equal the file name
+        name: "Français",        // the language's name *in that language* — see below
+        placeNames: .latin,      // .latin or .chinese
+        strings: [
+            "common.ok": "OK",
+            "slot.apply": "Appliquer",
+            // …
+        ])
+}
+```
+
+- **`name`** is shown in the language picker, and the picker always lists every language under
+  its own name. Someone who cannot read the current UI is exactly the person who needs to find
+  their own row in that list, so write `Français`, not `French`.
+- **`placeNames`** picks which column the built-in city and region names come from
+  (`System/Cities.swift`): `.chinese` gives 深圳 / 广东, `.latin` gives Shenzhen / Guangdong.
+  Translating a language does not mean translating a few hundred place names — pick `.latin`
+  and move on.
+- **Keys are never translated.** Only the values on the right.
+
+### 3. Register it
+
+One line in `Sources/L10n/L10n.swift`:
+
+```swift
+static let catalogs: [StringCatalog] = [.zhHans, .en, .fr]
+```
+
+Order affects only how the settings picker lists them. That is the whole wiring: the app, the
+CLI and the onboarding guide all read the same table, `build.sh` picks the new file up by
+wildcard, and it derives `CFBundleLocalizations` from these files so macOS knows the app
+speaks your language too.
+
+### 4. Check it
+
+```bash
+./build.sh
+./build/l10ncheck Sources
+```
+
+`l10ncheck` fails on a key that is missing, empty, or not in the source catalog; on a
+`%` placeholder that does not match the source; and on a key used in code but absent from the
+source table. Then look at it for real:
+
+```bash
+HOURGLOW_LANG=fr ./build/hourglow-cli list
+HOURGLOW_LANG=fr ./build/hourglow-cli help
+HOURGLOW_LANG=fr ./build/panelshot ~/Desktop      # every panel page and all five guide steps
+```
+
+`HOURGLOW_LANG` overrides both the stored preference and the system language, for the app and
+the CLI alike, so you can look at a language without switching your Mac to it.
+
+### Things that bite
+
+- **The panel is 360 pt wide and the layout is fixed.** It does not grow to fit a longer
+  translation. Render `panelshot` and read the pages before opening the PR; if a string cannot
+  be made to fit, say so in the PR rather than letting it clip.
+- **Placeholders must survive.** `%@` is a string, `%d` a number, `%.4f` a coordinate. You may
+  reorder them, but only with the numbered form: `"%2$@ at %1$@"`. A string with more than one
+  placeholder is *required* to number them, because word order changes between languages and
+  the unnumbered form would then pull the wrong argument. Mixing `%@` and `%1$@` in one string
+  is undefined behaviour; `l10ncheck` rejects all three mistakes.
+- **Plurals.** Chinese has none, so the source text has no plural forms. If your language needs
+  one, add a `<key>.one` entry next to the key and it is used when the count is exactly 1 —
+  see `"cli.import.done"` / `"cli.import.done.one"` in `en.swift`. This is optional and only
+  covers the 1-vs-many split; a language with a richer plural system should say so in an issue
+  rather than work around it.
+- **`cli.help` is a multi-line block, and its columns are aligned by hand.** Keep the command
+  names as they are — they are what the user types — and align the descriptions after them.
+- **Terminal column widths.** The CLI pads its columns by display width and measures them from
+  the strings themselves, so a long label widens its column rather than breaking the table. You
+  do not have to count characters.
+- **A partial translation is fine as a starting point, but not as a PR.** A missing key falls
+  back to the source text, so nothing breaks, but `l10ncheck` — and therefore CI — will not go
+  green until the table is complete.
+
+The two check binaries that assert on Chinese text (`modelcheck`, `appcheck`) pin
+`HOURGLOW_LANG` to the source language at the top of the file. Leave that alone.
+
 ## Conventions
 
-**Comments, documentation, CLI output and UI strings are written in Chinese.** The only
-exceptions are the files aimed at outside readers: `README.md`, this file, and `SECURITY.md`.
-`README.md` and `README.zh-CN.md` are a matched pair — if you change one, change the other in
-the same PR.
+**Comments and documentation are written in Chinese.** The only exceptions are the files
+aimed at outside readers: `README.md`, this file, and `SECURITY.md`. `README.md` and
+`README.zh-CN.md` are a matched pair — if you change one, change the other in the same PR.
+
+**No user-visible string is written in a view, a command or an error.** Every one of them is a
+key looked up in `Sources/L10n/`, and new strings are written into
+`Catalogs/zh-Hans.swift` — the source text — before being translated. This holds for CLI
+output and error messages as much as for the panel. See
+[Adding a language](#adding-a-language).
 
 **Comments explain why, not what.** A comment that restates the line below it will be asked
 about in review. A comment recording a system behaviour you had to discover the hard way is

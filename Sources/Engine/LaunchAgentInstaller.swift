@@ -51,12 +51,12 @@ enum LaunchAgentInstaller {
             let data = try PropertyListSerialization.data(fromPropertyList: plist,
                                                           format: .xml, options: 0)
             try data.write(to: plistURL, options: .atomic)
-        } catch { throw Failure(message: "写 LaunchAgent 失败: \(error)") }
+        } catch { throw Failure(message: L10n.t("agent.error.write", "\(error)")) }
 
         _ = launchctl(["bootout", "\(domain)/\(label)"])   // 可能没加载过，失败不算错
         let result = launchctl(["bootstrap", domain, plistURL.path])
         guard result.status == 0 else {
-            throw Failure(message: "launchctl bootstrap 失败 (\(result.status)): \(result.output)")
+            throw Failure(message: L10n.t("agent.error.bootstrap", result.status, result.output))
         }
     }
 
@@ -66,7 +66,7 @@ enum LaunchAgentInstaller {
         let result = launchctl(["bootout", "\(domain)/\(label)"])
         var note: String?
         if result.status != 0, FileManager.default.fileExists(atPath: plistURL.path) {
-            note = "launchctl bootout 返回 \(result.status)（可能本来就没在跑）"
+            note = L10n.t("agent.bootout.note", result.status)
         }
         try? FileManager.default.removeItem(at: plistURL)
         return note

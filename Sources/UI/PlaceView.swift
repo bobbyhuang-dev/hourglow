@@ -69,7 +69,7 @@ struct PlacePage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(title: "选择地区", back: { open(backPage) })
+            PanelHeader(title: L10n.t("place.title"), back: { open(backPage) })
             current
             search
             sources
@@ -117,18 +117,18 @@ struct PlacePage: View {
 
     private var sunLine: String {
         guard model.schedule.effectiveCoordinate != nil else {
-            return "没有坐标，日出日落的时段会被跳过"
+            return L10n.t("place.sun.noCoordinate")
         }
-        guard let times = model.solarToday else { return "今天是极昼或极夜" }
-        return "今天 日出 \(Clock.string(times.sunrise)) · 日落 \(Clock.string(times.sunset))"
+        guard let times = model.solarToday else { return L10n.t("place.sun.polar") }
+        return L10n.t("place.sun.today", Clock.string(times.sunrise), Clock.string(times.sunset))
     }
 
     /// 高纬夏天这两个时刻可能不存在，此时天光分段按名义时长兜底，如实说清楚。
     private var twilightLine: String? {
         guard let events = model.solarEventsToday else { return nil }
-        let dawn = events.nauticalDawn.map(Clock.string) ?? "无"
-        let dusk = events.civilDusk.map(Clock.string) ?? "无"
-        return "航海晨光 \(dawn) · 民用黄昏 \(dusk)"
+        let dawn = events.nauticalDawn.map(Clock.string) ?? L10n.t("common.none")
+        let dusk = events.civilDusk.map(Clock.string) ?? L10n.t("common.none")
+        return L10n.t("place.twilight", dawn, dusk)
     }
 
     @ViewBuilder
@@ -137,12 +137,12 @@ struct PlacePage: View {
         case .denied:
             // 被拒之后系统不会再弹第二次框，只能自己去开。说了在哪儿改，就得能点过去。
             HStack(spacing: 6) {
-                Text("定位权限被拒，搜一个城市、在下面手填，或去系统设置里打开")
+                Text(L10n.t("place.denied"))
                     .font(.system(size: 11))
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
-                Button("打开设置…") { PreciseLocation.openPrivacySettings() }
+                Button(L10n.t("common.openSettings")) { PreciseLocation.openPrivacySettings() }
                     .controlSize(.small)
             }
         case .failed(let reason):
@@ -162,7 +162,7 @@ struct PlacePage: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            TextField("城市名，中英文或拼音", text: $query)
+            TextField(L10n.t("place.search"), text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
             if finder.searching {
@@ -199,7 +199,8 @@ struct PlacePage: View {
                     Image(systemName: model.locating == .requesting ? "location.fill" : "location")
                         .font(.system(size: 11, weight: .semibold))
                         .frame(width: 18)
-                    Text(model.locating == .requesting ? "正在定位…" : "使用当前位置")
+                    Text(L10n.t(model.locating == .requesting ? "place.locating"
+                                                              : "place.useCurrent"))
                         .font(.system(size: 12.5))
                     Spacer(minLength: 0)
                 }
@@ -216,7 +217,7 @@ struct PlacePage: View {
                     Image(systemName: "globe.asia.australia")
                         .font(.system(size: 11, weight: .semibold))
                         .frame(width: 18)
-                    Text("跟随系统时区")
+                    Text(L10n.t("place.followTimeZone"))
                         .font(.system(size: 12.5))
                     Spacer(minLength: 0)
                     if model.schedule.location == nil {
@@ -245,13 +246,17 @@ struct PlacePage: View {
     private var sections: [Section] {
         let items = finder.results(for: query)
         if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return [Section(id: "hits", title: "搜索结果", cities: items)]
+            return [Section(id: "hits", title: L10n.t("place.section.results"), cities: items)]
         }
         let china = items.filter(\.isChina)
         let world = items.filter { !$0.isChina }
         var result: [Section] = []
-        if !china.isEmpty { result.append(Section(id: "cn", title: "中国", cities: china)) }
-        if !world.isEmpty { result.append(Section(id: "world", title: "海外", cities: world)) }
+        if !china.isEmpty {
+            result.append(Section(id: "cn", title: L10n.t("place.section.china"), cities: china))
+        }
+        if !world.isEmpty {
+            result.append(Section(id: "world", title: L10n.t("place.section.world"), cities: world))
+        }
         return result
     }
 
@@ -270,7 +275,7 @@ struct PlacePage: View {
                     }
                 }
                 if finder.results(for: query).isEmpty, !query.isEmpty, !finder.searching {
-                    Text("找不到这个地方")
+                    Text(L10n.t("place.notFound"))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
@@ -322,12 +327,12 @@ struct PlacePage: View {
 
     private var coordinates: some View {
         HStack(spacing: 6) {
-            Text("纬度").font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(L10n.t("place.latitude")).font(.system(size: 11)).foregroundStyle(.secondary)
             CoordinateField(text: $latitude)
-            Text("经度").font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(L10n.t("place.longitude")).font(.system(size: 11)).foregroundStyle(.secondary)
             CoordinateField(text: $longitude)
             Spacer(minLength: 0)
-            Button("使用") {
+            Button(L10n.t("place.use")) {
                 if let typed { model.setManualLocation(typed) }
             }
             .controlSize(.small)

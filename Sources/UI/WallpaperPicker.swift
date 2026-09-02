@@ -1,20 +1,14 @@
 import AppKit
 import SwiftUI
 
-/// aerial 分类名。`entries.json` 里是英文键，面板上给中文。
+/// aerial 分类名。`entries.json` 里是英文键，面板上按当前语言显示。
 /// 遇到没见过的分类原样显示 —— 系统更新加了新分类也不至于露出空白。
 enum Category {
     static let order = ["Landscapes", "Cities", "Underwater", "Space", "Mac"]
 
-    private static let names = [
-        "Landscapes": "风景",
-        "Cities": "城市",
-        "Underwater": "水下",
-        "Space": "太空",
-        "Mac": "Mac",
-    ]
-
-    static func localized(_ raw: String) -> String { names[raw] ?? raw }
+    static func localized(_ raw: String) -> String {
+        L10n.value(forKey: "category.\(raw.lowercased())") ?? raw
+    }
 }
 
 /// 壁纸选择器：156 张系统 aerial 的缩略图网格，外加本地图片。
@@ -33,7 +27,7 @@ struct WallpaperPicker: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(title: "选择壁纸", back: { open(.slot(slotID)) })
+            PanelHeader(title: L10n.t("picker.title"), back: { open(.slot(slotID)) })
             search
             chips
             Divider()
@@ -50,7 +44,7 @@ struct WallpaperPicker: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            TextField("搜索", text: $query)
+            TextField(L10n.t("picker.search"), text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
             if !query.isEmpty {
@@ -73,7 +67,7 @@ struct WallpaperPicker: View {
     private var chips: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
-                chip(title: "全部", value: nil)
+                chip(title: L10n.t("picker.all"), value: nil)
                 ForEach(availableCategories, id: \.self) { name in
                     chip(title: Category.localized(name), value: name)
                 }
@@ -122,7 +116,7 @@ struct WallpaperPicker: View {
     private var grid: some View {
         ScrollView {
             if filtered.isEmpty {
-                Text("没有匹配的壁纸")
+                Text(L10n.t("picker.empty"))
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .padding(.top, 40)
@@ -181,18 +175,21 @@ struct WallpaperPicker: View {
     }
 
     private func tooltip(_ asset: AerialAsset) -> String {
-        if let size = asset.sizeMB { return "\(asset.name) · 已下载 \(size) MB" }
+        if let size = asset.sizeMB {
+            return L10n.t("picker.tooltip.downloaded", asset.name, size)
+        }
         // 未下载的拿不到确切体积（manifest 里没有这一项），给个量级就够决策了。
-        return "\(asset.name) · 未下载，切换时由系统自行拉取，每张约 400 MB"
+        return L10n.t("picker.tooltip.notDownloaded", asset.name)
     }
 
     // MARK: - 底部
 
     private var footer: some View {
         HStack(spacing: 8) {
-            Button("选择本地图片…") { chooseLocalImage() }
+            Button(L10n.t("picker.chooseImage")) { chooseLocalImage() }
             Spacer(minLength: 0)
-            Text("\(filtered.count) 张 · 已下载 \(filtered.filter(\.isDownloaded).count)")
+            Text(L10n.t(count: filtered.count, "picker.count",
+                        filtered.count, filtered.filter(\.isDownloaded).count))
                 .font(.system(size: 10))
                 .foregroundStyle(.tertiary)
         }
@@ -216,8 +213,8 @@ struct WallpaperPicker: View {
         panel.allowedContentTypes = [.image]
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
-        panel.prompt = "选择"
-        panel.message = "选一张图片作为这个时段的壁纸"
+        panel.prompt = L10n.t("picker.open.prompt")
+        panel.message = L10n.t("picker.open.message")
 
         NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return }

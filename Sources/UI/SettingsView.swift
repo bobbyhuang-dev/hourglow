@@ -16,11 +16,13 @@ struct SettingsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PanelHeader(title: "设置", back: { open(.timeline) })
+            PanelHeader(title: L10n.t("settings.title"), back: { open(.timeline) })
             Divider()
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    // 语言排第一：看不懂当前语言的人，要找的就是这一栏。
+                    language
                     startup
                     updates
                     location
@@ -36,14 +38,44 @@ struct SettingsPage: View {
         .onAppear { model.refreshSettings() }
     }
 
+    // MARK: - 语言
+
+    /// 选项里的语言名永远按母语显示（「简体中文」「English」），不跟着当前界面语言翻译 ——
+    /// 会来动这一栏的人，多半正看不懂界面上的字。
+    private var language: some View {
+        PanelSection(title: L10n.t("settings.section.language")) {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(L10n.t("settings.section.language")).font(.system(size: 12))
+                    Text(L10n.t("settings.language.note"))
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+                Picker("", selection: Binding(get: { model.languagePreference },
+                                              set: { model.setLanguage($0) })) {
+                    Text(L10n.t("settings.language.system")).tag(L10n.Preference.system)
+                    Divider()
+                    ForEach(L10n.catalogs, id: \.code) { catalog in
+                        Text(catalog.name).tag(L10n.Preference.fixed(catalog.code))
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .controlSize(.small)
+                // `NSPopUpButton` 按最宽的那一项定宽，换语言时它不会忽宽忽窄。
+                .fixedSize()
+            }
+        }
+    }
+
     // MARK: - 更新
 
     private var updates: some View {
-        PanelSection(title: "更新") {
+        PanelSection(title: L10n.t("settings.section.update")) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("自动更新").font(.system(size: 12))
-                    Text("每天检查，验证发布包后自动安装并重启")
+                    Text(L10n.t("settings.update.auto")).font(.system(size: 12))
+                    Text(L10n.t("settings.update.auto.note"))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -59,7 +91,7 @@ struct SettingsPage: View {
 
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("当前版本 \(model.currentVersion)")
+                    Text(L10n.t("settings.update.version", model.currentVersion))
                         .font(.system(size: 12)).monospacedDigit()
                     Text(updateDetail)
                         .font(.system(size: 11))
@@ -72,17 +104,17 @@ struct SettingsPage: View {
                 if model.updateState.isBusy {
                     ProgressView().controlSize(.small)
                 } else if model.availableUpdate != nil {
-                    Button("更新并重启") { model.installAvailableUpdate() }
+                    Button(L10n.t("settings.update.install")) { model.installAvailableUpdate() }
                         .controlSize(.small)
                 } else {
-                    Button("检查更新") { model.checkForUpdates() }
+                    Button(L10n.t("settings.update.check")) { model.checkForUpdates() }
                         .controlSize(.small)
                         .disabled(!model.canUpdate)
                 }
             }
 
             if model.availableUpdate != nil || updateFailed {
-                Button("查看 GitHub 发布页…") { model.openReleasesPage() }
+                Button(L10n.t("settings.update.releases")) { model.openReleasesPage() }
                     .buttonStyle(.plain)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -93,14 +125,15 @@ struct SettingsPage: View {
     private var updateDetail: String {
         switch model.updateState {
         case .idle:
-            return model.canUpdate ? "从 GitHub Releases 获取正式版" : "请从 HourGlow.app 启动"
-        case .checking: return "正在检查…"
-        case .upToDate: return "已经是最新版本"
+            return L10n.t(model.canUpdate ? "settings.update.idle" : "update.error.notApp")
+        case .checking: return L10n.t("settings.update.checking")
+        case .upToDate: return L10n.t("settings.update.upToDate")
         case .available(let release):
             let size = ByteCountFormatter.string(fromByteCount: release.byteCount,
                                                  countStyle: .file)
-            return "新版本 \(release.version) · \(size)"
-        case .downloading(let release): return "正在下载并验证 \(release.version)…"
+            return L10n.t("settings.update.available", release.version, size)
+        case .downloading(let release):
+            return L10n.t("settings.update.downloading", release.version)
         case .failed(let reason): return reason
         }
     }
@@ -113,12 +146,13 @@ struct SettingsPage: View {
     // MARK: - 启动
 
     private var startup: some View {
-        PanelSection(title: "启动") {
+        PanelSection(title: L10n.t("settings.section.startup")) {
             if model.canLaunchAtLogin {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("开机自启").font(.system(size: 12))
-                        Text("登录后自动回到菜单栏").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Text(L10n.t("settings.launchAtLogin")).font(.system(size: 12))
+                        Text(L10n.t("settings.launchAtLogin.note"))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                     Toggle("", isOn: Binding(get: { model.launchAtLogin == .enabled },
@@ -135,7 +169,7 @@ struct SettingsPage: View {
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
-                        Button("打开设置…") { model.openLoginItemsSettings() }
+                        Button(L10n.t("common.openSettings")) { model.openLoginItemsSettings() }
                             .controlSize(.small)
                     }
                 }
@@ -148,7 +182,7 @@ struct SettingsPage: View {
                 }
             } else {
                 // 从 build/ 里直接跑的裸二进制没有可注册的 bundle。
-                Text("当前不是从 HourGlow.app 启动的，开机自启不可用")
+                Text(L10n.t("settings.launchAtLogin.unavailable"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -158,12 +192,12 @@ struct SettingsPage: View {
                 Divider()
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("后台守护进程正在运行").font(.system(size: 12))
-                        Text("hourglow-cli 装的 LaunchAgent · 与开机自启重复")
+                        Text(L10n.t("settings.agent.running")).font(.system(size: 12))
+                        Text(L10n.t("settings.agent.note"))
                             .font(.system(size: 11)).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
-                    Button("卸载") { model.uninstallAgent() }
+                    Button(L10n.t("settings.agent.uninstall")) { model.uninstallAgent() }
                         .controlSize(.small)
                 }
             }
@@ -174,7 +208,7 @@ struct SettingsPage: View {
 
     /// 地区是单独一页。设置里只留一行入口：现在在哪儿、今天日出日落几点。
     private var location: some View {
-        PanelSection(title: "地区") {
+        PanelSection(title: L10n.t("settings.section.place")) {
             Button { open(.place) } label: {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 1) {
@@ -200,24 +234,26 @@ struct SettingsPage: View {
 
     private var solarLine: String {
         guard model.schedule.effectiveCoordinate != nil else {
-            return "日出日落的时段会被跳过"
+            return L10n.t("settings.solar.skipped")
         }
-        guard let times = model.solarToday else { return "今天是极昼或极夜" }
-        return "今天 日出 \(Clock.string(times.sunrise)) · 日落 \(Clock.string(times.sunset))"
+        guard let times = model.solarToday else { return L10n.t("place.sun.polar") }
+        return L10n.t("place.sun.today", Clock.string(times.sunrise), Clock.string(times.sunset))
     }
 
     // MARK: - 壁纸组
 
     private var sceneImport: some View {
-        PanelSection(title: "壁纸组") {
+        PanelSection(title: L10n.t("settings.section.scene")) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("导入 24 小时壁纸").font(.system(size: 12))
-                    Text("文件夹、一组图片，或 .sundialScene")
+                    Text(L10n.t("settings.scene.import")).font(.system(size: 12))
+                    Text(L10n.t("settings.scene.note"))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                Button(model.importingScene ? "导入中…" : "导入…") { model.importSceneFromPanel() }
+                Button(L10n.t(model.importingScene ? "timeline.importing" : "timeline.import")) {
+                    model.importSceneFromPanel()
+                }
                     .controlSize(.small)
                     .disabled(model.importingScene)
             }
@@ -229,15 +265,15 @@ struct SettingsPage: View {
     /// 新手指引是一扇独立的窗（理由见 `OnboardingView`），它只在全新安装时自动出现 ——
     /// 老用户和后悔跳过的人得有个地方找回来，就是这一行。
     private var help: some View {
-        PanelSection(title: "帮助") {
+        PanelSection(title: L10n.t("settings.section.help")) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("新手指引").font(.system(size: 12))
-                    Text("五步：入口在哪儿、位置、常驻、时间轴")
+                    Text(L10n.t("settings.guide")).font(.system(size: 12))
+                    Text(L10n.t("settings.guide.note"))
                         .font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
-                Button("打开") { OnboardingWindow.shared.present() }
+                Button(L10n.t("settings.guide.open")) { OnboardingWindow.shared.present() }
                     .controlSize(.small)
             }
         }
@@ -251,7 +287,7 @@ struct SettingsPage: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
             Spacer(minLength: 0)
-            Button("在访达中显示配置…") { model.revealConfigInFinder() }
+            Button(L10n.t("menu.revealConfig")) { model.revealConfigInFinder() }
                 .buttonStyle(.plain)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)

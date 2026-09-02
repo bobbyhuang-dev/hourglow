@@ -371,7 +371,8 @@ enum Clock {
     static func remaining(until date: Date) -> String {
         let minutes = max(0, Int((date.timeIntervalSinceNow / 60).rounded()))
         let (hours, rest) = (minutes / 60, minutes % 60)
-        if hours == 0 { return "\(rest) 分钟后" }
-        return rest == 0 ? "\(hours) 小时后" : "\(hours) 小时 \(rest) 分后"
+        if hours == 0 { return L10n.t("clock.remaining.minutes", rest) }
+        return rest == 0 ? L10n.t("clock.remaining.hours", hours)
+                         : L10n.t("clock.remaining.hoursMinutes", hours, rest)
     }
 }

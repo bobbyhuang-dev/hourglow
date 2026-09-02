@@ -73,17 +73,17 @@ enum LoginItemProbe {
             do {
                 try LaunchAtLogin.set(action == "on")
             } catch {
-                print("失败: \((error as NSError).localizedDescription)")
+                print(L10n.t("probe.loginItem.failed", (error as NSError).localizedDescription))
                 exit(1)
             }
         case "status":
             break
         default:
-            print("用法: --login-item [status|on|off]")
+            print(L10n.t("probe.loginItem.usage"))
             exit(2)
         }
-        print("开机自启  \(LaunchAtLogin.describe())")
-        print("bundle   \(Bundle.main.bundleURL.path)")
+        print(L10n.t("probe.loginItem.status", LaunchAtLogin.describe()))
+        print(L10n.t("probe.bundle", Bundle.main.bundleURL.path))
         exit(0)
     }
 }
@@ -107,11 +107,11 @@ enum LocateProbe {
         PreciseLocation.shared.request { outcome in
             switch outcome {
             case .coordinate(let c):
-                print(String(format: "坐标  %.4f, %.4f", c.latitude, c.longitude))
+                print(L10n.t("probe.locate.coordinate", c.latitude, c.longitude))
             case .denied:
-                print("被拒   在「系统设置 › 隐私与安全性 › 定位服务」里打开，或手填经纬度")
+                print(L10n.t("probe.locate.denied"))
             case .failed(let reason):
-                print("失败   \(reason)")
+                print(L10n.t("probe.locate.failed", reason))
             }
             done = true
         }
@@ -156,10 +156,10 @@ enum GuideProbe {
         case "status":
             break
         default:
-            print("用法: --guide [status|reset|show]")
+            print(L10n.t("probe.guide.usage"))
             exit(2)
         }
-        print("新手指引  \(Onboarding.describe())")
+        print(L10n.t("probe.guide.status", Onboarding.describe()))
         exit(0)
     }
 }

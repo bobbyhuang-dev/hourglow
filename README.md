@@ -16,7 +16,7 @@ HourGlow fills that gap. Rather than hardcoding those four, it is a general
 each, and it handles switching at the right moment.
 
 Lives in the menu bar, no Dock icon. Swift 6.3 + SwiftUI, zero third-party dependencies,
-under 5 MB.
+under 5 MB. Speaks English and 简体中文.
 
 ## Features
 
@@ -46,6 +46,9 @@ under 5 MB.
   verify the download and code signature, install it in place, and relaunch itself
 - **Human-readable JSON config** — edit `schedule.json` by hand and the engine follows
   immediately
+- **English and 简体中文** — follows your system language by default; the panel, the guide and
+  the CLI all switch together. Adding a language is one file and one line —
+  see [Adding a language](CONTRIBUTING.md#adding-a-language)
 - **A guided first launch** — five steps that show where the menu bar icon is, which
   permissions to grant and what the system dialogs will look like, how to set your location
   (or skip the permission and just pick a city), and how to read the timeline. Skippable at
@@ -124,6 +127,7 @@ Everything lands in `build/`. Every push is built and checked the same way by Gi
 ./build/hourglow-cli simulate 2026-12-21 # time travel: print every switch across that day
 ./build/hourglow-cli solar               # today's sunrise, sunset, nautical dawn, civil dusk
 ./build/hourglow-cli location 深圳       # set coordinates by city name
+./build/hourglow-cli language en         # UI and CLI language (prints the current one if given nothing)
 ./build/hourglow-cli import ~/Pictures/zhangjiajie   # folder of stills → solar-phase timeline
 ./build/hourglow-cli apply --dry-run     # show what would be written, without writing
 ./build/hourglow-cli run                 # run the engine in the foreground
@@ -148,6 +152,29 @@ forgets that you have seen it, and `--guide show` opens it right now.
 The menu bar app and `hourglow-cli run` compete for the same single-instance lock: whichever
 starts first owns scheduling, the other falls back to follower mode — it only edits the
 config, and the leader picks the change up.
+
+## Language
+
+HourGlow ships in English and Simplified Chinese, and follows your system language. If it
+matches neither, you get English.
+
+To pin one instead, use the settings page — ⋯ menu › Settings › Language — or the CLI. The
+app and the CLI share the setting, and the panel switches immediately, without a restart:
+
+```bash
+hourglow-cli language            # what is in effect, what is stored, what is available
+hourglow-cli language en         # pin English
+hourglow-cli language system     # back to following the system
+```
+
+`HOURGLOW_LANG=en hourglow-cli list` overrides both, for one command, without changing
+anything — useful for a screenshot or a bug report.
+
+**Adding a language** takes one new file in `Sources/L10n/Catalogs/` and one line in
+`Sources/L10n/L10n.swift` — no Swift beyond filling in a dictionary, and a check binary that
+tells you exactly what is still missing.
+[CONTRIBUTING.md › Adding a language](CONTRIBUTING.md#adding-a-language) walks through it.
+Translations are very welcome.
 
 ## Who wins when you change the wallpaper yourself
 
@@ -207,6 +234,7 @@ offline, none of which touch your real wallpaper:
 ./build/importcheck            # import: 24 Hour Wallpaper filenames, multi-resolution scenes, even split
 ./build/appcheck               # app state: drafts, save boundaries, external config conflicts, onboarding rules
 ./build/updatecheck            # updater: SemVer ordering, Release parsing, SHA-256
+./build/l10ncheck Sources      # strings: nothing missing, empty or extra; placeholders match; every key used in code exists
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 bash Tests/verify-app-signature.sh build/HourGlow.app   # signature and its stable designated requirement
 python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephemeris (10 cases, max deviation 4s)
@@ -215,13 +243,15 @@ python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephem
 
 ## Status
 
-Stable, and in daily use. **1.3 is the current release** — a guided first launch. 1.2 brought
-24 Hour Wallpaper import and solar-phase scheduling, 1.1 added built-in updates, and 1.0
-covered the scheduling engine, the menu bar UI, launch at login and precise location.
+Stable, and in daily use. **1.4 is the current release** — English, alongside the Simplified
+Chinese it started in. 1.3 added a guided first launch, 1.2 brought 24 Hour Wallpaper import
+and solar-phase scheduling, 1.1 added built-in updates, and 1.0 covered the scheduling engine,
+the menu bar UI, launch at login and precise location.
 
 Implementation notes live in [CLAUDE.md](CLAUDE.md): the layering, the verified facts about
 the macOS wallpaper store, and the mistakes already made once so they don't get made again.
-That file is in Chinese, as are the source comments and the UI.
+That file is in Chinese, as are the source comments. The user-visible strings are not — they
+all live in `Sources/L10n/`.
 
 ### Not planned
 
@@ -252,8 +282,12 @@ This is not a public API. The risk of it changing across macOS point releases is
 
 Bug reports, feature requests and pull requests are welcome — see
 [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, how to verify a change, and the
-conventions this codebase follows (notably: comments, UI strings and CLI output are written
-in Chinese).
+conventions this codebase follows (notably: comments and documentation are written in Chinese,
+while every user-visible string lives in `Sources/L10n/`).
+
+Translating HourGlow into another language is the smallest useful contribution there is: copy
+one file, fill in a dictionary, add one line.
+[Adding a language](CONTRIBUTING.md#adding-a-language) has the details.
 
 Found a security problem? Don't open a public issue — [SECURITY.md](SECURITY.md) explains how
 to report it privately.

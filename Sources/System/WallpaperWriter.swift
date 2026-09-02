@@ -7,9 +7,9 @@ enum WallpaperError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .indexMissing(let p): return "找不到壁纸配置: \(p)"
-        case .malformed(let why):  return "Index.plist 结构异常: \(why)"
-        case .imageMissing(let p): return "图片不存在: \(p)"
+        case .indexMissing(let p): return L10n.t("wallpaper.error.indexMissing", p)
+        case .malformed(let why):  return L10n.t("wallpaper.error.malformed", why)
+        case .imageMissing(let p): return L10n.t("wallpaper.error.imageMissing", p)
         }
     }
 }
@@ -125,7 +125,7 @@ enum WallpaperWriter {
         let data = try Data(contentsOf: indexURL)
         guard let root = try PropertyListSerialization.propertyList(
                 from: data, options: [], format: nil) as? [String: Any] else {
-            throw WallpaperError.malformed("顶层不是字典")
+            throw WallpaperError.malformed(L10n.t("wallpaper.error.notDictionary"))
         }
         return root
     }

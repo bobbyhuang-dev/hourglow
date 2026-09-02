@@ -20,36 +20,22 @@ enum OnboardingStep: Int, CaseIterable, Identifiable, Equatable {
 
     var id: Int { rawValue }
 
-    var title: String {
+    /// 每一步的 key 前缀。文案在语言表里（`Sources/L10n/Catalogs/`），
+    /// 不散在视图中 —— 说什么是内容，靶子要能查。
+    var slug: String {
         switch self {
-        case .welcome:  return "让壁纸跟着天光走"
-        case .place:    return "先告诉它你在哪儿"
-        case .resident: return "让它一直在"
-        case .timeline: return "看懂时间轴"
-        case .done:     return "可以开始了"
+        case .welcome:  return "welcome"
+        case .place:    return "place"
+        case .resident: return "resident"
+        case .timeline: return "timeline"
+        case .done:     return "done"
         }
     }
 
+    var title: String { L10n.t("guide.\(slug).title") }
+
     /// 标题下面那两行：这一步在干什么、为什么要这么做。
-    var summary: String {
-        switch self {
-        case .welcome:
-            return "HourGlow 住在菜单栏，没有 Dock 图标、也没有主窗口。以后要打开它，"
-                 + "就点屏幕右上角那个沙漏。"
-        case .place:
-            return "日出日落按你所在的位置算，算在本机，不联网、也不上传。"
-                 + "给一次定位，或者搜一个城市，两条路都行。"
-        case .resident:
-            return "HourGlow 没在运行的时候，壁纸不会切。开机自启让它在你登录之后"
-                 + "自己回到菜单栏。"
-        case .timeline:
-            return "面板中间那张表就是一天：几点、换成哪张。已经给你装好了 Tahoe 四段，"
-                 + "随便改。"
-        case .done:
-            return "剩下的都能在面板里改。这套指引随时能从 ⋯ 菜单里的「新手指引」"
-                 + "再看一遍。"
-        }
-    }
+    var summary: String { L10n.t("guide.\(slug).summary") }
 }
 
 /// 走到第几步。纯状态机，越界由它自己兜住，视图不必再判一次。
@@ -64,7 +50,7 @@ struct OnboardingFlow: Equatable {
     var isLast: Bool { index == count - 1 }
 
     /// 「第 2 步 / 共 5 步」。人从 1 数起。
-    var caption: String { "第 \(index + 1) 步 / 共 \(count) 步" }
+    var caption: String { L10n.t("guide.step", index + 1, count) }
 
     mutating func advance() {
         guard !isLast else { return }
@@ -155,8 +141,10 @@ enum Onboarding {
     /// `--guide status` 打印的那一行。
     @MainActor
     static func describe() -> String {
-        let seen = seenVersion.map { "看过第 \($0) 版" } ?? "没看过"
-        return "\(seen) · 当前第 \(version) 版 · 本次启动"
-            + (shouldPresentOnLaunch ? "会弹" : "不弹")
+        let seen = seenVersion.map { L10n.t("guide.status.seen", $0) }
+            ?? L10n.t("guide.status.unseen")
+        let verdict = L10n.t(shouldPresentOnLaunch ? "guide.status.willShow"
+                                                   : "guide.status.wontShow")
+        return L10n.t("guide.status", seen, version, verdict)
     }
 }

@@ -5,7 +5,7 @@
 
 HourGlow 是一个 macOS 菜单栏壁纸调度器：按固定时刻、日出日落（带偏移）或天光分段，自动切换
 系统 aerial 动态壁纸或本地图片。Swift 6.3 + SwiftUI，零第三方依赖，**不使用 Xcode 工程**
-（`swiftc` 直接编译 + 手工组装 `.app` bundle）。当前版本 1.3，已发布。
+（`swiftc` 直接编译 + 手工组装 `.app` bundle）。当前版本 1.4，已发布。
 
 面向用户的说明看 `README.md` / `README.zh-CN.md`，贡献流程看 `CONTRIBUTING.md`。
 本文件是实现者视角：怎么构建、怎么验证、哪些系统事实可以直接依赖、哪些坑别再踩一次。
@@ -17,12 +17,13 @@ HourGlow 是一个 macOS 菜单栏壁纸调度器：按固定时刻、日出日�
 （`panelshot` 除外，它会短暂弹一个窗口）。
 
 ```bash
-./build.sh                    # 一次编出全部：CLI、六个靶子、panelshot、build/HourGlow.app
+./build.sh                    # 一次编出全部：CLI、七个靶子、panelshot、build/HourGlow.app
 ./build/modelcheck            # 求值：跨午夜回绕、solar 触发、天光分段、Codable 兼容
 ./build/enginecheck           # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
 ./build/importcheck           # 导入：文件名与分子目录归类、多分辨率、均分、跳过与清理
 ./build/appcheck              # 应用状态：草稿、保存边界、外部配置冲突、新手指引的弹出规则
 ./build/updatecheck           # 更新器：SemVer、Release 解析、SHA-256
+./build/l10ncheck Sources     # 文案表：漏词/空词/多词、占位符、挑语言的规则、代码里的 key 是否存在
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 bash Tests/verify-app-signature.sh build/HourGlow.app   # 签名与稳定的 designated requirement
 ./build/solarcheck            # 日出日落，被 verify-solar.py 当作被测程序调用
@@ -35,6 +36,14 @@ python3 Tests/verify-solar.py # 以 ephem 星历对拍（需 pip install ephem�
 
 ```bash
 HOURGLOW_HOME=/tmp/hg ./build/hourglow-cli list   # 空目录会自动写入 Tahoe 四段预设
+```
+
+界面语言用 `HOURGLOW_LANG` 改道，压过存下来的偏好与系统语言，只影响这一次运行、不写任何设置：
+
+```bash
+HOURGLOW_LANG=en ./build/hourglow-cli list        # 三种产物都认它
+HOURGLOW_LANG=en ./build/panelshot ~/Desktop      # 换版式或加语言之后对着看
+./build/hourglow-cli language en                  # 这条才是真写偏好（app 与 CLI 共用）
 ```
 
 开机自启与定位**问不到 CLI 头上** —— 登录项注册的、定位权限授予的都是「调用者自己的 bundle」，
@@ -75,7 +84,7 @@ open build/HourGlow.app                 # 菜单栏 app
 `Resources/HourGlow.icns`，产物已提交进仓库，`build.sh` 只负责拷进 bundle。改图标才需要
 按那个文件头上的用法重跑一次。
 
-版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.3.0` / `1`），
+版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.4.0` / `1`），
 发版流水线用 tag 与 run number 覆盖它们。CI 与发版都在 GitHub Actions 上：
 `.github/workflows/ci.yml` 每次 push / PR 跑一遍构建 + 主靶子 + 星历对拍，
 `.github/workflows/release.yml` 见到 `v*` tag 就构建、验证、压包、建 Release。
@@ -92,6 +101,9 @@ open build/HourGlow.app                 # 菜单栏 app
 
 ```
 Sources/
+├── L10n/                      // 界面与命令行的全部文案，三种产物共用
+│   ├── L10n.swift             // 挑语言（HOURGLOW_LANG > 偏好 > 系统 > en）、查表、单复数
+│   └── Catalogs/<code>.swift  // 一门语言一个文件；zh-Hans 是原文，加语言只加这里
 ├── App/
 │   ├── HourGlowApp.swift      // @main，MenuBarExtra 场景；--login-item / --locate / --guide 入口
 │   ├── AppModel.swift         // UI 与引擎之间唯一的一层，@MainActor @Observable
@@ -143,6 +155,8 @@ Sources/
 - `Engine/` —— `Scheduler` 是核心：定时器直接排到下一个触发点、**不轮询**，由四类系统通知
   （唤醒 / 时钟变更 / 时区变更 / 跨日）补齐意外情况，外加最长 6 小时的安全网。
   `EngineState` 的 `state.json` 记录「我们上次写的是哪张」，是判断用户有没有手动换过的唯一依据。
+- `L10n/` —— 只依赖 Foundation，被 `Model` / `System` / `Engine` / `UI` / `CLI` / `Updater`
+  一起用，所以在依赖图上排在最前面，`build.sh` 里也单列成 `L10N`。细节见「语言与本地化」。
 - `App/Onboarding.swift` —— 纯 Foundation，不碰 UI 也不碰 `Store`，所以能单独编进 `appcheck`。
 - `App/AppUpdater.swift` —— 从 GitHub Releases 查正式版、比较 SemVer、下载并校验 asset digest，
   解压后同时核对 bundle ID / 版本 / 代码签名；`Updater/main.swift` 在主进程退出后原位替换 app。
@@ -253,9 +267,9 @@ Configuration: { type: "imageFile", url: { relative: "file:///path/to.heic" } }
 行的常驻底色是 macOS 里「选中项」的语言，而这个面板里的行点下去是翻页、没有选中态 ——
 所以底色只留给悬停与按下，「现在正在跑的那一段」靠行首一根强调色竖条（`Panel.nowBar`）标。
 
-设置页（开机自启 + 位置 + 自动更新）与时段页并排在第一层，从 ⋯ 菜单或「缺少坐标」那条提示条
+设置页（语言 + 开机自启 + 位置 + 自动更新）与时段页并排在第一层，从 ⋯ 菜单或「缺少坐标」那条提示条
 进去 —— 提示条说的是哪儿不对，点进去就该是在哪儿改。它的改动**即时生效**：一个开关、
-一对坐标都是单次动作，没有「一组改动一起应用」的语义。
+一对坐标、换一门语言都是单次动作，没有「一组改动一起应用」的语义。
 
 时段页则相反，它的改动**不即时生效**：先落进 `AppModel.draft`（草稿），界面立刻跟手，
 点底部「应用」才写进 `schedule.json`、才可能换壁纸 —— 否则试错的代价是真把壁纸换过去。
@@ -276,6 +290,45 @@ Configuration: { type: "imageFile", url: { relative: "file:///path/to.heic" } }
 升级上来的老用户不打扰；入口在 ⋯ 菜单和设置页的「帮助」。关窗即算看过 ——
 跳过、走完、点红灯一视同仁。别拿 `OnboardingWindow` 去开第二扇窗。
 
+## 语言与本地化
+
+界面有简体中文与英文两种，默认跟随系统。**面向用户的字符串一个都不写在视图、命令或错误里**，
+全部是 `L10n.t("key")` 查出来的。新文案先写进 `Catalogs/zh-Hans.swift`（原文语言），再补别的。
+
+**为什么不是 `.lproj/Localizable.strings`**：这个仓库不走 Xcode 工程，产物里有一堆没有 bundle
+的裸二进制（`hourglow-cli`、`panelshot`、七个靶子）。`Bundle.main.localizedString` 在它们身上
+只会把 key 原样退回来，靶子也就查不出漏翻。文案编进二进制里，三种产物拿到的是同一份，
+加一门语言只是加一个 Swift 文件。
+
+**加一门语言 = 两处改动**：`Sources/L10n/Catalogs/<code>.swift` 加一个文件，
+`L10n.catalogs` 加一行。别的都不用动 —— `build.sh` 按通配拿文件，
+`CFBundleLocalizations` 也是从这些文件里数出来的，CI 的逐语言冒烟同理。
+面向贡献者的完整步骤写在 `CONTRIBUTING.md` 的「Adding a language」里，改了这里记得同步。
+
+**挑哪一门**（`L10n.resolve`，纯函数，`l10ncheck` 按表断言）：
+`HOURGLOW_LANG` > 用户在设置页/CLI 选的 > 系统语言 > `defaultCode`（英文）。
+每一档都走 `match`：完全一致 → 语言+文字一致（`zh-Hans-CN` → `zh-Hans`）→ 只有语言一致
+（`en-GB` → `en`、`zh-Hant` → `zh-Hans`）。最后一档是有意为之，繁体读者看简体比被扔去英文近。
+
+**兜底不是原文语言**：系统是法语、我们只有中英，给英文。`sourceCode`（对完整性、缺词时退回）
+与 `defaultCode`（谁都对不上时用）是两件事，别合成一个。
+
+**地名不算翻译工作量**：`StringCatalog.placeNames` 只有 `.chinese` / `.latin` 两档，
+`System/Cities.swift` 按它选一列。翻一门语言不必逐个翻几百个地名。
+
+**换语言即时生效**：`L10n.setPreference` 写盘 → 清缓存 → 发 `didChangeNotification`，顺序不能反。
+`AppModel` 收到就 `languageGeneration += 1`，`PanelRoot` 拿它当 `.id` 把面板整棵重建。
+`.id` 挂在页面上而不是 `PanelRoot` 自己身上，所以在设置页改完语言，人还留在设置页。
+
+**偏好存在 `UserDefaults`，不在 `HOURGLOW_HOME` 里**（和新手指引的 `seenVersion` 一样）：
+app 用 `.standard`，CLI 是裸二进制、得显式指名 `UserDefaults(suiteName: "dev.bobbyhuang.hourglow")`。
+把自己的 bundle ID 当 suite 传给 `UserDefaults(suiteName:)` 是未定义行为，所以分两条路走。
+
+**`l10ncheck` 守着的**：漏词、空词、多出原文没有的词、孤儿单数形、占位符与原文对不上、
+一条文案里混用 `%@` 与 `%1$@`、多参数没写序号；带上 `Sources` 还会把代码里
+`L10n.t("…")` 写死的 key 与原文表对一遍 —— 打错一个字母的后果是界面上露出 `slot.apply`
+这种半成品，编译器不会拦。
+
 ## 运行时路径
 
 ```
@@ -284,6 +337,7 @@ Configuration: { type: "imageFile", url: { relative: "file:///path/to.heic" } }
 ~/Library/Application Support/HourGlow/run.lock        # 单实例锁
 ~/Library/Application Support/HourGlow/Scenes/         # 导入的壁纸组素材
 UserDefaults dev.bobbyhuang.hourglow onboarding.seenVersion   # 新手指引看过没（不在 HOURGLOW_HOME 里）
+UserDefaults dev.bobbyhuang.hourglow language                 # 界面语言偏好，没有这一条就是跟随系统
 ~/Library/Application Support/com.apple.wallpaper/Store/Index.plist  # 系统壁纸配置
 ~/Library/Application Support/com.apple.wallpaper/aerials/           # aerial 素材库
 ~/Library/LaunchAgents/app.hourglow.agent.plist        # 可选的无头常驻（hourglow-cli agent install）
@@ -388,6 +442,29 @@ UserDefaults dev.bobbyhuang.hourglow onboarding.seenVersion   # 新手指引看�
 - `panelshot` 只抓第一个时段的话，配置里第一段是日出/日落就永远看不到固定时刻那一栏
   （两栏版式完全不同）。现在会另外抓一张 `2b-slot-clock.png`。
 
+### 语言
+
+- **`Preference` 要 `Hashable`，不能只 `Equatable`**。设置页那个 `Picker` 的 `selection`
+  与 `.tag(...)` 都要求 `Hashable`，只写 `Equatable` 编不过，而错误信息指向的是 SwiftUI。
+- **靶子里断言中文原文，就必须先钉住语言**。`modelcheck` 与 `appcheck` 里写着
+  `深圳`、`第 1 步 / 共 5 步`，在英文系统上跑会挂在 `深圳` vs `Shenzhen`。两个文件开头
+  `setenv("HOURGLOW_LANG", L10n.sourceCode, 1)` + `L10n.invalidate()`，别删。
+  真正测「换语言」的是 `l10ncheck`。
+- **`getenv` 而不是 `ProcessInfo.environment`**。后者是进程启动时的快照，靶子里 `setenv`
+  之后再问它拿到的还是旧值（`Store.directoryURL` 同理）。改完环境变量要 `L10n.invalidate()`，
+  语言是缓存住的。
+- **Info.plist 里要写 `CFBundleLocalizations`**，否则系统把 app 当成只有开发语言的单语应用，
+  「语言与地区 › 应用程序」里也不会出现 HourGlow 这一行。它由 `build.sh` 从
+  `Catalogs/*.swift` 里数出来，不另立一份名单 —— 名单一旦有两份，加语言就会漏改一处。
+- **同一个词在句子里和在按钮上不是同一条文案**。`sun.sunrise` 是「日落前30分」里的那个词，
+  英文要小写；时段页与「固定时刻」并排的分段控件是按钮标题，英文要大写。所以另有
+  `slot.kind.sunrise` / `slot.kind.sunset`，中文两处同形，不要合并。
+- **CLI 的列宽按显示宽度现算，不写死数字**。`配置` 占四列、`config` 占六列，
+  `日落前30分` 占十列、`30 min before sunset` 占二十列 —— 写死 14 会让英文的箭头贴上文字。
+  `column(_:min:)` 从当前这批字符串里取最大值，`padded(to:)` 按 `displayWidth` 补齐。
+- **多参数的文案必须写 `%n$` 序号**。语序一变，不带序号的那份就取错了参数，
+  轻则乱码重则崩。`l10ncheck` 会拦，但先知道比被拦住快。
+
 ### 登录项、定位与签名
 
 - **`SMAppService.mainApp.status` 在从没注册过时返回的是 `.notFound`，不是 `.notRegistered`**
@@ -468,9 +545,12 @@ UserDefaults dev.bobbyhuang.hourglow onboarding.seenVersion   # 新手指引看�
 - `api.sunrise-sunset.org` 的结果与 NOAA 定义差约 65 秒，不适合当秒级参考；且它会 403 掉
   urllib 的默认 User-Agent。现在验证已完全离线。
 
-## 语言
+## 写作语言
 
-代码注释、文档、CLI 输出、UI 文案一律中文。注释解释「为什么这么做」与踩过的坑，不复述代码。
+代码注释与文档一律中文。注释解释「为什么这么做」与踩过的坑，不复述代码。
+
+面向用户的字符串（UI 文案、CLI 输出、错误消息）**不写在代码里**，全部是 `Sources/L10n/` 里的
+一条 key；新文案先写进 `Catalogs/zh-Hans.swift`，那份是原文。详见上面的「语言与本地化」。
 
 **例外是面向外部读者的文件，它们用英文**：`CONTRIBUTING.md`、`SECURITY.md`，
 以及 `README.md`。README 是双语的 —— `README.md`（英文，仓库首页那份）与 `README.zh-CN.md`

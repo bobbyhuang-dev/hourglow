@@ -50,7 +50,7 @@ enum SceneImport {
                       to schedule: Schedule,
                       name: String? = nil) throws -> Outcome {
         guard !urls.isEmpty else {
-            throw SceneImportError(message: "没有选任何文件")
+            throw SceneImportError(message: L10n.t("import.error.noFiles"))
         }
 
         var files: [URL] = []
@@ -59,7 +59,7 @@ enum SceneImport {
         }
         files = pickPreferredResolution(files)
         guard !files.isEmpty else {
-            throw SceneImportError(message: "这里面没有图片")
+            throw SceneImportError(message: L10n.t("import.error.noImages"))
         }
 
         let (grouped, skipped) = group(files, root: commonRoot(of: urls))
@@ -88,7 +88,7 @@ enum SceneImport {
                 }
             }
             guard !slots.isEmpty else {
-                throw SceneImportError(message: "没有识别到可用的图片")
+                throw SceneImportError(message: L10n.t("import.error.unrecognised"))
             }
 
             var updated = schedule
@@ -222,7 +222,7 @@ enum SceneImport {
         let fm = FileManager.default
         var isDir: ObjCBool = false
         guard fm.fileExists(atPath: source.path, isDirectory: &isDir) else {
-            throw SceneImportError(message: "找不到这个文件夹")
+            throw SceneImportError(message: L10n.t("import.error.noFolder"))
         }
 
         let files: [URL]
@@ -232,7 +232,7 @@ enum SceneImport {
                     || source.pathExtension.lowercased() == "sundialscene" {
             files = imageExts.contains(source.pathExtension.lowercased()) ? [source] : try collectImages(in: source)
         } else {
-            throw SceneImportError(message: "请选一个图片文件夹，或一组图片")
+            throw SceneImportError(message: L10n.t("import.error.wrongKind"))
         }
         return pickPreferredResolution(files)
     }

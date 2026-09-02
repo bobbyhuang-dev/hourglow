@@ -47,7 +47,8 @@ private func relaunch(_ app: URL) throws {
     process.waitUntilExit()
     guard process.terminationStatus == 0 else {
         throw NSError(domain: "HourGlowUpdater", code: Int(process.terminationStatus),
-                      userInfo: [NSLocalizedDescriptionKey: "open 返回 \(process.terminationStatus)"])
+                      userInfo: [NSLocalizedDescriptionKey:
+                                    L10n.t("updater.open.failed", process.terminationStatus)])
     }
 }
 
@@ -58,7 +59,7 @@ while kill(parentPID, 0) == 0, Date() < deadline {
     usleep(100_000)
 }
 guard kill(parentPID, 0) != 0 else {
-    log("等待 HourGlow 退出超时")
+    log(L10n.t("updater.wait.timeout"))
     exit(1)
 }
 
@@ -71,7 +72,7 @@ do {
     guard source.pathExtension == "app", target.pathExtension == "app",
           manager.fileExists(atPath: source.path) else {
         throw NSError(domain: "HourGlowUpdater", code: 1,
-                      userInfo: [NSLocalizedDescriptionKey: "待安装的 app 不存在"])
+                      userInfo: [NSLocalizedDescriptionKey: L10n.t("updater.missingPayload")])
     }
     if manager.fileExists(atPath: target.path) {
         try manager.moveItem(at: target, to: backup)
@@ -82,11 +83,11 @@ do {
     try relaunch(target)
     if oldMoved { try? manager.removeItem(at: backup) }
     try? manager.removeItem(at: stageRoot)
-    log("已安装 \(target.path)")
+    log(L10n.t("updater.installed", target.path))
     try? manager.removeItem(at: helper)
     exit(0)
 } catch {
-    log("安装失败：\(error.localizedDescription)")
+    log(L10n.t("updater.failed", error.localizedDescription))
     // 新版本挪到位之后如果重启失败，先把它撤掉，再把旧 bundle 原样放回。
     if newMoved, manager.fileExists(atPath: target.path) { try? manager.removeItem(at: target) }
     if oldMoved, manager.fileExists(atPath: backup.path) {
