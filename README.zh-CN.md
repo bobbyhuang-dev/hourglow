@@ -7,6 +7,10 @@
 [![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](#要求)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
+<p align="center">
+  <img src="docs/demo.gif" width="800" alt="装着 HourGlow 的 Mac 上的一天：Tahoe 壁纸在日出、09:00、日落前与入夜后各换一次，菜单栏面板里的时间轴标着现在跑到哪一段。">
+</p>
+
 跟着天光走的 macOS 壁纸调度器。
 
 macOS Tahoe 提供了 Tahoe Morning / Day / Evening / Night 四张动态壁纸，却没有像旧版
@@ -72,6 +76,35 @@ ad-hoc 签名应用升级后，即使设置显示已允许，菜单栏项仍可�
 
 同一个页面上的 `hourglow-cli-x.y.z.zip` 是可选的命令行工具（见下），
 把里面的二进制放到 `PATH` 上任意位置即可。
+
+## 安全与工作原理
+
+HourGlow 对你的 Mac 只做一件事：换壁纸。下面把这件事涉及的每一处都说清楚，信不信得过你自己判断。
+
+- **改的是什么。** macOS 把壁纸设置存在
+  `~/Library/Application Support/com.apple.wallpaper/Store/Index.plist`。HourGlow 读这个文件，
+  换掉里面的壁纸条目，写回去，再重启 `WallpaperAgent` 让改动生效。它不认识的字段原样保留，
+  统一写成 `linked`（桌面与屏保一起换），文件里已经是目标值时直接跳过不写 —— 不闪屏。
+  这不是公开 API，macOS 更新有可能改格式。
+- **先备份。** 每次写入前先把这个文件复制成同目录下的 `Index.plist.hourglow.bak`，备份失败就不写。
+  想手动还原：退出 HourGlow，把备份复制回 `Index.plist`，执行 `killall WallpaperAgent` ——
+  或者干脆去系统设置里随便选一张。
+- **它自己的文件。** 日程、引擎状态与导入的壁纸组在 `~/Library/Application Support/HourGlow/`；
+  日志在 `~/Library/Logs/HourGlow*.log`；更新包下载到 `~/Library/Caches/HourGlow/`（装完清掉）；
+  语言与「指引看过了」记在它自己的偏好里。它会读系统的 aerial 素材表拿名字和缩略图。
+  磁盘上别的地方一概不碰。
+- **权限。** 一项都不是必需的。定位是可选的：给了就取一次坐标，以明文经纬度存进 `schedule.json`，
+  之后不再问；不给就搜城市或手填经纬度，再不然按时区推断。开机自启是普通的登录项，
+  在「系统设置 › 通用 › 登录项」里看得见、关得掉。不要辅助功能，不要完全磁盘访问，不要录屏。
+- **日出日落在你的 Mac 上算**，用的是 NOAA 太阳位置算法，从不访问任何日出日落服务。
+- **哪些会联网。** 自动更新开着（默认）时，每天向 `api.github.com` 问一次最新版本；
+  你点了安装才从 GitHub 下载。搜地点时，内置城市表里没有的名字会先问 Apple 的 MapKit 地理编码，
+  再不行问 OpenStreetMap 的 Nominatim。就这些：没有遥测，没有统计，不需要账号。
+  在设置里关掉自动更新，它就不会自己发任何请求。
+- **更新会先验证再替换**：下载的 SHA-256 对照 Release 里的 asset digest，解压后再核对 bundle ID、
+  版本与完整的代码签名。旧 app 会留作备份，直到新 app 成功启动。
+- **未经公证。** 发布版由构建脚本 ad-hoc 签名 —— 背后没有付费的 Apple 开发者账号 ——
+  所以 macOS 首次打开会问一次。不想信二进制的话，[从源码构建](#从源码构建)，一条命令。
 
 ## 要求
 
@@ -229,15 +262,6 @@ python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例�
 - 跟随系统亮暗模式、天气、Focus 模式的触发器
 - 锁屏壁纸
 - 整份日程的导出与同步（导入壁纸**组**是支持的，这里说的是 `schedule.json` 本身）
-
-## 它是怎么改壁纸的
-
-macOS 把壁纸配置存在 `~/Library/Application Support/com.apple.wallpaper/Store/Index.plist`
-（binary plist），改完 `killall WallpaperAgent` 生效。HourGlow 读改写这个文件：保留所有
-未知字段、写入前备份、统一写成 `linked`（桌面与屏保一起换）、目标与当前一致时跳过写入以免闪屏。
-格式细节见 [CLAUDE.md](CLAUDE.md)，都是实机验证过的。
-
-这是没有公开 API 的做法，随 macOS 小版本变动的风险自负。
 
 ## 参与
 

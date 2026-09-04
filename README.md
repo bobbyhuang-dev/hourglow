@@ -7,6 +7,10 @@
 [![macOS](https://img.shields.io/badge/macOS-26%2B-blue)](#requirements)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](LICENSE)
 
+<p align="center">
+  <img src="docs/demo.gif" width="800" alt="A day on a Mac running HourGlow: the Tahoe wallpaper changes at sunrise, at 09:00, before sunset and after dark, while the menu bar panel shows today's timeline and which slot is active.">
+</p>
+
 A macOS wallpaper scheduler that follows the daylight.
 
 macOS Tahoe ships four dynamic wallpapers — Tahoe Morning / Day / Evening / Night — but
@@ -94,6 +98,47 @@ access and enable **Launch at login** once again after this identity migration.
 
 `hourglow-cli-x.y.z.zip` on the same page is the optional command line tool (see below);
 drop the binary anywhere on your `PATH`.
+
+## Safety and how it works
+
+HourGlow does one thing to your Mac: it changes the wallpaper. Here is exactly what that
+involves, so you can decide whether to trust it.
+
+- **What it changes.** macOS keeps wallpaper settings in
+  `~/Library/Application Support/com.apple.wallpaper/Store/Index.plist`. HourGlow reads that
+  file, replaces the wallpaper entry, writes it back, and restarts `WallpaperAgent` so the
+  change shows. Fields it doesn't understand are kept as they were, the slot is always written
+  as `linked` (desktop and screen saver together), and the write is skipped when the file
+  already says what it should — no flicker. This is not a public API; a macOS update could
+  change the format.
+- **Backup first.** Every write starts by copying that file to `Index.plist.hourglow.bak`
+  next to the original. If the backup fails, nothing is written. To undo by hand: quit
+  HourGlow, copy the backup back over `Index.plist`, run `killall WallpaperAgent` — or just
+  pick a wallpaper in System Settings.
+- **Its own files.** The schedule, engine state and imported wallpaper sets live in
+  `~/Library/Application Support/HourGlow/`; logs in `~/Library/Logs/HourGlow*.log`; update
+  downloads in `~/Library/Caches/HourGlow/` (cleaned up after install); the language and
+  "seen the guide" flags in its preferences. It reads the system's aerial catalog for names
+  and thumbnails. Nothing else on disk is touched.
+- **Permissions.** None are required. Location is optional: if you grant it, the app takes
+  one fix, stores it in `schedule.json` as a plain latitude/longitude, and never asks again;
+  decline it and pick a city or type coordinates, or let it infer from your time zone. Launch
+  at login is an ordinary login item, visible and switchable in System Settings › General ›
+  Login Items. No Accessibility, no Full Disk Access, no screen recording.
+- **Sun times are computed on your Mac** with the NOAA solar position algorithm. No sun-time
+  service is ever contacted.
+- **What goes over the network.** With automatic updates on (the default), HourGlow asks
+  `api.github.com` once a day for the latest release and, when you install one, downloads it
+  from GitHub. Typing a place name the built-in city list doesn't know geocodes it through
+  Apple's MapKit and, failing that, OpenStreetMap's Nominatim. That is the complete list: no
+  telemetry, no analytics, no account. Turn automatic updates off in Settings and the app
+  makes no requests on its own.
+- **Updates are verified** before anything is replaced: the download's SHA-256 against the
+  release's asset digest, then the unpacked app's bundle identifier, version and full code
+  signature. The old app is kept as a backup until the new one has launched.
+- **Not notarized.** Releases are ad-hoc signed by the build script — there is no paid Apple
+  developer account behind this — which is why macOS asks once on first launch. If you'd
+  rather not trust a binary, [build from source](#build-from-source); it takes one command.
 
 ## Requirements
 
@@ -265,18 +310,6 @@ Deliberately out of scope, so you know what you're getting:
 - lock screen wallpaper
 - exporting or syncing the whole schedule (importing a wallpaper *set* is supported; this
   means `schedule.json` itself)
-
-## How it actually changes the wallpaper
-
-macOS keeps wallpaper configuration in
-`~/Library/Application Support/com.apple.wallpaper/Store/Index.plist` (a binary plist), and
-applies it once `WallpaperAgent` is killed. HourGlow reads, modifies and writes that file:
-preserving every unknown field, backing it up first, always writing the slot as `linked`
-(desktop and screen saver change together), and skipping the write entirely when the target
-already matches — which avoids the flicker. The format details, all verified on a real
-machine, are in [CLAUDE.md](CLAUDE.md).
-
-This is not a public API. The risk of it changing across macOS point releases is yours.
 
 ## Contributing
 

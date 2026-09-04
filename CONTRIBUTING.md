@@ -97,7 +97,11 @@ If you changed the UI, render the panels and compare the layout before and after
 
 ```bash
 ./build/panelshot ~/Desktop
+./build/panelshot ~/Desktop --only timeline --now 2026-09-04T06:20   # one page, frozen at a moment
 ```
+
+If the timeline's look changed, regenerate the README demo GIF and the share card too with
+`Tools/makedemo.sh` (see the header of that script for what it needs).
 
 ## Adding a language
 

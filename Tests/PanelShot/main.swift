@@ -4,7 +4,12 @@ import SwiftUI
 // 把各个页面画成 PNG（时段页的固定时刻那一栏版式不同，另出一张）。菜单栏面板不是普通窗口，screencapture 抓不到它，
 // 改版式时用这个对照：
 //
-//   ./build/panelshot [输出目录]
+//   ./build/panelshot [输出目录] [--now 2026-09-04T06:20] [--only timeline]
+//
+// `--now` 把面板上的「现在」定格在某一刻（哪一段在跑、下一次几点换、还有多久），
+// 演示 GIF 与分享卡片靠它一天之内出好几张（见 Tools/makedemo.sh）；不带就是真实时钟。
+// `--only` 只抓名字以它开头的那几张（timeline / slot / picker / settings / place / guide），
+// 一次只要一张时省下十几秒。
 //
 // 走的是真窗口 + `cacheDisplay`，不是 `ImageRenderer` —— 后者画不出 ScrollView
 // 里的内容，也画不出 AppKit 撑着的控件（分段控件、时间步进器、输入框、菜单）。
@@ -13,6 +18,8 @@ import SwiftUI
 @MainActor
 func shoot<V: View>(_ view: V, named name: String, into directory: URL,
                     width: CGFloat = Panel.width) {
+    // 文件名是 "1-timeline"、"6-guide-3" 这种，`--only` 对的是去掉序号后的那一截。
+    if let only, !name.drop(while: { $0 != "-" }).dropFirst().hasPrefix(only) { return }
     let content = view
         .environment(AppModel.shared)
         .frame(width: width)
@@ -56,8 +63,29 @@ func shoot<V: View>(_ view: V, named name: String, into directory: URL,
     print("已写出 \(url.path)")
 }
 
-let directory = URL(fileURLWithPath: CommandLine.arguments.count > 1
-                    ? CommandLine.arguments[1] : ".")
+var outputPath = "."
+var only: String?
+var arguments = CommandLine.arguments.dropFirst().makeIterator()
+while let argument = arguments.next() {
+    switch argument {
+    case "--now":
+        guard let value = arguments.next() else { print("--now 需要一个时刻"); exit(2) }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
+        guard let date = formatter.date(from: value) else {
+            print("--now 认不出 \(value)，格式是 2026-09-04T06:20"); exit(2)
+        }
+        // 必须赶在第一次碰 AppModel.shared 之前：它 init 时就会按「现在」求值一次。
+        AppModel.now = { date }
+    case "--only":
+        guard let value = arguments.next() else { print("--only 需要一个名字"); exit(2) }
+        only = value
+    default:
+        outputPath = argument
+    }
+}
+let directory = URL(fileURLWithPath: outputPath)
 
 // 顶层代码不是 main actor 隔离的，但它确确实实跑在主线程上。
 MainActor.assumeIsolated {

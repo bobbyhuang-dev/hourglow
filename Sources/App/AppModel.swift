@@ -24,6 +24,14 @@ final class AppModel {
 
     static let shared = AppModel()
 
+    /// 面板上一切「现在」都从这里取，不直接 `Date()`。
+    ///
+    /// 只有 `panelshot --now` 会改它：演示图与截图要把时间轴定格在一天里的某一刻
+    /// （哪一段在跑、下一次几点换）。app 与 CLI 从不碰它，永远是真实时钟。
+    /// `nonisolated(unsafe)`：`Clock.remaining` 不在 main actor 上，而这个值只在
+    /// 进程启动、任何视图出现之前被赋一次。
+    nonisolated(unsafe) static var now: () -> Date = { Date() }
+
     // MARK: - 展示状态
 
     private(set) var schedule: Schedule
@@ -89,7 +97,7 @@ final class AppModel {
         let loaded = (try? Store.load()) ?? Tahoe.preset
         schedule = loaded
         // 面板可能比 start() 先被打开，先把当前时段算出来，别闪一下「没有生效的时段」。
-        resolution = loaded.resolve()
+        resolution = loaded.resolve(at: AppModel.now())
         let acquiredLock = EngineLock.acquire()
         lock = acquiredLock
         isFollower = acquiredLock == nil
@@ -180,7 +188,7 @@ final class AppModel {
     var entries: [Entry] {
         let coordinate = schedule.effectiveCoordinate
         let calendar = Calendar.current
-        let now = Date()
+        let now = AppModel.now()
         return schedule.slots
             .map { Entry(slot: $0,
                          time: $0.trigger.fireDate(on: now,
@@ -226,7 +234,7 @@ final class AppModel {
         guard schedule.slots.contains(where: { $0.enabled && $0.trigger.dependsOnSun }) else {
             return false
         }
-        return Solar.events(on: Date(), at: coordinate) == nil
+        return Solar.events(on: AppModel.now(), at: coordinate) == nil
     }
 
     // MARK: - 编辑（草稿）
@@ -276,7 +284,7 @@ final class AppModel {
         let wallpaper = resolution?.active.wallpaper
             ?? catalog.first.map { Wallpaper.aerial(assetID: $0.id) }
             ?? .aerial(assetID: Tahoe.day)
-        let hour = (Calendar.current.component(.hour, from: Date()) + 1) % 24
+        let hour = (Calendar.current.component(.hour, from: AppModel.now()) + 1) % 24
         let slot = Slot(trigger: .clock(hour: hour, minute: 0), wallpaper: wallpaper)
         draftSession = SlotDraft(new: slot)
         return slot.id
@@ -546,12 +554,12 @@ final class AppModel {
     /// 今天的日出日落。设置页用它证明坐标是对的 —— 数字对不对，本地人一眼就知道。
     var solarToday: (sunrise: Date, sunset: Date)? {
         guard let coordinate = schedule.effectiveCoordinate else { return nil }
-        return Solar.times(on: Date(), at: coordinate)
+        return Solar.times(on: AppModel.now(), at: coordinate)
     }
 
     var solarEventsToday: Solar.Events? {
         guard let coordinate = schedule.effectiveCoordinate else { return nil }
-        return Solar.events(on: Date(), at: coordinate)
+        return Solar.events(on: AppModel.now(), at: coordinate)
     }
 
     /// 向系统要一次坐标。拿到就写进配置，从此不再依赖时区推断。
@@ -761,7 +769,7 @@ final class AppModel {
         }
         // 引擎也是先落盘再提交内存；UI 遵守同一个顺序，失败时不会显示一份磁盘上不存在的配置。
         schedule = updated
-        resolution = updated.resolve()
+        resolution = updated.resolve(at: AppModel.now())
         refresh()
         return true
     }
@@ -817,7 +825,7 @@ final class AppModel {
     }
 
     private func refresh() {
-        resolution = schedule.resolve()
+        resolution = schedule.resolve(at: AppModel.now())
         actual = try? WallpaperWriter.current()
         lastWritten = EngineState.load().lastWritten
     }

@@ -29,6 +29,8 @@ bash Tests/verify-app-signature.sh build/HourGlow.app   # 签名与稳定的 des
 ./build/solarcheck            # 日出日落，被 verify-solar.py 当作被测程序调用
 python3 Tests/verify-solar.py # 以 ephem 星历对拍（需 pip install ephem，容差 30 秒）
 ./build/panelshot ~/Desktop   # 五个页面 + 新手指引五步画成 PNG（固定时刻那一栏另出一张），改版式时对照
+./build/panelshot ~/Desktop --only timeline --now 2026-09-04T06:20   # 只抓一页，并把「现在」定格在某一刻
+Tools/makedemo.sh             # README 顶上的 docs/demo.gif + 官网/GitHub 的分享卡片（见下面「演示图与分享卡片」）
 ```
 
 配置目录可以用 `HOURGLOW_HOME` 整体改道（`schedule.json` / `state.json` / `run.lock` 都跟着走），
@@ -83,6 +85,24 @@ open build/HourGlow.app                 # 菜单栏 app
 应用图标是画出来的：`Tools/makeicon.swift` 用 SF Symbol 的沙漏加一条晨光→夜色的渐变生成
 `Resources/HourGlow.icns`，产物已提交进仓库，`build.sh` 只负责拷进 bundle。改图标才需要
 按那个文件头上的用法重跑一次。
+
+### 演示图与分享卡片
+
+`docs/demo.gif`（README 顶上那张，1000 × 625、32 帧、约 10 秒、3.2 MB）与官网仓库的
+`assets/og.png`（1200 × 630，`og:image` / Twitter Card / GitHub Social Preview 三处共用一张）
+都由 `Tools/makedemo.sh` 生成：拿一份一次性配置（深圳、Tahoe 四段、英文、日期钉死 2026-09-04），
+用 `panelshot --only timeline --now …` 在一天里抓十二张时间轴，再由 `Tools/makedemo.swift`
+用 AppKit 离屏合成「桌面 + 菜单栏 + 面板」，ImageIO 编成 GIF —— 不引入 ffmpeg / gifsicle。
+壁纸底图 `tahoe-*.jpg` 不进这个仓库，默认从旁边的官网仓库 `../hourglow-web/assets/` 取。
+
+面板上的「现在」全部走 `AppModel.now`（`nonisolated(unsafe) static var`），只有 `panelshot --now`
+会改它；app 与 CLI 永远是真实时钟。新加用到「现在」的界面逻辑时别直接写 `Date()`，
+不然定格的截图里那一处会漏出真实时间。
+
+**官网是另一个仓库** `bobbyhuang-dev/hourglow-web`（本机在 `../hourglow-web`），纯静态页 +
+Cloudflare Workers，push 到 `main` 即部署。GitHub 仓库的 Social Preview 没有 API，
+只能在 Settings › General › Social preview 里手工上传 `og.png`；Homepage 与 Topics 可以
+`gh repo edit` 设。
 
 版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.4.0` / `1`），
 发版流水线用 tag 与 run number 覆盖它们。CI 与发版都在 GitHub Actions 上：
@@ -441,6 +461,11 @@ UserDefaults dev.bobbyhuang.hourglow language                 # 界面语言偏�
   默认列表会把「搜」这个动作本身挤到屏幕外。指引里只在真的输入了才出结果。
 - `panelshot` 只抓第一个时段的话，配置里第一段是日出/日落就永远看不到固定时刻那一栏
   （两栏版式完全不同）。现在会另外抓一张 `2b-slot-clock.png`。
+- **`panelshot --now` 必须在第一次碰 `AppModel.shared` 之前赋值**：`init` 里就按「现在」求过一次值，
+  晚了那张「哪一段在跑」就是真实时间的。演示图要在真实 app 也在跑的机器上抓，所以一定用
+  `HOURGLOW_HOME` 指到一次性目录 —— 否则抢不到 `run.lock`，面板上会多一条「后台守护进程在排程」。
+- **GIF 里照片帧很贵**：1000 × 625 一帧两三百 KB，交叉淡入每多一帧就多这么多。所以停帧长
+  （0.75 秒）、过渡帧只有五帧且很短，总共 32 帧压在 3.2 MB；想加时长加停帧，别加过渡帧。
 
 ### 语言
 

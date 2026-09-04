@@ -146,7 +146,7 @@ struct SlotPage: View {
         guard let coordinate = model.schedule.effectiveCoordinate else {
             return L10n.t("slot.today.noCoordinate")
         }
-        guard let date = slot.trigger.fireDate(on: Date(),
+        guard let date = slot.trigger.fireDate(on: AppModel.now(),
                                                coordinate: coordinate,
                                                calendar: .current) else {
             return L10n.t("slot.today.polar")
