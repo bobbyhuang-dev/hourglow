@@ -4,12 +4,13 @@ import SwiftUI
 // 把各个页面画成 PNG（时段页的固定时刻那一栏版式不同，另出一张）。菜单栏面板不是普通窗口，screencapture 抓不到它，
 // 改版式时用这个对照：
 //
-//   ./build/panelshot [输出目录] [--now 2026-09-04T06:20] [--only timeline]
+//   ./build/panelshot [输出目录] [--now 2026-09-04T06:20] [--only timeline] [--appearance dark]
 //
 // `--now` 把面板上的「现在」定格在某一刻（哪一段在跑、下一次几点换、还有多久），
 // 演示 GIF 与分享卡片靠它一天之内出好几张（见 Tools/makedemo.sh）；不带就是真实时钟。
 // `--only` 只抓名字以它开头的那几张（timeline / slot / picker / settings / place / guide），
 // 一次只要一张时省下十几秒。
+// `--appearance light|dark` 钉住外观，不跟系统；演示图里傍晚与夜里那几张面板要跟壁纸一起变暗。
 //
 // 走的是真窗口 + `cacheDisplay`，不是 `ImageRenderer` —— 后者画不出 ScrollView
 // 里的内容，也画不出 AppKit 撑着的控件（分段控件、时间步进器、输入框、菜单）。
@@ -35,6 +36,7 @@ func shoot<V: View>(_ view: V, named name: String, into directory: URL,
                           styleMask: [.borderless],
                           backing: .buffered,
                           defer: false)
+    window.appearance = appearance
     window.contentView = host
     window.backgroundColor = .windowBackgroundColor
     window.alphaValue = 1
@@ -65,6 +67,7 @@ func shoot<V: View>(_ view: V, named name: String, into directory: URL,
 
 var outputPath = "."
 var only: String?
+var appearance: NSAppearance?
 var arguments = CommandLine.arguments.dropFirst().makeIterator()
 while let argument = arguments.next() {
     switch argument {
@@ -81,6 +84,13 @@ while let argument = arguments.next() {
     case "--only":
         guard let value = arguments.next() else { print("--only 需要一个名字"); exit(2) }
         only = value
+    case "--appearance":
+        guard let value = arguments.next() else { print("--appearance 需要 light 或 dark"); exit(2) }
+        switch value {
+        case "light": appearance = NSAppearance(named: .aqua)
+        case "dark":  appearance = NSAppearance(named: .darkAqua)
+        default: print("--appearance 只认 light 或 dark"); exit(2)
+        }
     default:
         outputPath = argument
     }

@@ -30,6 +30,7 @@ bash Tests/verify-app-signature.sh build/HourGlow.app   # 签名与稳定的 des
 python3 Tests/verify-solar.py # 以 ephem 星历对拍（需 pip install ephem，容差 30 秒）
 ./build/panelshot ~/Desktop   # 五个页面 + 新手指引五步画成 PNG（固定时刻那一栏另出一张），改版式时对照
 ./build/panelshot ~/Desktop --only timeline --now 2026-09-04T06:20   # 只抓一页，并把「现在」定格在某一刻
+./build/panelshot ~/Desktop --appearance dark                        # 钉住外观（light | dark），不跟系统
 Tools/makedemo.sh             # README 顶上的 docs/demo.gif + 官网/GitHub 的分享卡片（见下面「演示图与分享卡片」）
 ```
 
@@ -93,6 +94,8 @@ open build/HourGlow.app                 # 菜单栏 app
 都由 `Tools/makedemo.sh` 生成：拿一份一次性配置（深圳、Tahoe 四段、英文、日期钉死 2026-09-04），
 用 `panelshot --only timeline --now …` 在一天里抓十二张时间轴，再由 `Tools/makedemo.swift`
 用 AppKit 离屏合成「桌面 + 菜单栏 + 面板」，ImageIO 编成 GIF —— 不引入 ffmpeg / gifsicle。
+Evening / Night 两段的面板用 `--appearance dark` 抓：壁纸暗下去面板跟着暗，顺带展示深色模式；
+`makedemo.swift` 里 `Phase.dark` 给这两段换成亮色描边，两处名单要一致。
 壁纸底图 `tahoe-*.jpg` 不进这个仓库，默认从旁边的官网仓库 `../hourglow-web/assets/` 取。
 
 面板上的「现在」全部走 `AppModel.now`（`nonisolated(unsafe) static var`），只有 `panelshot --now`

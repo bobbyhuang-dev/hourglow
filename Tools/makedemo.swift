@@ -23,6 +23,10 @@ import UniformTypeIdentifiers
 
 enum Phase: String, CaseIterable {
     case morning, day, evening, night
+
+    /// Tahoe 的 Evening / Night 是暗色壁纸，makedemo.sh 把这两段的面板按深色外观抓。
+    /// 面板四周那一圈描边得跟着换：浅色面板靠一圈暗线与桌面分开，深色面板靠一圈亮线。
+    var dark: Bool { self == .evening || self == .night }
 }
 
 struct Shot {
@@ -253,7 +257,7 @@ struct Desk {
             shot.image.draw(in: panel, from: .zero, operation: .sourceOver, fraction: 1, respectFlipped: true,
                             hints: [.interpolation: NSImageInterpolation.high])
             cg.restoreGState()
-            cg.setStrokeColor(NSColor(white: 0, alpha: 0.18).cgColor)
+            cg.setStrokeColor(NSColor(white: shot.phase.dark ? 1 : 0, alpha: 0.18).cgColor)
             cg.setLineWidth(1)
             cg.addPath(CGPath(roundedRect: panel.insetBy(dx: 0.5, dy: 0.5), cornerWidth: Desk.panelCorner,
                               cornerHeight: Desk.panelCorner, transform: nil))

@@ -7,6 +7,8 @@
 # 面板截图由 panelshot 现抓：拿一份一次性配置（深圳、Tahoe 四段预设、英文），
 # 用 --now 把「现在」定在一天里的十二个时刻，每段三张 —— 时钟在走、倒计时在数，
 # 每一帧里面板与菜单栏说的是同一个时间。日期钉死在 2026-09-04，重跑出来的图一样。
+# Tahoe 的 Evening / Night 是暗色壁纸，那六张面板按深色外观抓：桌面暗下去、面板跟着暗，
+# 顺带把「深色模式也长这样」讲了。
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -27,7 +29,9 @@ mkdir -p "$work/shots" "$work/tmp"
 build/hourglow-cli location 22.5431 114.0579 Shenzhen >/dev/null
 
 shoot() {   # shoot <phase> <HH:MM>
-    build/panelshot "$work/tmp" --only timeline --now "${DAY}T$2" >/dev/null
+    local appearance=light
+    case $1 in evening|night) appearance=dark;; esac
+    build/panelshot "$work/tmp" --only timeline --now "${DAY}T$2" --appearance $appearance >/dev/null
     mv "$work/tmp/1-timeline.png" "$work/shots/$1-${2/:/}.png"
 }
 # 深圳 9 月初：日出 06:07、日落 18:38 → 四段起点 06:07 / 09:00 / 18:08 / 19:38。
