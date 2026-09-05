@@ -22,7 +22,8 @@ HourGlow 是一个 macOS 菜单栏壁纸调度器：按固定时刻、日出日�
 ./build/enginecheck           # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
 ./build/importcheck           # 导入：文件名与分子目录归类、多分辨率、均分、跳过与清理
 ./build/appcheck              # 应用状态：草稿、保存边界、外部配置冲突、新手指引的弹出规则
-./build/appstartupcheck        # 损坏配置启动、修复后自动接管（约 30 秒）
+./build/appstartupcheck        # Startup recovery and visible/hidden refresh (about 2 minutes)
+./build/panelvisibilitycheck   # Native window visibility and observer teardown; briefly shows a test window
 ./build/updatecheck           # 更新器：SemVer、Release 解析、SHA-256
 ./build/l10ncheck Sources     # 文案表：漏词/空词/多词、占位符、挑语言的规则、代码里的 key 是否存在
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
@@ -601,3 +602,23 @@ UserDefaults dev.bobbyhuang.hourglow language                 # 界面语言偏�
 - **本地一天不是永远 24 小时**。CLI `simulate` 按 Calendar 的 day interval 扫描，
   夏令时开始/结束日分别覆盖 23/25 小时。`verify-cli-boundaries.py` 从真实 CLI 验证。
 - 更新 helper 回归除成功替换外还覆盖等待活着的父进程、第二次 move 失败后恢复旧 app。
+
+## Performance and idle power (2026-09-05)
+
+- Display refresh runs every 30 seconds only while the menu panel is visible. A hidden leader
+  has no display ticker; a hidden follower retains the same 30-second takeover retry without
+  reading wallpaper/state files on every retry. Promotion cancels that ticker when hidden.
+  Opening the panel refreshes immediately. Scheduler deadlines, manual override rules, and
+  configuration watching remain independent of panel visibility.
+- Use `PanelVisibilityObserver` to observe the host window's actual visibility. A retained
+  `NSHostingView` does not necessarily call SwiftUI `onDisappear` on `orderOut`, or `onAppear`
+  on reopening. `panelvisibilitycheck` verifies repeated show/hide, rapid closing, and teardown.
+  `appstartupcheck` verifies hidden idle periods, visible updates, reopening, and takeover.
+- Scene resolution shares `TimeMap.DayWindows` within one `firings` call, including nil results
+  on polar days. Never retain these results across calls: the location, calendar, or date may
+  change. The direct-trigger comparisons in `modelcheck` cover DST, polar days, missing location,
+  mixed triggers, disabled slots, and ties.
+- `Tools/benchmark-resolver.swift` measures offline scene resolution with 300 iterations per
+  size. On the review machine with Swift 6.3.3 and `-O`, 120 slots improved from about 3.43 to
+  0.31 ms per resolution; 480 slots improved from 13.94 to 1.36 ms. These are computation timings,
+  not measurements of battery-life improvement or of macOS's aerial renderer.

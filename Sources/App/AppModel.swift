@@ -35,7 +35,7 @@ final class AppModel {
     // MARK: - 展示状态
 
     private(set) var schedule: Schedule
-    /// 当前应生效的时段与下一次切换。每 30 秒、每次求值后刷新。
+    /// Current and next slots; refreshed on engine events and every 30 seconds while visible.
     private(set) var resolution: Resolution?
     /// 系统里此刻实际挂着的那张。
     private(set) var actual: Wallpaper?
@@ -81,6 +81,8 @@ final class AppModel {
     private var lock: EngineLock?
     private var watcher: ConfigWatcher?
     private var ticker: Timer?
+    @ObservationIgnored private var isStarted = false
+    @ObservationIgnored private var isPanelVisible = false
     private var messageExpiry: DispatchWorkItem?
     private var awaitingReadableConfig = false
     @ObservationIgnored private var updateTicker: Timer?
@@ -119,6 +121,8 @@ final class AppModel {
     // MARK: - 生命周期
 
     func start() {
+        guard !isStarted else { return }
+        isStarted = true
         scheduler.onLog = { line in
             MainActor.assumeIsolated { AppModel.shared.show(line) }
         }
@@ -146,15 +150,7 @@ final class AppModel {
 
         refresh()
 
-        // 面板里的「现在 / 下次」是随时间走的，定期重算一遍。求值是纯计算，很便宜。
-        let ticker = Timer(timeInterval: 30, repeats: true) { _ in
-            MainActor.assumeIsolated {
-                AppModel.shared.promoteIfPossible()
-                AppModel.shared.refresh()
-            }
-        }
-        RunLoop.main.add(ticker, forMode: .common)
-        self.ticker = ticker
+        updateRefreshTimer()
 
         // App 通常一跑就是很多天，不能只在启动那一刻检查。每小时醒一次很便宜，
         // AppUpdater 里的 24 小时间隔才是实际的联网频率。
@@ -165,6 +161,33 @@ final class AppModel {
         RunLoop.main.add(updateTicker, forMode: .common)
         self.updateTicker = updateTicker
         if awaitingReadableConfig { show(L10n.t("model.startup.configFailed")) }
+    }
+
+    /// Opening the panel must show current state immediately, including manual wallpaper changes.
+    func setPanelVisible(_ visible: Bool) {
+        guard isPanelVisible != visible else { return }
+        isPanelVisible = visible
+        if visible { refresh() }
+        updateRefreshTimer()
+    }
+
+    private func updateRefreshTimer() {
+        // Followers still need to take over after the leader exits, even with the panel closed.
+        guard isStarted && (isPanelVisible || isFollower) else {
+            ticker?.invalidate()
+            ticker = nil
+            return
+        }
+        guard ticker == nil else { return }
+        let ticker = Timer(timeInterval: 30, repeats: true) { _ in
+            MainActor.assumeIsolated {
+                let model = AppModel.shared
+                model.promoteIfPossible()
+                if model.isPanelVisible { model.refresh() }
+            }
+        }
+        RunLoop.main.add(ticker, forMode: .common)
+        self.ticker = ticker
     }
 
     // MARK: - 查询
@@ -827,6 +850,7 @@ final class AppModel {
         watcher = nil
         lock = acquired
         isFollower = false
+        updateRefreshTimer()
         replaceSchedule(latest)
         scheduler.start(schedule: latest)
         show(L10n.t("model.promote.tookOver"))

@@ -328,6 +328,54 @@ for slot in [morning, night] {
           "边界前一毫秒仍是上一段")
 }
 
+// Compare cached scene evaluation with direct, uncached trigger evaluation across
+// date/location/time-zone changes, including polar days and mixed trigger kinds.
+for (zone, latitude, longitude, dayText) in [
+    ("Asia/Shanghai", 22.543, 114.058, "2026-09-04 12:00"),
+    ("America/New_York", 40.713, -74.006, "2026-03-08 03:00"),
+    ("America/New_York", 40.713, -74.006, "2026-11-01 01:30"),
+    ("Europe/Oslo", 69.65, 18.96, "2026-06-21 12:00"),
+    ("Europe/Oslo", 69.65, 18.96, "2026-12-21 12:00"),
+    ("Pacific/Auckland", -36.85, 174.76, "2026-09-27 03:00"),
+] {
+    var local = Calendar(identifier: .gregorian)
+    local.timeZone = TimeZone(identifier: zone)!
+    let instant = localDate(dayText, calendar: local)
+    let place = Coordinate(latitude: latitude, longitude: longitude)
+    var slots = DayPhase.allCases.flatMap { phase in
+        (0..<8).map { index in
+            Slot(trigger: .solarPhase(phase: phase, index: index, count: 8),
+                 wallpaper: .image(path: "/fixture/\(phase)/\(index)"))
+        }
+    }
+    slots += [morning, night, delayed, advanced,
+              Slot(trigger: slots[0].trigger, wallpaper: .image(path: "/tie")),
+              Slot(trigger: slots[1].trigger, wallpaper: .image(path: "/disabled"), enabled: false)]
+    let mixed = Schedule(slots: slots, location: place)
+    for location in [Optional(place), nil] {
+        var expected: [(date: Date, slot: Slot, order: Int)] = []
+        for (order, slot) in slots.enumerated() where slot.enabled {
+            let anchor: Date
+            if case .solar(_, let offset) = slot.trigger {
+                anchor = instant.addingTimeInterval(-Double(offset) * 60)
+            } else {
+                anchor = instant
+            }
+            for offset in -1...1 {
+                let day = local.date(byAdding: .day, value: offset, to: anchor)!
+                if let date = slot.trigger.fireDate(on: day, coordinate: location, calendar: local) {
+                    expected.append((date, slot, order))
+                }
+            }
+        }
+        expected.sort { $0.date == $1.date ? $0.order < $1.order : $0.date < $1.date }
+        let actual = mixed.firings(around: instant, coordinate: location, calendar: local)
+        check(actual.count == expected.count && zip(actual, expected).allSatisfy {
+            $0.date == $1.date && $0.slot == $1.slot
+        }, "Cached scene firings match direct evaluation: \(zone), \(dayText), location=\(location != nil)")
+    }
+}
+
 if failures > 0 {
     FileHandle.standardError.write(Data("\n\(failures) 项测试失败\n".utf8))
     exit(1)

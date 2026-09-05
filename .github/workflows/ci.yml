@@ -41,6 +41,7 @@ jobs:
           ./build/importcheck
           ./build/appcheck
           ./build/appstartupcheck
+          ./build/panelvisibilitycheck
           ./build/updatecheck
           # 带上 Sources：除了对表本身，还把代码里写死的 key 与原文表对一遍。
           ./build/l10ncheck Sources

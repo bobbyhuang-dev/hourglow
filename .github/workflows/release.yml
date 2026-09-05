@@ -61,6 +61,7 @@ jobs:
           ./build/importcheck
           ./build/appcheck
           ./build/appstartupcheck
+          ./build/panelvisibilitycheck
           ./build/updatecheck
           ./build/l10ncheck Sources
           bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater

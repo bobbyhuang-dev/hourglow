@@ -58,6 +58,7 @@ struct PanelRoot: View {
         // 宽度锁死；高度由各页自己决定（时间轴按时段数收，选壁纸那页固定铺满）。
         .frame(width: Panel.width)
         .animation(Panel.animation, value: page)
+        .background(PanelVisibilityObserver { model.setPanelVisible($0) })
         .onAppear {
             // 面板一失焦就收起，「选本地图片」更是必定把它关掉。半路的草稿没有丢，
             // 重新打开时回到那一段继续编辑，而不是把没应用的改动无声地扔掉。

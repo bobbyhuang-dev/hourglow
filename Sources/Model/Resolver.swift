@@ -44,6 +44,18 @@ extension Schedule {
                  coordinate: Coordinate?,
                  calendar: Calendar = .current) -> [(date: Date, slot: Slot)] {
         var result: [(date: Date, slot: Slot, order: Int)] = []
+        // Every image in a phase uses the same day's solar windows. Cache only within this
+        // evaluation so location, time zone, and date changes can never reuse stale results.
+        // Store nil results too: polar days must not repeat the same unsuccessful calculation.
+        var phaseWindows: [Date: TimeMap.DayWindows?] = [:]
+        func windows(on day: Date) -> TimeMap.DayWindows? {
+            if let cached = phaseWindows[day] { return cached }
+            let computed = coordinate.flatMap {
+                TimeMap.windows(on: day, coordinate: $0, calendar: calendar)
+            }
+            phaseWindows.updateValue(computed, forKey: day)
+            return computed
+        }
         for (order, slot) in slots.enumerated() where slot.enabled {
             let anchor: Date
             switch slot.trigger {
@@ -60,9 +72,13 @@ extension Schedule {
                 guard let day = calendar.date(byAdding: .day, value: dayOffset, to: anchor) else {
                     continue
                 }
-                if let date = slot.trigger.fireDate(on: day,
-                                                    coordinate: coordinate,
-                                                    calendar: calendar) {
+                let date: Date?
+                if case .solarPhase(let phase, let index, let count) = slot.trigger {
+                    date = windows(on: day)?.fireDate(phase: phase, index: index, count: count)
+                } else {
+                    date = slot.trigger.fireDate(on: day, coordinate: coordinate, calendar: calendar)
+                }
+                if let date {
                     result.append((date, slot, order))
                 }
             }

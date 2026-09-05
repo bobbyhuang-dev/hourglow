@@ -35,6 +35,14 @@ enum TimeMap {
             case .night:   return night
             }
         }
+
+        func fireDate(phase: DayPhase, index: Int, count: Int) -> Date? {
+            guard count > 0, index >= 0, index < count else { return nil }
+            let window = window(for: phase)
+            guard window.end > window.start else { return nil }
+            let step = window.end.timeIntervalSince(window.start) / Double(count)
+            return window.start.addingTimeInterval(step * Double(index))
+        }
     }
 
     static func windows(on day: Date,
@@ -78,9 +86,6 @@ enum TimeMap {
         guard let windows = windows(on: day, coordinate: coordinate, calendar: calendar) else {
             return nil
         }
-        let window = windows.window(for: phase)
-        guard window.end > window.start else { return nil }
-        let step = window.end.timeIntervalSince(window.start) / Double(count)
-        return window.start.addingTimeInterval(step * Double(index))
+        return windows.fireDate(phase: phase, index: index, count: count)
     }
 }

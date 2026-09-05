@@ -35,5 +35,42 @@ MainActor.assumeIsolated {
     precondition(!FileManager.default.fileExists(atPath: sandbox.appendingPathComponent("state.json").path),
                  "暂停配置恢复不能写壁纸")
     print("✓ 修复后监听并自动接管最新配置，保留暂停状态")
+
+    // The test keeps the schedule paused and observes display-clock reads, so no
+    // wallpaper writes or changes to the user's defaults are needed.
+    var clockReads = 0
+    var displayNow = Date()
+    AppModel.now = { clockReads += 1; return displayNow }
+    defer { AppModel.now = { Date() } }
+    model.start() // Starting twice must not install duplicate timers or observers.
+    RunLoop.main.run(until: Date().addingTimeInterval(31))
+    precondition(clockReads == 0, "A hidden leader must stop periodic display refresh after promotion")
+    print("✓ Hidden leader performs no periodic display-clock reads over 31 seconds")
+
+    model.setPanelVisible(true)
+    precondition(clockReads > 0, "Opening the panel refreshes immediately")
+    precondition(model.resolution?.since == repaired.resolve(at: displayNow)?.since,
+                 "Opening the panel shows the current resolution")
+    let openingReads = clockReads
+    model.setPanelVisible(true)
+    precondition(clockReads == openingReads, "Repeated appearance does not duplicate refresh work")
+    displayNow = displayNow.addingTimeInterval(24 * 3600)
+    RunLoop.main.run(until: Date().addingTimeInterval(31))
+    precondition(clockReads > openingReads && model.resolution?.since == repaired.resolve(at: displayNow)?.since,
+                 "A visible panel continues refreshing as time advances")
+    print("✓ Panel opens with fresh state and keeps its 30-second refresh")
+
+    model.setPanelVisible(false)
+    clockReads = 0
+    RunLoop.main.run(until: Date().addingTimeInterval(31))
+    precondition(clockReads == 0, "Closing the panel cancels periodic refresh")
+    displayNow = displayNow.addingTimeInterval(24 * 3600)
+    model.setPanelVisible(true)
+    precondition(model.resolution?.since == repaired.resolve(at: displayNow)?.since,
+                 "Reopening catches up immediately after hidden time")
+    model.setPanelVisible(false)
+    precondition(!FileManager.default.fileExists(atPath: EngineState.fileURL.path),
+                 "Display refresh never applies wallpaper while paused")
+    print("✓ Closing stops refresh; reopening catches up without changing wallpaper")
 }
 print("全部启动恢复测试通过")
