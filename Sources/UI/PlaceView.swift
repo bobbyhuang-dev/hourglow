@@ -277,7 +277,7 @@ struct PlacePage: View {
                         .padding(.top, 24)
                 }
             }
-            .padding(.horizontal, Panel.placeListInset)
+            .padding(.horizontal, Panel.scrollInset)
             .padding(.bottom, 6)
             .background(VerticalOnlyScroll())
         }

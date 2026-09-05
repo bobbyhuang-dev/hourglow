@@ -31,7 +31,8 @@ struct SlotPage: View {
                         enabled(slot)
                         delete
                     }
-                    .padding(Panel.inset)
+                    .padding(.horizontal, Panel.scrollInset)
+                    .padding(.vertical, Panel.inset)
                     .measureHeight(into: $contentHeight)
                     .background(VerticalOnlyScroll())
                 }

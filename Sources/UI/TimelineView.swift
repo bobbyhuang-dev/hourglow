@@ -150,7 +150,7 @@ struct TimelinePage: View {
                 }
                 addRow
             }
-            .padding(.horizontal, Panel.rowInset)
+            .padding(.horizontal, Panel.scrollInset)
             .padding(.vertical, 6)
             .measureHeight(into: $listHeight)
             .background(VerticalOnlyScroll())

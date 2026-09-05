@@ -12,8 +12,8 @@ enum Panel {
     /// Horizontal padding. Rounded row backgrounds extend farther out, so rows use `rowInset`.
     static let inset: CGFloat = 12
     static let rowInset: CGFloat = 8
-    /// Equal city-list gutters keep hover backgrounds clear of the vertical scrollbar.
-    static let placeListInset: CGFloat = 16
+    /// Equal scroll-content gutters keep rows and cards clear of the vertical scrollbar.
+    static let scrollInset: CGFloat = 16
     static let rowHeight: CGFloat = 44
     /// Height of the bottom action bar: timeline actions or the slot editor's Apply button.
     static let footerHeight: CGFloat = 42

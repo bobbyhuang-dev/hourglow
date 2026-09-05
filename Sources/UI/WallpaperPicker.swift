@@ -72,17 +72,17 @@ struct WallpaperPicker: View {
                     chip(title: Category.localized(name), value: name)
                 }
             }
-            .padding(.horizontal, Panel.inset)
+            .padding(.horizontal, Panel.scrollInset)
         }
         .scrollIndicators(.never)
         // Fade both ends of the horizontally scrolling chips; a hard-clipped "Mac" looks like broken layout.
         .mask {
             HStack(spacing: 0) {
                 LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: Panel.inset)
+                    .frame(width: Panel.scrollInset)
                 Color.black
                 LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
-                    .frame(width: Panel.inset)
+                    .frame(width: Panel.scrollInset)
             }
         }
         .padding(.bottom, 8)
@@ -136,7 +136,7 @@ struct WallpaperPicker: View {
                     cell(asset)
                 }
             }
-            .padding(.horizontal, Panel.rowInset)
+            .padding(.horizontal, Panel.scrollInset)
             .padding(.vertical, 8)
             .background(VerticalOnlyScroll())
         }

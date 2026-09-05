@@ -30,7 +30,8 @@ struct SettingsPage: View {
                     help
                     about
                 }
-                .padding(Panel.inset)
+                .padding(.horizontal, Panel.scrollInset)
+                .padding(.vertical, Panel.inset)
                 .measureHeight(into: $contentHeight)
                 .background(VerticalOnlyScroll())
             }

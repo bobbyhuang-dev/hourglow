@@ -534,8 +534,9 @@ machine, not a theoretical risk.
 
 ### UI
 
-- The location city list uses equal `Panel.placeListInset` gutters so rounded hover backgrounds
-  stay clear of the vertical scrollbar; keep this spacing symmetric.
+- All panel scroll content uses equal `Panel.scrollInset` gutters so rows, cards, and thumbnails
+  stay clear of the scrollbar. The horizontal category strip uses the same inset for its end fades;
+  the standalone onboarding guide retains its wider, symmetric `Guide.inset` gutters.
 - Keep `VerticalOnlyScroll` attached inside vertical scroll content. Observe native horizontal
   elasticity/scroller changes as well as mounting: a one-time assignment does not protect
   against later SwiftUI reconfiguration. Leave vertical scrolling and bounce untouched.
