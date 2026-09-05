@@ -3,8 +3,8 @@ import SwiftUI
 
 /// The window that hosts onboarding.
 ///
-/// The project's only standalone window; `OnboardingView` explains why the guide must appear
-/// even before the panel is found. Keep every other interface in the menu bar panel; do not add windows here.
+/// One of the project's two standalone windows (the other is `AboutWindow`); `OnboardingView` explains
+/// why the guide must appear even before the panel is found. Keep every other interface in the menu bar panel.
 ///
 /// Three important details:
 ///

@@ -8,7 +8,7 @@ import SwiftUI
 //
 // `--now` freezes the panel's "now" at a specific instant (active slot, next switch time, and time remaining).
 // Demo GIFs and share cards use it to capture several times within a day (see Tools/makedemo.sh); omit it to use the real clock.
-// `--only` captures only images whose names begin with its value (timeline / slot / picker / settings / place / guide),
+// `--only` captures only images whose names begin with its value (timeline / slot / picker / settings / place / guide / about),
 // saving more than ten seconds when only one image is needed.
 // `--appearance light|dark` fixes the appearance instead of following the system; evening and night demo panels darken with the wallpaper.
 //
@@ -130,10 +130,12 @@ MainActor.assumeIsolated {
     shoot(SettingsPage(open: { _ in }), named: "4-settings", into: directory)
     shoot(PlacePage(open: { _ in }), named: "5-place", into: directory)
 
-    // Onboarding is not a panel page, nor is it 360 wide — it is the only standalone window (see
+    // Onboarding is not a panel page, nor is it 360 wide — it is a standalone window (see
     // the type comment on `OnboardingView`). Capture each of the five steps to compare copy or illustration changes.
     for (index, step) in OnboardingStep.allCases.enumerated() {
         shoot(OnboardingView(initialStep: step, finish: {}),
               named: "6-guide-\(index + 1)", into: directory, width: Guide.width)
     }
+    // About is the second standalone window, sized like About This Mac.
+    shoot(AboutView(), named: "7-about", into: directory, width: About.width)
 }

@@ -36,7 +36,7 @@ bash Tests/verify-app-signature.sh build/HourGlow.app   # Signature and stable d
 ./build/solarcheck            # Sunrise/sunset; invoked as the program under test by verify-solar.py
 python3 Tests/verify-solar.py # Cross-check against ephem (requires pip install ephem, 30-second tolerance)
 python3 Tests/verify-cli-boundaries.py # Invalid input and 23/25-hour daylight-saving days
-./build/panelshot ~/Desktop   # Five pages + five guide steps as PNGs (extra clock-trigger shot); compare layout changes
+./build/panelshot ~/Desktop   # Six pages + five guide steps as PNGs (extra clock-trigger shot); compare layout changes
 ./build/panelshot ~/Desktop --only timeline --now 2026-09-04T06:20   # Capture one page with time frozen
 ./build/panelshot ~/Desktop --appearance dark                        # Pin appearance (light | dark), ignoring the system
 ./build/panelshot ~/Desktop --only settings --update-rate-limit       # Rate-limit notice and recovery time, offline
@@ -181,9 +181,11 @@ Sources/
 │   ├── SlotEditorView.swift   // Single-slot editor
 │   ├── WallpaperPicker.swift  // Aerial thumbnail grid + local images
 │   ├── SettingsView.swift     // Launch at login + location + automatic updates + help
+│   ├── AboutView.swift        // About window content: icon, version/build/macOS, repository, bobbyhuang.dev
+│   ├── AboutWindow.swift      // Its host window, styled like About This Mac
 │   ├── PlaceView.swift        // Choose location
 │   ├── OnboardingView.swift   // Five-step guide layout
-│   └── OnboardingWindow.swift // Its host window (the project's only independent window)
+│   └── OnboardingWindow.swift // Its host window; the rules for standalone windows live here
 ├── Updater/main.swift         // Replace the app in place after the main process exits, then relaunch
 └── CLI/                       // Diagnostics and headless-service entry point
 ```
@@ -389,15 +391,21 @@ users in Portland saw a first screen full of Chinese cities. Without coordinates
 to the handwritten table's original order. Coordinates do not affect ranking when a query
 is present.
 
-**The onboarding guide is the project's only independent window** (`UI/OnboardingWindow.swift`,
-480 × 566; measurements in `PanelKit`'s `Guide`, separate from `Panel`). The sole reason for
-this exception is discoverability: an `LSUIElement` app puts nothing on screen at first launch,
+**The project has exactly two standalone windows: the onboarding guide and About.** Everything
+else stays in the panel. About (`UI/AboutWindow.swift`, 280 × 430, metrics in `PanelKit`'s
+`About`) mirrors About This Mac: transparent untitled title bar, icon, name, a version/build/macOS
+table, a GitHub button, and a “bobbyhuang.dev” link. It opens from the ⋯ menu and the version line
+at the bottom of settings; both windows switch the activation policy to `.regular` while open.
+`panelshot` captures it as `7-about.png`.
+
+The guide (`UI/OnboardingWindow.swift`, 480 × 566; measurements in `PanelKit`'s `Guide`, separate
+from `Panel`) is the older exception, made for discoverability: an `LSUIElement` app puts nothing on screen at first launch,
 only an hourglass in the menu bar, and `MenuBarExtra` has no API to open it for the user. A
 guide inside the panel would reach only people who already found the entrance, excluding those
 who most need it. It **opens automatically only on a genuinely fresh install** (no
 `schedule.json`), never bothering existing users after an upgrade. Manual entry points are
 the ⋯ menu and Help in settings. Closing counts as seen, whether skipping, finishing, or
-clicking the red close button. Do not use `OnboardingWindow` to open a second window.
+clicking the red close button. Do not use `OnboardingWindow` to host anything else.
 
 ## Language and localization
 

@@ -76,6 +76,7 @@ extension StringCatalog {
         "menu.checkUpdates": "Check for Updates…",
         "menu.guide": "Getting Started…",
         "menu.revealConfig": "Show Configuration in Finder",
+        "menu.about": "About HourGlow",
         "menu.quit": "Quit HourGlow",
 
         // MARK: Slot editor
@@ -163,6 +164,16 @@ extension StringCatalog {
         "settings.guide": "Getting started",
         "settings.guide.note": "Five steps: where it lives, place, staying resident, the timeline",
         "settings.guide.open": "Open",
+
+        // MARK: About
+
+        "about.title": "About HourGlow",
+        "about.tagline": "Wallpapers that follow the sun",
+        "about.row.version": "Version",
+        "about.row.build": "Build",
+        "about.row.macos": "macOS",
+        "about.repository": "GitHub Repository…",
+        "about.project": "a [bobbyhuang.dev](https://bobbyhuang.dev) project",
 
         // MARK: Place
 

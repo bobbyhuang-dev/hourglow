@@ -296,7 +296,8 @@ struct SettingsPage: View {
 
     private var about: some View {
         HStack(spacing: 6) {
-            Text("HourGlow \(Bundle.main.shortVersion)")
+            Button("HourGlow \(Bundle.main.shortVersion)") { AboutWindow.shared.present() }
+                .buttonStyle(.plain)
                 .font(Panel.Font.secondary)
                 .foregroundStyle(.tertiary)
             Spacer(minLength: 0)
@@ -306,12 +307,5 @@ struct SettingsPage: View {
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 4)
-    }
-}
-
-extension Bundle {
-    /// Bare binaries such as panelshot have no Info.plist; show a placeholder rather than leaving the interface blank.
-    var shortVersion: String {
-        object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 }

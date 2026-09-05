@@ -74,6 +74,7 @@ extension StringCatalog {
         "menu.checkUpdates": "检查更新…",
         "menu.guide": "新手指引…",
         "menu.revealConfig": "在访达中显示配置",
+        "menu.about": "关于 HourGlow",
         "menu.quit": "退出 HourGlow",
 
         // MARK: Slot editor
@@ -160,6 +161,16 @@ extension StringCatalog {
         "settings.guide": "新手指引",
         "settings.guide.note": "五步：入口在哪儿、位置、常驻、时间轴",
         "settings.guide.open": "打开",
+
+        // MARK: About
+
+        "about.title": "关于 HourGlow",
+        "about.tagline": "让壁纸跟着太阳走",
+        "about.row.version": "版本",
+        "about.row.build": "构建",
+        "about.row.macos": "macOS",
+        "about.repository": "GitHub 仓库…",
+        "about.project": "[bobbyhuang.dev](https://bobbyhuang.dev) 出品",
 
         // MARK: Place
 

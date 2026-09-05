@@ -267,6 +267,7 @@ struct TimelinePage: View {
                 Divider()
                 Button(L10n.t("menu.guide")) { OnboardingWindow.shared.present() }
                 Button(L10n.t("menu.revealConfig")) { model.revealConfigInFinder() }
+                Button(L10n.t("menu.about")) { AboutWindow.shared.present() }
                 Divider()
                 Button(L10n.t("menu.quit")) { NSApplication.shared.terminate(nil) }
                     .keyboardShortcut("q")

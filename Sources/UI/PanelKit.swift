@@ -102,6 +102,23 @@ enum Guide {
     static var contentHeight: CGFloat { height - heroHeight - footerHeight - 1 }
 }
 
+/// About window metrics, modeled on About This Mac: a narrow portrait card with the icon on top,
+/// a title, a short label/value table, one button, and a footer of links. Separate from `Panel`
+/// (a different canvas) and from `Guide` (prose needs width; this does not).
+enum About {
+    static let width: CGFloat = 280
+    static let height: CGFloat = 430
+    static let iconSize: CGFloat = 128
+    static let inset: CGFloat = 24
+
+    enum Font {
+        static let title = SwiftUI.Font.system(size: 22, weight: .bold)
+        static let subtitle = SwiftUI.Font.system(size: 13)
+        static let row = SwiftUI.Font.system(size: 13)
+        static let footnote = SwiftUI.Font.system(size: 12)
+    }
+}
+
 // MARK: - Page header
 
 /// Shared header: back on the left, centered title, accessory on the right. Keeps titles aligned across all three pages.
