@@ -94,17 +94,17 @@ struct PlacePage: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.secondary)
                 Text(model.placeLabel)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(Panel.Font.headline)
                     .lineLimit(1)
                 Spacer(minLength: 0)
             }
             Text(sunLine)
-                .font(.system(size: 11))
+                .font(Panel.Font.secondary)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             if let twilight = twilightLine {
                 Text(twilight)
-                    .font(.system(size: 11))
+                    .font(Panel.Font.secondary)
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
             }
@@ -138,7 +138,7 @@ struct PlacePage: View {
             // 被拒之后系统不会再弹第二次框，只能自己去开。说了在哪儿改，就得能点过去。
             HStack(spacing: 6) {
                 Text(L10n.t("place.denied"))
-                    .font(.system(size: 11))
+                    .font(Panel.Font.secondary)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
@@ -147,7 +147,7 @@ struct PlacePage: View {
             }
         case .failed(let reason):
             Text(reason)
-                .font(.system(size: 11))
+                .font(Panel.Font.secondary)
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
         default:
@@ -160,11 +160,11 @@ struct PlacePage: View {
     private var search: some View {
         HStack(spacing: 6) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 11))
+                .font(Panel.Font.secondary)
                 .foregroundStyle(.secondary)
             TextField(L10n.t("place.search"), text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(Panel.Font.control)
             if finder.searching {
                 ProgressView().controlSize(.mini)
             }
@@ -174,7 +174,7 @@ struct PlacePage: View {
                     finder.clear()
                 } label: {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 11))
+                        .font(Panel.Font.secondary)
                         .foregroundStyle(.tertiary)
                 }
                 .buttonStyle(.plain)
@@ -182,7 +182,7 @@ struct PlacePage: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(.quaternary.opacity(0.35),
+        .background(Panel.fieldFill,
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .padding(.horizontal, Panel.inset)
         .padding(.bottom, 8)
@@ -201,7 +201,7 @@ struct PlacePage: View {
                         .frame(width: 18)
                     Text(L10n.t(model.locating == .requesting ? "place.locating"
                                                               : "place.useCurrent"))
-                        .font(.system(size: 12.5))
+                        .font(Panel.Font.body)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 8)
@@ -218,7 +218,7 @@ struct PlacePage: View {
                         .font(.system(size: 11, weight: .semibold))
                         .frame(width: 18)
                     Text(L10n.t("place.followTimeZone"))
-                        .font(.system(size: 12.5))
+                        .font(Panel.Font.body)
                     Spacer(minLength: 0)
                     if model.schedule.location == nil {
                         Image(systemName: "checkmark")
@@ -265,7 +265,7 @@ struct PlacePage: View {
             LazyVStack(alignment: .leading, spacing: 2) {
                 ForEach(sections) { section in
                     Text(section.title)
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(Panel.Font.section)
                         .foregroundStyle(.secondary)
                         .padding(.leading, 8)
                         .padding(.top, 8)
@@ -276,7 +276,7 @@ struct PlacePage: View {
                 }
                 if finder.results(for: query).isEmpty, !query.isEmpty, !finder.searching {
                     Text(L10n.t("place.notFound"))
-                        .font(.system(size: 12))
+                        .font(Panel.Font.control)
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.top, 24)
@@ -296,11 +296,11 @@ struct PlacePage: View {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(city.name)
-                        .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
+                        .font(Panel.Font.body.weight(selected ? .semibold : .regular))
                         .foregroundStyle(selected ? Color.accentColor : .primary)
                         .lineLimit(1)
                     Text(city.detail)
-                        .font(.system(size: 11))
+                        .font(Panel.Font.secondary)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -327,9 +327,9 @@ struct PlacePage: View {
 
     private var coordinates: some View {
         HStack(spacing: 6) {
-            Text(L10n.t("place.latitude")).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(L10n.t("place.latitude")).font(Panel.Font.secondary).foregroundStyle(.secondary)
             CoordinateField(text: $latitude)
-            Text(L10n.t("place.longitude")).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(L10n.t("place.longitude")).font(Panel.Font.secondary).foregroundStyle(.secondary)
             CoordinateField(text: $longitude)
             Spacer(minLength: 0)
             Button(L10n.t("place.use")) {

@@ -508,13 +508,8 @@ struct OnboardingView: View {
 extension Guide {
     /// 夜 → 晨光。和应用图标同一条渐变，指引与图标看上去是同一件东西。
     static var sky: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(red: 0.13, green: 0.16, blue: 0.32),
-                Color(red: 0.33, green: 0.30, blue: 0.47),
-                Color(red: 0.78, green: 0.47, blue: 0.33),
-            ],
-            startPoint: .topLeading, endPoint: .bottomTrailing)
+        LinearGradient(colors: [Sky.night, Sky.dusk, Sky.glow],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 

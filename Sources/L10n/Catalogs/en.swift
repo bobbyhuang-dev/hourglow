@@ -49,7 +49,6 @@ extension StringCatalog {
 
         // MARK: Timeline
 
-        "timeline.paused": "Paused",
         "timeline.place.help": "Choose the place sunrise and sunset are computed for",
         "timeline.caption.actual": "Current wallpaper",
         "timeline.caption.scheduled": "Scheduled wallpaper",
@@ -134,6 +133,7 @@ extension StringCatalog {
         "settings.title": "Settings",
         "settings.section.language": "Language",
         "settings.language.system": "Match System",
+        "settings.language.label": "Interface language",
         "settings.language.note": "Applies to the panel, the guide and the command line",
         "settings.section.update": "Updates",
         "settings.update.auto": "Automatic updates",

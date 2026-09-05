@@ -161,8 +161,9 @@ Sources/
 │   └── LaunchAgentInstaller.swift  // 无头常驻：把 CLI run 注册成 LaunchAgent
 ├── UI/                        // 单面板左右推进，度量集中在 PanelKit
 │   ├── PanelRoot.swift        // 面板的根
-│   ├── PanelKit.swift         // 固定度量、页头、分区卡片、行样式、缩略图缓存
+│   ├── PanelKit.swift         // 固定度量、字号档位、随外观走的卡片色、Sky 调色板、页头、分区卡片、行样式、缩略图缓存
 │   ├── TimelineView.swift     // 主面板：时间轴
+│   ├── DayBar.swift           // 时间轴顶上的「今日天光条」：24 小时横带，状态图形、不可点
 │   ├── SlotEditorView.swift   // 单个时段的编辑页
 │   ├── WallpaperPicker.swift  // aerial 缩略图网格 + 本地图片
 │   ├── SettingsView.swift     // 开机自启 + 位置 + 自动更新 + 帮助
@@ -292,6 +293,17 @@ Configuration: { type: "imageFile", url: { relative: "file:///path/to.heic" } }
 
 贴 macOS 原生、简洁、**版式固定**。所有度量集中在 `UI/PanelKit.swift` 的 `Panel` 里
 （宽度锁死 360 pt；选壁纸页固定 470 pt，其余按内容收）—— 改布局先改那里，不要在视图里散写数字。
+字号也只有 `Panel.Font` 那六档（headline / body / control / secondary / caption / section），
+视图里 `.font(.system(size:))` 只留给 SF Symbol 图标。卡片底、输入框底、缩略图描边走
+`Panel.cardFill` / `fieldFill` / `hairline`，它们是 `NSColor(name:)` 动态色、按视图所在外观解析。
+
+时间轴的状态区下面是一条**今日天光条**（`UI/DayBar.swift`）：24 小时横带，底色按今天的
+晨昏/日出/日落渐变（颜色来自 `Sky`，和图标、指引顶栏同一族），每个时段在触发时刻立一根白色
+标记，当前生效的一段在底边描强调色，「现在」是一根强调色游标。它是状态图形，**不可点**
+（标记 2 pt 宽、常与游标挤在一起，点了去哪儿说不清，列表就在下面）。没坐标或极昼极夜时
+整条铺中性灰，不编造日出日落；晨昏算不出来时渐变的起止用日出日落各退 45 分钟兜底 ——
+只是画法，与 `TimeMap` 的求值兜底无关。暂停时整条变淡，状态区那句副标题自己变橙并带暂停图标，
+不另立「已暂停」标记。
 行的常驻底色是 macOS 里「选中项」的语言，而这个面板里的行点下去是翻页、没有选中态 ——
 所以底色只留给悬停与按下，「现在正在跑的那一段」靠行首一根强调色竖条（`Panel.nowBar`）标。
 
@@ -463,6 +475,14 @@ UserDefaults dev.bobbyhuang.hourglow language                 # 界面语言偏�
   只剩两三个像素，沙漏根本认不出来 —— 而这一步唯一要说的就是「入口是它」。所以菜单栏占了
   整台机器三分之一高。桌面上原先还画了一颗带光晕的太阳，删了：整张图最亮的一团在正中间，
   视线先落那儿，再也到不了右上角。指着谁，谁最显眼。
+- **暗色模式下 `black.opacity(0.12)` 的描边等于没有，`quaternary` 铺的卡片与窗底几乎同色**。
+  缩略图描边、分区卡片、输入框底一律走 `Panel.hairline` / `cardFill` / `fieldFill`，
+  它们是 `NSColor(name:)` 动态色 —— `panelshot --appearance` 只改窗口的 `appearance`，
+  这条路照样认得，不必把 `colorScheme` 传遍每个视图。
+- **分段控件 `frame(maxWidth: .infinity)` 只会把它居中，不会拉宽**。`NSSegmentedControl`
+  按内容定宽，SwiftUI 那层给的宽度它不认。时段页那一排就让它靠左。
+- **天光条的渐变断点必须单调**。赤道附近晨昏很短、或晨昏为 nil 走兜底时，相邻两个断点
+  可能重合甚至倒过来，`Gradient` 会画出一道硬边；写完断点后按顺序钳一遍。
 - `PlacePage` 里已经有一个叫 `search` 的视图属性，抽出来的 `CitySearch` 状态别也叫 `search` ——
   同名会直接编不过。
 - 空搜时 `Cities.search("")` 会给一份常用城市。地点页那种满屏列表放得下，指引里放不下：
@@ -536,6 +556,14 @@ UserDefaults dev.bobbyhuang.hourglow language                 # 界面语言偏�
 
 ### 更新器
 
+- **403 不一定是限流**。额度剩余为 0、429、Retry-After 或明确的限流响应正文才进入等待。
+  读取 `x-ratelimit-reset` / `Retry-After`，提示本地日期、时间与时区；缺失或异常时不编造
+  重置时间，至少等一分钟。期限存在 UserDefaults，手动、自动检查与重启都遵守它；普通
+  403 单独解释请求被拒。错误在设置页占整行并允许换行，不能把恢复时间截掉。
+- **`Bundle.main` 的路径会停在启动时的位置**。运行中移动 app 或它的父目录，旧路径下找不到
+  helper，不能误报「不是从 app 启动」。更新器用 `proc_pidpath` 取得当前可执行文件的位置，
+  校验 bundle ID 与 executable 后统一用于检查、复制 helper 与安装目标；助手缺失另报原因。
+  `verify-updater-location.py` 用真实子进程覆盖移动、改名、旧路径出现副本与助手权限变化。
 - **不能让正在运行的主进程覆盖自己**。下载与验签由 app 做，真正的 move 交给一个先复制到缓存
   目录的 helper；helper 等旧 PID 消失之后才动 bundle，且始终先把旧 app 挪成备份，
   新 app 到位和 `open` 都成功后才删备份。
@@ -556,14 +584,6 @@ UserDefaults dev.bobbyhuang.hourglow language                 # 界面语言偏�
 - **runner 上常并存多个 Xcode，默认那个不一定最新**，所以两个 workflow 都先
   `ls -d /Applications/Xcode_*.app | sort -V | tail -1` 再 `xcode-select -s`。
 - **`.app` 只能用 `ditto -c -k --keepParent` 压**。`zip` 不保留符号链接与扩展属性，解压出来的
-- **403 不一定是限流**。额度剩余为 0、429、Retry-After 或明确的限流响应正文才进入等待。
-  读取 `x-ratelimit-reset` / `Retry-After`，提示本地日期、时间与时区；缺失或异常时不编造
-  重置时间，至少等一分钟。期限存在 UserDefaults，手动、自动检查与重启都遵守它；普通
-  403 单独解释请求被拒。错误在设置页占整行并允许换行，不能把恢复时间截掉。
-- **`Bundle.main` 的路径会停在启动时的位置**。运行中移动 app 或它的父目录，旧路径下找不到
-  helper，不能误报「不是从 app 启动」。更新器用 `proc_pidpath` 取得当前可执行文件的位置，
-  校验 bundle ID 与 executable 后统一用于检查、复制 helper 与安装目标；助手缺失另报原因。
-  `verify-updater-location.py` 用真实子进程覆盖移动、改名、旧路径出现副本与助手权限变化。
   bundle 签名是坏的。反过来，裸二进制的 CLI 用 `zip -qj` 就够 —— `ditto --sequesterRsrc`
   会额外塞一份 `__MACOSX/`。压完再解一次跑 `codesign --verify --deep --strict`，
   确认压包这一步没把签名弄坏。

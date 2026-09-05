@@ -13,6 +13,9 @@ struct TimelinePage: View {
         VStack(spacing: 0) {
             title
             status
+            DayBar()
+                .padding(.horizontal, Panel.inset)
+                .padding(.bottom, 8)
             notices
             Divider()
             list
@@ -26,16 +29,10 @@ struct TimelinePage: View {
     private var title: some View {
         HStack(spacing: 6) {
             Text("HourGlow")
-                .font(.system(size: 11, weight: .semibold))
+                .font(Panel.Font.section)
                 .foregroundStyle(.secondary)
             Spacer(minLength: 0)
             placeChip
-            if model.schedule.paused {
-                Label(L10n.t("timeline.paused"), systemImage: "pause.fill")
-                    .font(.system(size: 10, weight: .medium))
-                    .labelStyle(.titleAndIcon)
-                    .foregroundStyle(.orange)
-            }
         }
         .padding(.horizontal, Panel.inset)
         .padding(.top, 10)
@@ -50,11 +47,11 @@ struct TimelinePage: View {
                 Text(model.placeChipLabel)
                     .lineLimit(1)
             }
-            .font(.system(size: 11))
+            .font(Panel.Font.secondary)
             .foregroundStyle(.secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
-            .background(.quaternary.opacity(0.5), in: Capsule())
+            .background(Panel.fieldFill, in: Capsule())
         }
         .buttonStyle(.plain)
         .help(L10n.t("timeline.place.help"))
@@ -69,18 +66,27 @@ struct TimelinePage: View {
             VStack(alignment: .leading, spacing: 2) {
                 if let caption {
                     Text(caption)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(Panel.Font.caption.weight(.medium))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
                 Text(model.resolution.map { model.name(for: $0.active.wallpaper) }
                      ?? L10n.t("timeline.noActive"))
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(Panel.Font.headline)
                     .lineLimit(1)
-                Text(subtitle)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                // 暂停时这一句本身就是「已暂停」，不另立一个标记：说的是同一件事，
+                // 说两遍反而像两处状态。图标 + 橙色足够把它和「下一次切换」区分开。
+                Label {
+                    Text(subtitle)
+                } icon: {
+                    if model.schedule.paused {
+                        Image(systemName: "pause.fill").font(Panel.Font.caption.weight(.semibold))
+                    }
+                }
+                .labelStyle(.titleAndIcon)
+                .font(Panel.Font.secondary)
+                .foregroundStyle(model.schedule.paused ? Color.orange : Color.secondary)
+                .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -163,25 +169,25 @@ struct TimelinePage: View {
                           size: CGSize(width: 44, height: 28))
 
                 VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 5) {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
                         Text(Clock.string(entry.time))
-                            .font(.system(size: 12.5, weight: isActive ? .semibold : .regular))
+                            .font(Panel.Font.body.weight(isActive ? .semibold : .regular))
                             .monospacedDigit()
                             .foregroundStyle(isActive ? Color.accentColor : .primary)
                         // 固定时刻的规则就是左边那个时间本身，不必再说一遍。
                         if slot.trigger.dependsOnSun {
                             Text(slot.trigger.description)
-                                .font(.system(size: 10.5))
+                                .font(Panel.Font.caption)
                                 .foregroundStyle(.secondary)
                         }
                         if !slot.enabled {
                             Text(L10n.t("timeline.slot.disabled"))
-                                .font(.system(size: 10))
+                                .font(Panel.Font.caption)
                                 .foregroundStyle(.tertiary)
                         }
                     }
                     Text(model.name(for: slot.wallpaper))
-                        .font(.system(size: 11))
+                        .font(Panel.Font.secondary)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -219,7 +225,7 @@ struct TimelinePage: View {
                     .frame(width: 44, height: 28)
                     .foregroundStyle(.secondary)
                 Text(L10n.t("timeline.addSlot"))
-                    .font(.system(size: 12.5))
+                    .font(Panel.Font.body)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)

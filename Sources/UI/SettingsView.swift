@@ -46,9 +46,9 @@ struct SettingsPage: View {
         PanelSection(title: L10n.t("settings.section.language")) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(L10n.t("settings.section.language")).font(.system(size: 12))
+                    Text(L10n.t("settings.language.label")).font(Panel.Font.control)
                     Text(L10n.t("settings.language.note"))
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(Panel.Font.secondary).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 Picker("", selection: Binding(get: { model.languagePreference },
@@ -74,9 +74,9 @@ struct SettingsPage: View {
         PanelSection(title: L10n.t("settings.section.update")) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(L10n.t("settings.update.auto")).font(.system(size: 12))
+                    Text(L10n.t("settings.update.auto")).font(Panel.Font.control)
                     Text(L10n.t("settings.update.auto.note"))
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(Panel.Font.secondary).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 Toggle("", isOn: Binding(get: { model.automaticUpdatesEnabled },
@@ -92,12 +92,14 @@ struct SettingsPage: View {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(L10n.t("settings.update.version", model.currentVersion))
-                        .font(.system(size: 12)).monospacedDigit()
-                    Text(updateDetail)
-                        .font(.system(size: 11))
-                        .foregroundStyle(updateFailed ? Color.orange : Color.secondary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .font(Panel.Font.control).monospacedDigit()
+                    if !updateFailed {
+                        Text(updateDetail)
+                            .font(Panel.Font.secondary)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 Spacer(minLength: 0)
 
@@ -106,18 +108,26 @@ struct SettingsPage: View {
                 } else if model.availableUpdate != nil {
                     Button(L10n.t("settings.update.install")) { model.installAvailableUpdate() }
                         .controlSize(.small)
+                        .disabled(!model.canUpdate)
                 } else {
                     Button(L10n.t("settings.update.check")) { model.checkForUpdates() }
-                        .disabled(!model.canUpdate)
                         .controlSize(.small)
                         .disabled(!model.canUpdate)
                 }
             }
 
-            if model.availableUpdate != nil || updateFailed {
+            // 错误中的恢复时间不能被按钮挤掉，也不能被两行截断。
+            if updateFailed {
+                Text(updateDetail)
+                    .font(Panel.Font.secondary)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if model.availableUpdate != nil || updateFailed || !model.canUpdate {
                 Button(L10n.t("settings.update.releases")) { model.openReleasesPage() }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11))
+                    .font(Panel.Font.secondary)
                     .foregroundStyle(.secondary)
             }
         }
@@ -151,9 +161,9 @@ struct SettingsPage: View {
             if model.canLaunchAtLogin {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(L10n.t("settings.launchAtLogin")).font(.system(size: 12))
+                        Text(L10n.t("settings.launchAtLogin")).font(Panel.Font.control)
                         Text(L10n.t("settings.launchAtLogin.note"))
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(Panel.Font.secondary).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                     Toggle("", isOn: Binding(get: { model.launchAtLogin == .enabled },
@@ -166,7 +176,7 @@ struct SettingsPage: View {
                 if let note = model.launchAtLoginNote {
                     HStack(spacing: 6) {
                         Text(note)
-                            .font(.system(size: 11))
+                            .font(Panel.Font.secondary)
                             .foregroundStyle(.orange)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
@@ -177,14 +187,14 @@ struct SettingsPage: View {
 
                 if let warning = model.launchAtLoginPathWarning {
                     Text(warning)
-                        .font(.system(size: 11))
+                        .font(Panel.Font.secondary)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
                 // 从 build/ 里直接跑的裸二进制没有可注册的 bundle。
                 Text(L10n.t("settings.launchAtLogin.unavailable"))
-                    .font(.system(size: 11))
+                    .font(Panel.Font.secondary)
                     .foregroundStyle(.secondary)
             }
 
@@ -193,9 +203,9 @@ struct SettingsPage: View {
                 Divider()
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(L10n.t("settings.agent.running")).font(.system(size: 12))
+                        Text(L10n.t("settings.agent.running")).font(Panel.Font.control)
                         Text(L10n.t("settings.agent.note"))
-                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                            .font(Panel.Font.secondary).foregroundStyle(.secondary)
                     }
                     Spacer(minLength: 0)
                     Button(L10n.t("settings.agent.uninstall")) { model.uninstallAgent() }
@@ -214,10 +224,10 @@ struct SettingsPage: View {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 1) {
                         Text(model.placeLabel)
-                            .font(.system(size: 12))
+                            .font(Panel.Font.control)
                             .lineLimit(1)
                         Text(solarLine)
-                            .font(.system(size: 11))
+                            .font(Panel.Font.secondary)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -247,9 +257,9 @@ struct SettingsPage: View {
         PanelSection(title: L10n.t("settings.section.scene")) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(L10n.t("settings.scene.import")).font(.system(size: 12))
+                    Text(L10n.t("settings.scene.import")).font(Panel.Font.control)
                     Text(L10n.t("settings.scene.note"))
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(Panel.Font.secondary).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 Button(L10n.t(model.importingScene ? "timeline.importing" : "timeline.import")) {
@@ -269,9 +279,9 @@ struct SettingsPage: View {
         PanelSection(title: L10n.t("settings.section.help")) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(L10n.t("settings.guide")).font(.system(size: 12))
+                    Text(L10n.t("settings.guide")).font(Panel.Font.control)
                     Text(L10n.t("settings.guide.note"))
-                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                        .font(Panel.Font.secondary).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
                 Button(L10n.t("settings.guide.open")) { OnboardingWindow.shared.present() }
@@ -285,12 +295,12 @@ struct SettingsPage: View {
     private var about: some View {
         HStack(spacing: 6) {
             Text("HourGlow \(Bundle.main.shortVersion)")
-                .font(.system(size: 11))
+                .font(Panel.Font.secondary)
                 .foregroundStyle(.tertiary)
             Spacer(minLength: 0)
             Button(L10n.t("menu.revealConfig")) { model.revealConfigInFinder() }
                 .buttonStyle(.plain)
-                .font(.system(size: 11))
+                .font(Panel.Font.secondary)
                 .foregroundStyle(.secondary)
         }
         .padding(.horizontal, 4)

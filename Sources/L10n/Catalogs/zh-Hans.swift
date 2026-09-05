@@ -47,7 +47,6 @@ extension StringCatalog {
 
         // MARK: 时间轴
 
-        "timeline.paused": "已暂停",
         "timeline.place.help": "选择计算日出日落的地区",
         "timeline.caption.actual": "目前壁纸",
         "timeline.caption.scheduled": "排程中的壁纸",
@@ -131,6 +130,7 @@ extension StringCatalog {
         "settings.title": "设置",
         "settings.section.language": "语言",
         "settings.language.system": "跟随系统",
+        "settings.language.label": "界面语言",
         "settings.language.note": "面板、新手指引与命令行都跟着变",
         "settings.section.update": "更新",
         "settings.update.auto": "自动更新",

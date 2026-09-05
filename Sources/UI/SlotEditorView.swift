@@ -39,7 +39,7 @@ struct SlotPage: View {
                 footer
             } else {
                 Spacer()
-                Text(L10n.t("slot.gone")).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(L10n.t("slot.gone")).font(Panel.Font.control).foregroundStyle(.secondary)
                 Spacer()
             }
         }
@@ -73,7 +73,7 @@ struct SlotPage: View {
             switch slot.trigger {
             case .clock:
                 HStack {
-                    Text(L10n.t("slot.everyDay")).font(.system(size: 12))
+                    Text(L10n.t("slot.everyDay")).font(Panel.Font.control)
                     Spacer()
                     // 底色与留白在 `TimeField` 里，这里只负责摆位置。
                     TimeField(date: clockBinding(slot))
@@ -81,12 +81,12 @@ struct SlotPage: View {
             case .solarPhase(let phase, let index, let count):
                 VStack(alignment: .leading, spacing: 6) {
                     Text(L10n.t("slot.phase.position", phase.name, index + 1, count))
-                        .font(.system(size: 12))
+                        .font(Panel.Font.control)
                     Text(todayLine(slot))
-                        .font(.system(size: 11))
+                        .font(Panel.Font.secondary)
                         .foregroundStyle(.secondary)
                     Text(L10n.t("slot.phase.note"))
-                        .font(.system(size: 11))
+                        .font(Panel.Font.secondary)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -111,7 +111,7 @@ struct SlotPage: View {
                     Spacer(minLength: 4)
 
                     Text(todayLine(slot))
-                        .font(.system(size: 11))
+                        .font(Panel.Font.secondary)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -166,15 +166,15 @@ struct SlotPage: View {
                               size: CGSize(width: 56, height: 35))
                     VStack(alignment: .leading, spacing: 2) {
                         Text(model.name(for: slot.wallpaper))
-                            .font(.system(size: 12.5))
+                            .font(Panel.Font.body)
                             .lineLimit(1)
                         Text(kindLine(slot.wallpaper))
-                            .font(.system(size: 11))
+                            .font(Panel.Font.secondary)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 4)
-                    Text(L10n.t("slot.change")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(L10n.t("slot.change")).font(Panel.Font.secondary).foregroundStyle(.secondary)
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.tertiary)
@@ -206,9 +206,9 @@ struct SlotPage: View {
         PanelSection(title: L10n.t("slot.section.state")) {
             HStack(spacing: 10) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(L10n.t("slot.enable")).font(.system(size: 12))
+                    Text(L10n.t("slot.enable")).font(Panel.Font.control)
                     Text(L10n.t("slot.enable.note"))
-                        .font(.system(size: 11))
+                        .font(Panel.Font.secondary)
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 0)
@@ -222,10 +222,13 @@ struct SlotPage: View {
 
     /// 新时段还没进过配置，「删除」没有对象可删，那一栏整个不出现 ——
     /// 放弃它走底部的「取消」。
+    ///
+    /// 版式是一整行、与上面的分区卡片同款：一行裸红字悬在卡片下面像是没排完。
+    /// 确认态换成红底，「再点一次」这件事光靠字重看不出来。
     @ViewBuilder
     private var delete: some View {
         if !model.draftIsNew {
-            Button(L10n.t(confirmingDelete ? "slot.delete.confirm" : "slot.delete")) {
+            Button {
                 if confirmingDelete {
                     if model.delete(slotID) { open(.timeline) }
                 } else {
@@ -233,12 +236,18 @@ struct SlotPage: View {
                     // 误触之后不该一直红着等下一次点击。
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { confirmingDelete = false }
                 }
+            } label: {
+                Text(L10n.t(confirmingDelete ? "slot.delete.confirm" : "slot.delete"))
+                    .font(Panel.Font.control.weight(confirmingDelete ? .semibold : .regular))
+                    .foregroundStyle(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(confirmingDelete ? Color.red.opacity(0.10) : Panel.cardFill,
+                                in: RoundedRectangle(cornerRadius: Panel.cardCorner, style: .continuous))
+                    .contentShape(.rect)
             }
-            .buttonStyle(.plain)
-            .font(.system(size: 12, weight: confirmingDelete ? .semibold : .regular))
-            .foregroundStyle(.red)
-            .padding(.horizontal, 4)
-            .padding(.top, 2)
+            .buttonStyle(PanelRowStyle())
+            .animation(Panel.animation, value: confirmingDelete)
         }
     }
 
@@ -247,8 +256,12 @@ struct SlotPage: View {
     /// 删除是即时的（本来就要点两下确认），其余改动全都攒在这里等一次「应用」。
     private var footer: some View {
         HStack(spacing: 8) {
+            // 有没应用的改动时前面多一颗橙点：只换字色在一行灰字里不够显眼。
+            if model.draftIsDirty {
+                Circle().fill(Color.orange).frame(width: 6, height: 6)
+            }
             Text(statusLine)
-                .font(.system(size: 11))
+                .font(Panel.Font.secondary)
                 .foregroundStyle(model.draftIsDirty ? Color.orange : Color.secondary)
                 .lineLimit(1)
 

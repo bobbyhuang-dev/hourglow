@@ -16,10 +16,65 @@ enum Panel {
     /// 底部操作条（时间轴的三个操作、时段页的「应用」）的高度。
     static let footerHeight: CGFloat = 42
     static let corner: CGFloat = 7
+    /// 分区卡片与「删除」那一行的圆角，比列表行大一点。
+    static let cardCorner: CGFloat = 8
     /// 时间轴上标「现在正在跑的是这一段」的那根竖条。
     /// 它是状态，不是选中 —— 所以只在行首立一根，绝不给整行铺强调色底。
     static let nowBar = CGSize(width: 3, height: 18)
     static let animation: Animation = .snappy(duration: 0.22)
+
+    /// 状态区下面那条「今日天光条」：24 小时横带 + 一行刻度。
+    static let dayBarHeight: CGFloat = 14
+    static let dayBarCorner: CGFloat = 4
+    /// 时段标记：一根圆头短竖线；「现在」的游标比它细、比它高。
+    static let dayBarMarker = CGSize(width: 2, height: 8)
+    static let dayBarLabelHeight: CGFloat = 13
+
+    /// 字号只有这几档。视图里不散写数字，两页之间同一层级的文字才会一样大。
+    enum Font {
+        /// 状态区的壁纸名、地点页当前地名。
+        static let headline = SwiftUI.Font.system(size: 13, weight: .semibold)
+        /// 列表行的主文字、开关标题。
+        static let body = SwiftUI.Font.system(size: 12.5)
+        /// 表单控件旁的标签：「每天」、设置项标题。
+        static let control = SwiftUI.Font.system(size: 12)
+        /// 副标题、注脚、提示条。
+        static let secondary = SwiftUI.Font.system(size: 11)
+        /// 行内的触发说明、网格里的名字、「已停用」。
+        static let caption = SwiftUI.Font.system(size: 10.5)
+        /// 分区标题、地点页的分组标题。
+        static let section = SwiftUI.Font.system(size: 11, weight: .semibold)
+    }
+
+    /// 分区卡片、输入框与缩略图描边的颜色随外观走。
+    /// 曾经写死 `black.opacity(0.12)` 描边、`quaternary` 铺卡片，暗色下前者等于没有，
+    /// 后者与窗底几乎同色 —— 卡片的边界只能靠猜。
+    static let cardFill = adaptive(light: NSColor.black.withAlphaComponent(0.05),
+                                   dark: NSColor.white.withAlphaComponent(0.07))
+    static let fieldFill = adaptive(light: NSColor.black.withAlphaComponent(0.07),
+                                    dark: NSColor.white.withAlphaComponent(0.10))
+    static let hairline = adaptive(light: NSColor.black.withAlphaComponent(0.12),
+                                   dark: NSColor.white.withAlphaComponent(0.10))
+
+    /// 动态色：按视图实际所在的外观解析，不必把 `colorScheme` 传遍每个视图。
+    /// `panelshot --appearance` 只改窗口的 `appearance`，走这条路照样认得。
+    private static func adaptive(light: NSColor, dark: NSColor) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
+        })
+    }
+}
+
+/// 天光的调色板。应用图标、新手指引的顶栏与时间轴的天光条用同一族颜色，
+/// 三处看上去是同一件东西。
+enum Sky {
+    static let night = Color(red: 0.13, green: 0.16, blue: 0.32)
+    /// 民用黄昏那种带紫的蓝。
+    static let dusk = Color(red: 0.33, green: 0.30, blue: 0.47)
+    /// 日出日落前后的暖橙。
+    static let glow = Color(red: 0.78, green: 0.47, blue: 0.33)
+    /// 白昼的天蓝。指引里用不到（那条渐变只画到晨光为止），天光条上白天占大半。
+    static let day = Color(red: 0.55, green: 0.74, blue: 0.92)
 }
 
 /// 新手指引那扇窗的度量。和 `Panel` 分开，因为它不是同一块画布 ——
@@ -50,7 +105,7 @@ struct PanelHeader<Trailing: View>: View {
     var body: some View {
         ZStack {
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(Panel.Font.headline)
 
             HStack(spacing: 0) {
                 if let back {
@@ -89,7 +144,7 @@ struct PanelSection<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(Panel.Font.section)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 4)
             VStack(alignment: .leading, spacing: 8) {
@@ -97,8 +152,8 @@ struct PanelSection<Content: View>: View {
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.quaternary.opacity(0.35),
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(Panel.cardFill,
+                        in: RoundedRectangle(cornerRadius: Panel.cardCorner, style: .continuous))
         }
     }
 }
@@ -205,7 +260,7 @@ struct Thumbnail: View {
             .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: corner, style: .continuous)
-                    .strokeBorder(.black.opacity(0.12), lineWidth: 0.5)
+                    .strokeBorder(Panel.hairline, lineWidth: 0.5)
             }
             .task(id: url) {
                 image = ThumbnailCache.shared.cached(url ?? URL(fileURLWithPath: "/"))
@@ -244,7 +299,7 @@ struct TimeField: View {
             // 13 pt 时这个差额是 1.5 pt，补平数字就会把步进器顶歪。
             .padding(.top, 3.5)
             .padding(.bottom, 3)
-            .background(.quaternary.opacity(0.7),
+            .background(Panel.fieldFill,
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }
@@ -306,7 +361,7 @@ struct PanelNotice: View {
             Image(systemName: symbol)
                 .font(.system(size: 10, weight: .semibold))
             Text(text)
-                .font(.system(size: 11))
+                .font(Panel.Font.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
             Spacer(minLength: 0)
@@ -349,7 +404,7 @@ struct CoordinateField: View {
             .frame(width: 62)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(.quaternary.opacity(0.7),
+            .background(Panel.fieldFill,
                         in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 }

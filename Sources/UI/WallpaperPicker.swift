@@ -46,7 +46,7 @@ struct WallpaperPicker: View {
                 .foregroundStyle(.secondary)
             TextField(L10n.t("picker.search"), text: $query)
                 .textFieldStyle(.plain)
-                .font(.system(size: 12))
+                .font(Panel.Font.control)
             if !query.isEmpty {
                 Button { query = "" } label: {
                     Image(systemName: "xmark.circle.fill")
@@ -58,7 +58,7 @@ struct WallpaperPicker: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(.quaternary.opacity(0.35),
+        .background(Panel.fieldFill,
                     in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .padding(.horizontal, Panel.inset)
         .padding(.bottom, 6)
@@ -75,6 +75,16 @@ struct WallpaperPicker: View {
             .padding(.horizontal, Panel.inset)
         }
         .scrollIndicators(.never)
+        // 两端渐隐：胶囊排不下时是横向滚动的，硬裁一半的「Mac」看着像排版坏了。
+        .mask {
+            HStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: Panel.inset)
+                Color.black
+                LinearGradient(colors: [.black, .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: Panel.inset)
+            }
+        }
         .padding(.bottom, 8)
     }
 
@@ -84,7 +94,7 @@ struct WallpaperPicker: View {
             category = value
         } label: {
             Text(title)
-                .font(.system(size: 11, weight: selected ? .semibold : .regular))
+                .font(Panel.Font.secondary.weight(selected ? .semibold : .regular))
                 .foregroundStyle(selected ? Color.white : Color.primary)
                 .padding(.horizontal, 9)
                 .padding(.vertical, 3)
@@ -117,7 +127,7 @@ struct WallpaperPicker: View {
         ScrollView {
             if filtered.isEmpty {
                 Text(L10n.t("picker.empty"))
-                    .font(.system(size: 12))
+                    .font(Panel.Font.control)
                     .foregroundStyle(.secondary)
                     .padding(.top, 40)
             }
@@ -135,10 +145,22 @@ struct WallpaperPicker: View {
 
     private func cell(_ asset: AerialAsset) -> some View {
         let selected = model.editing(slotID).map { $0.wallpaper == .aerial(assetID: asset.id) } ?? false
-
-        return Button {
+        return GridCell(asset: asset, selected: selected, tooltip: tooltip(asset)) {
             choose(.aerial(assetID: asset.id))
-        } label: {
+        }
+    }
+
+    /// 网格里的一格。悬停时名字转正色、描边加深 —— 156 格里鼠标在哪一格得看得出来。
+    /// 单独成一个视图是因为悬停是每格自己的 `@State`，放在父视图里 156 个布尔没法管。
+    private struct GridCell: View {
+        let asset: AerialAsset
+        let selected: Bool
+        let tooltip: String
+        let action: () -> Void
+        @State private var hovering = false
+
+        var body: some View {
+        Button(action: action) {
             VStack(alignment: .leading, spacing: 3) {
                 Thumbnail(url: asset.thumbnailURL, size: CGSize(width: 104, height: 64), corner: 6)
                     // 未下载的压暗一点。156 张里绝大多数都没下载，压太狠整个网格都是灰的。
@@ -158,12 +180,15 @@ struct WallpaperPicker: View {
                     }
                     .overlay {
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(Color.accentColor, lineWidth: selected ? 2 : 0)
+                            .strokeBorder(selected ? Color.accentColor
+                                                   : Color.primary.opacity(hovering ? 0.35 : 0),
+                                          lineWidth: selected ? 2 : 1)
                     }
 
                 Text(asset.name)
-                    .font(.system(size: 10))
-                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+                    .font(Panel.Font.caption)
+                    .foregroundStyle(selected ? Color.accentColor
+                                              : (hovering ? Color.primary : Color.secondary))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -171,7 +196,9 @@ struct WallpaperPicker: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .help(tooltip(asset))
+        .onHover { hovering = $0 }
+        .help(tooltip)
+        }
     }
 
     private func tooltip(_ asset: AerialAsset) -> String {
@@ -190,7 +217,7 @@ struct WallpaperPicker: View {
             Spacer(minLength: 0)
             Text(L10n.t(count: filtered.count, "picker.count",
                         filtered.count, filtered.filter(\.isDownloaded).count))
-                .font(.system(size: 10))
+                .font(Panel.Font.caption)
                 .foregroundStyle(.tertiary)
         }
         .controlSize(.small)
