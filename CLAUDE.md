@@ -534,6 +534,9 @@ machine, not a theoretical risk.
 
 ### UI
 
+- Keep `VerticalOnlyScroll` attached inside vertical scroll content. Observe native horizontal
+  elasticity/scroller changes as well as mounting: a one-time assignment does not protect
+  against later SwiftUI reconfiguration. Leave vertical scrolling and bounce untouched.
 - **`@main` cannot share a module with a `main.swift` containing top-level code.**
   `Tests/PanelShot` reuses UI code, so `build.sh` separates `HourGlowApp.swift` into `ENTRY`.
 - **`ImageRenderer` cannot draw `ScrollView` contents or AppKit-backed controls** (segmented

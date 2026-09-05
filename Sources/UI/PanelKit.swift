@@ -174,18 +174,54 @@ struct VerticalOnlyScroll: NSViewRepresentable {
 
     func updateNSView(_ view: Probe, context: Context) { view.apply() }
 
+    static func dismantleNSView(_ view: Probe, coordinator: ()) { view.stop() }
+
     final class Probe: NSView {
+        private weak var scrollView: NSScrollView?
+        private var observations: [NSKeyValueObservation] = []
+
+        override func viewDidMoveToSuperview() {
+            super.viewDidMoveToSuperview()
+            apply()
+        }
+
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             apply()
         }
 
-        /// Re-apply whenever the view enters a window: SwiftUI may replace the backing
-        /// `NSScrollView` (for example when the whole panel is rebuilt after a language change).
+        /// SwiftUI can reconfigure the native scroll view after mounting or updating its
+        /// content. Keep the axis locked for its lifetime, including rebuilt panel pages.
         func apply() {
-            guard let scrollView = enclosingScrollView else { return }
-            scrollView.horizontalScrollElasticity = .none
-            scrollView.hasHorizontalScroller = false
+            guard window != nil, let enclosing = enclosingScrollView else { stop(); return }
+            if scrollView !== enclosing {
+                stop()
+                scrollView = enclosing
+                observations = [
+                    enclosing.observe(\.horizontalScrollElasticity) { [weak self] _, _ in
+                        MainActor.assumeIsolated { self?.lockAxis() }
+                    },
+                    enclosing.observe(\.hasHorizontalScroller) { [weak self] _, _ in
+                        MainActor.assumeIsolated { self?.lockAxis() }
+                    }
+                ]
+            }
+            lockAxis()
+        }
+
+        private func lockAxis() {
+            guard let scrollView else { return }
+            if scrollView.horizontalScrollElasticity != .none {
+                scrollView.horizontalScrollElasticity = .none
+            }
+            if scrollView.hasHorizontalScroller {
+                scrollView.hasHorizontalScroller = false
+            }
+        }
+
+        func stop() {
+            observations.removeAll()
+            scrollView = nil
         }
     }
 }

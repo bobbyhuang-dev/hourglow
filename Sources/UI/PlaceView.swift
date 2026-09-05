@@ -256,7 +256,7 @@ struct PlacePage: View {
     }
 
     private var list: some View {
-        ScrollView {
+        ScrollView(.vertical) {
             LazyVStack(alignment: .leading, spacing: 2) {
                 ForEach(sections) { section in
                     Text(section.title)
