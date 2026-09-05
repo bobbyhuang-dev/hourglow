@@ -363,6 +363,21 @@ offsets use preset menus (±120 / 90 / 60 / 45 / 30 / 15 / exactly), not stepper
 imply false precision and need twelve clicks to go from exactly to one hour later. Values
 outside those presets (manual config edits or an old 37-minute stepper value) are temporarily
 inserted so the menu can select the current value.
+Automatic location is enabled for new configurations and legacy files without saved coordinates.
+Legacy saved coordinates stay fixed because old files do not record whether they came from a
+manual choice or a system fix. `Schedule.automaticLocation` distinguishes automatic from fixed
+coordinates; `locationCheckedAt` / `locationCheckedTimeZone` persist successful checks.
+The menu bar app checks on launch, panel opening, wake, day/clock/time-zone changes and its
+existing hourly maintenance timer. Background requests require existing permission and retry
+no sooner than an hour after failure. Explicitly enabling the toggle or using current location
+may request permission. The CLI cannot obtain fixes; setting a CLI location disables automatic
+updates, including clearing coordinates to select time-zone inference.
+`LocationRefresh` rejects stale/inaccurate fixes and keeps saved coordinates within 5 km to
+avoid drift. Failures keep the last fix; reverse geocoding only updates the label. Before
+applying asynchronous results, reread disk and verify location intent still matches; preserve
+concurrent slot edits. Choosing a city, entering coordinates or disabling the toggle invalidates
+pending fixes and reverse lookups. Never invoke location services from offline checks or panelshot.
+
 The empty-search section on the location page is “Nearby”: sort the offline table (handwritten
 entries + `zone.tab`) by spherical distance from `effectiveCoordinate`, then take
 `Cities.nearbyCount`. CLI `cities` without arguments does the same. Previously, separate

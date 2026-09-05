@@ -74,7 +74,7 @@ $LOCALIZATIONS
     <key>LSUIElement</key>                  <true/>
     <!-- Reason shown in the location permission dialog. Without it, macOS denies access without prompting. -->
     <key>NSLocationWhenInUseUsageDescription</key>
-    <string>HourGlow uses your location once to calculate local sunrise and sunset times. Your location is not uploaded.</string>
+    <string>HourGlow uses your location to calculate local sunrise and sunset times and can refresh it daily as you travel. You can turn automatic location updates off.</string>
 </dict>
 </plist>
 PLIST

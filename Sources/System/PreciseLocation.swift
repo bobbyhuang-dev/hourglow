@@ -4,11 +4,8 @@ import Foundation
 
 /// Requests precise coordinates once from the system.
 ///
-/// No continuous tracking: a stationary computer's coordinates do not change, and sunrise/sunset sensitivity
-/// is on the order of tens of kilometers per minute. Save the result in schedule.json's location and reuse it.
-///
-/// Failure is not a dead end: ApproxLocation infers coordinates from the time zone without permission,
-/// or users can enter them in settings. Priority: manual entry > saved location fix > time-zone inference.
+/// Each request obtains one fix. The app may repeat this daily when automatic location is enabled.
+/// Saved coordinates or permission-free time-zone inference remain available on failure.
 ///
 /// Pitfalls:
 /// - CLLocationManager requires a thread with a run loop and delivers callbacks there; always use the main thread.
@@ -99,7 +96,12 @@ final class PreciseLocation: NSObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager,
                                      didUpdateLocations locations: [CLLocation]) {
         MainActor.assumeIsolated {
-            guard let last = locations.last else { return }
+            let now = Date()
+            guard let last = locations.last(where: {
+                LocationRefresh.isUsable(Coordinate(latitude: $0.coordinate.latitude,
+                                                    longitude: $0.coordinate.longitude),
+                                         accuracy: $0.horizontalAccuracy, timestamp: $0.timestamp, now: now)
+            }) else { return } // Keep the timeout armed while waiting for a usable fix.
             finish(.coordinate(Coordinate(latitude: last.coordinate.latitude,
                                           longitude: last.coordinate.longitude)))
         }

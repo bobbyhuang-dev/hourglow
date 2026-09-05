@@ -32,11 +32,15 @@ under 5 MB. Speaks English and 简体中文.
 - **Any number of slots** — the Tahoe four are just the preset written on first launch;
   edit or delete them freely
 - **Sun times computed locally** — the NOAA solar position algorithm, no network. Coordinates
-  come from a one-shot system location fix, a city you pick, or a latitude/longitude you
+  come from the system location service, a city you pick, or a latitude/longitude you
   type in; with none of those, they are inferred from your time zone, which needs no
   permission at all. China is a single `Asia/Shanghai` zone, so picking Shenzhen vs Shanghai
   actually changes sunrise by tens of minutes.
-- **No polling** — the timer is scheduled directly at the next trigger point. Sleep/wake,
+- **Automatic location** — enabled by default for new configurations. After you allow location
+  access, the app checks daily and after time-zone changes; failed requests keep the last
+  location. Choose a city or type coordinates to keep a fixed location instead. Existing
+  saved locations stay fixed on upgrade. The location page shows the last successful check.
+- **No wallpaper polling** — the timer is scheduled directly at the next trigger point. Sleep/wake,
   system clock changes, time zone changes and day rollover each have their own notification,
   so sleeping through a trigger means the wallpaper catches up on wake
 - **It won't fight you** — if you change the wallpaper yourself in System Settings, HourGlow
@@ -121,7 +125,8 @@ involves, so you can decide whether to trust it.
   "seen the guide" flags in its preferences. It reads the system's aerial catalog for names
   and thumbnails. Nothing else on disk is touched.
 - **Permissions.** None are required. Location is optional: if you grant it, the app takes
-  one fix, stores it in `schedule.json` as a plain latitude/longitude, and never asks again;
+  a fix and stores it in `schedule.json` as a plain latitude/longitude. Automatic location
+  refreshes it daily while the menu bar app runs; you can turn this off on the location page;
   decline it and pick a city or type coordinates, or let it infer from your time zone. Launch
   at login is an ordinary login item, visible and switchable in System Settings › General ›
   Login Items. No Accessibility, no Full Disk Access, no screen recording.
@@ -130,9 +135,10 @@ involves, so you can decide whether to trust it.
 - **What goes over the network.** With automatic updates on (the default), HourGlow asks
   `api.github.com` once a day for the latest release and, when you install one, downloads it
   from GitHub. Typing a place name the built-in city list doesn't know geocodes it through
-  Apple's MapKit and, failing that, OpenStreetMap's Nominatim. That is the complete list: no
-  telemetry, no analytics, no account. Turn automatic updates off in Settings and the app
-  makes no requests on its own.
+  Apple's MapKit and, failing that, OpenStreetMap's Nominatim. System location uses macOS
+  Location Services; the app also asks MapKit for a readable name when a saved location changes
+  or has no name. Automatic location and release checks have separate switches.
+  No telemetry, no analytics, no account.
 - **Updates are verified** before anything is replaced: the download's SHA-256 against the
   release's asset digest, then the unpacked app's bundle identifier, version and full code
   signature. The old app is kept as a backup until the new one has launched.

@@ -202,15 +202,22 @@ struct Slot: Codable, Identifiable, Equatable {
 struct Schedule: Codable {
     var slots: [Slot] = []
     var paused: Bool = false
-    /// Manually supplied coordinates. Falls back to time-zone inference when absent (see `ApproxLocation`).
+    /// Saved fixed coordinates or the last automatic fix; falls back to time-zone inference when absent.
     var location: Coordinate? = nil
 
-    private enum Key: String, CodingKey { case slots, paused, location }
+    var automaticLocation: Bool = true
+    var locationCheckedAt: Date? = nil
+    var locationCheckedTimeZone: String? = nil
 
-    init(slots: [Slot] = [], paused: Bool = false, location: Coordinate? = nil) {
+    private enum Key: String, CodingKey {
+        case slots, paused, location, automaticLocation, locationCheckedAt, locationCheckedTimeZone
+    }
+
+    init(slots: [Slot] = [], paused: Bool = false, location: Coordinate? = nil, automaticLocation: Bool? = nil) {
         self.slots = slots
         self.paused = paused
         self.location = location
+        self.automaticLocation = automaticLocation ?? (location == nil)
     }
 
     init(from decoder: Decoder) throws {
@@ -218,6 +225,10 @@ struct Schedule: Codable {
         slots = try c.decodeIfPresent([Slot].self, forKey: .slots) ?? []
         paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? false
         location = try c.decodeIfPresent(Coordinate.self, forKey: .location)
+        // Older files cannot distinguish a manual city from a system fix. Preserve saved places.
+        automaticLocation = try c.decodeIfPresent(Bool.self, forKey: .automaticLocation) ?? (location == nil)
+        locationCheckedAt = try c.decodeIfPresent(Date.self, forKey: .locationCheckedAt)
+        locationCheckedTimeZone = try c.decodeIfPresent(String.self, forKey: .locationCheckedTimeZone)
         try validate()
     }
 

@@ -384,6 +384,56 @@ for (zone, latitude, longitude, dayText) in [
     }
 }
 
+// Daily location refresh defaults, migration, persistence, and travel boundaries.
+check(Tahoe.preset.automaticLocation, "Fresh presets enable automatic location")
+let legacyEmpty = try JSONDecoder().decode(Schedule.self, from: Data("{}".utf8))
+let legacyFixed = try JSONDecoder().decode(Schedule.self, from:
+    Data(#"{"location":{"latitude":22.5,"longitude":114.0}}"#.utf8))
+check(legacyEmpty.automaticLocation && !legacyFixed.automaticLocation,
+      "Legacy files without a location default to automatic; saved places stay fixed")
+var automatic = Schedule(location: coordinate, automaticLocation: true)
+automatic.locationCheckedAt = noon
+automatic.locationCheckedTimeZone = calendar.timeZone.identifier
+let decodedAutomatic = try JSONDecoder().decode(Schedule.self, from: JSONEncoder().encode(automatic))
+check(decodedAutomatic.automaticLocation && decodedAutomatic.locationCheckedAt == noon
+      && decodedAutomatic.locationCheckedTimeZone == calendar.timeZone.identifier,
+      "Automatic mode and the last successful check survive relaunch")
+check(!LocationRefresh.isDue(automatic, now: noon.addingTimeInterval(3600), lastAttempt: nil, calendar: calendar),
+      "A successful check suppresses repeated requests on the same day")
+check(LocationRefresh.isDue(automatic, now: noon.addingTimeInterval(86400), lastAttempt: nil, calendar: calendar),
+      "The next calendar day requires a fresh fix")
+var travelCalendar = calendar
+travelCalendar.timeZone = TimeZone(identifier: "Asia/Tokyo")!
+check(LocationRefresh.isDue(automatic, now: noon, lastAttempt: nil, calendar: travelCalendar),
+      "A time-zone change requires a fresh fix even on the same day")
+check(!LocationRefresh.isDue(Schedule(), now: noon, lastAttempt: noon.addingTimeInterval(-60), calendar: calendar),
+      "Failure retries are throttled for an hour")
+check(LocationRefresh.isDue(automatic, now: noon.addingTimeInterval(-3600), lastAttempt: noon, calendar: calendar),
+      "Moving the system clock backwards does not suppress checks indefinitely")
+check(!LocationRefresh.isDue(legacyFixed, now: noon, lastAttempt: nil, calendar: calendar),
+      "Fixed locations never refresh automatically")
+check(!LocationRefresh.shouldReplace(coordinate, with:
+    Coordinate(latitude: coordinate.latitude + 0.001, longitude: coordinate.longitude)),
+      "Small location drift preserves the saved coordinate and name")
+check(LocationRefresh.shouldReplace(coordinate, with: Coordinate(latitude: 22.543, longitude: 114.058)),
+      "Travelling between cities in the same time zone replaces the coordinate")
+check(LocationRefresh.shouldReplace(nil, with: coordinate), "The first system fix replaces time-zone inference")
+check(LocationRefresh.isUsable(coordinate, accuracy: 1000, timestamp: noon, now: noon)
+      && !LocationRefresh.isUsable(coordinate, accuracy: -1, timestamp: noon, now: noon)
+      && !LocationRefresh.isUsable(coordinate, accuracy: 6000, timestamp: noon, now: noon)
+      && !LocationRefresh.isUsable(coordinate, accuracy: 1000, timestamp: noon.addingTimeInterval(-600), now: noon),
+      "Location fixes must have valid accuracy and a recent timestamp")
+var dstCalendar = Calendar(identifier: .gregorian)
+dstCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+for (first, next) in [("2026-03-08 00:30", "2026-03-09 00:30"),
+                      ("2026-11-01 00:30", "2026-11-02 00:30")] {
+    automatic.locationCheckedAt = localDate(first, calendar: dstCalendar)
+    automatic.locationCheckedTimeZone = dstCalendar.timeZone.identifier
+    check(LocationRefresh.isDue(automatic, now: localDate(next, calendar: dstCalendar),
+                                lastAttempt: nil, calendar: dstCalendar),
+          "Daily refresh follows calendar days across daylight-saving changes: \(next)")
+}
+
 if failures > 0 {
     FileHandle.standardError.write(Data("\n\(failures) checks failed\n".utf8))
     exit(1)

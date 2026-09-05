@@ -72,6 +72,7 @@ struct PlacePage: View {
         VStack(spacing: 0) {
             PanelHeader(title: L10n.t("place.title"), back: { open(backPage) })
             current
+            automaticLocation
             search
             sources
             Divider()
@@ -156,6 +157,35 @@ struct PlacePage: View {
         }
     }
 
+    private var automaticLocation: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(L10n.t("place.auto.title"))
+                    .font(Panel.Font.body)
+                Spacer(minLength: 8)
+                Toggle(L10n.t("place.auto.title"), isOn: Binding(
+                    get: { model.schedule.automaticLocation },
+                    set: { model.setAutomaticLocation($0) }))
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+            }
+            Text(L10n.t(model.schedule.automaticLocation ? "place.auto.summary" : "place.auto.fixed"))
+                .font(Panel.Font.secondary)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if model.schedule.automaticLocation {
+                Text(model.automaticLocationStatus)
+                    .font(Panel.Font.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Panel.inset)
+        .padding(.bottom, 10)
+    }
+
     // MARK: - Search
 
     private var search: some View {
@@ -221,7 +251,7 @@ struct PlacePage: View {
                     Text(L10n.t("place.followTimeZone"))
                         .font(Panel.Font.body)
                     Spacer(minLength: 0)
-                    if model.schedule.location == nil {
+                    if model.schedule.location == nil && !model.schedule.automaticLocation {
                         Image(systemName: "checkmark")
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(.secondary)
@@ -334,7 +364,7 @@ struct PlacePage: View {
             .controlSize(.small)
             // Compare coordinates only: `Coordinate` equality also includes the city name.
             // Otherwise identical coordinates enable this action and replace the city name with raw numbers.
-            .disabled(typed == nil || sameSpotAsCurrent)
+            .disabled(typed == nil || (sameSpotAsCurrent && !model.schedule.automaticLocation))
         }
         .padding(.horizontal, Panel.inset)
         .padding(.vertical, 8)

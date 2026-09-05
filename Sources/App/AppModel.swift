@@ -89,6 +89,23 @@ final class AppModel {
     @ObservationIgnored private var updateTicker: Timer?
     @ObservationIgnored private var updateTask: Task<Void, Never>?
     @ObservationIgnored private var languageObserver: NSObjectProtocol?
+    @ObservationIgnored private var locationObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var locationWakeObserver: NSObjectProtocol?
+    @ObservationIgnored private var locationGeneration = UUID()
+    @ObservationIgnored private var lastLocationAttempt: Date?
+    // Injectable boundaries keep location checks offline and independent of system permission.
+    @ObservationIgnored var requestLocationFix: (@escaping (PreciseLocation.Outcome) -> Void) -> Void = {
+        PreciseLocation.shared.request($0)
+    }
+    @ObservationIgnored var reverseLocationName: (Coordinate) async -> String? = { coordinate in
+        await PlaceSearch.reverse(CLLocation(latitude: coordinate.latitude,
+                                             longitude: coordinate.longitude))?.name
+    }
+    @ObservationIgnored var canRefreshLocation: () -> Bool = {
+        guard Bundle.main.bundleIdentifier == "dev.bobbyhuang.hourglow" else { return false }
+        let status = PreciseLocation.shared.authorization
+        return status == .authorizedAlways
+    }
 
     private init() {
         // Check whether the configuration exists before `Store.load()`, which writes the Tahoe
@@ -157,10 +174,15 @@ final class AppModel {
         // are cheap; AppUpdater's 24-hour interval determines the actual network frequency.
         checkForUpdates(manual: false)
         let updateTicker = Timer(timeInterval: 60 * 60, repeats: true) { _ in
-            MainActor.assumeIsolated { AppModel.shared.checkForUpdates(manual: false) }
+            MainActor.assumeIsolated {
+                AppModel.shared.checkForUpdates(manual: false)
+                AppModel.shared.refreshAutomaticLocation()
+            }
         }
         RunLoop.main.add(updateTicker, forMode: .common)
         self.updateTicker = updateTicker
+        observeLocationEvents()
+        refreshAutomaticLocation()
         if awaitingReadableConfig { show(L10n.t("model.startup.configFailed")) }
     }
 
@@ -168,7 +190,10 @@ final class AppModel {
     func setPanelVisible(_ visible: Bool) {
         guard isPanelVisible != visible else { return }
         isPanelVisible = visible
-        if visible { refresh() }
+        if visible {
+            refresh()
+            refreshAutomaticLocation()
+        }
         updateRefreshTimer()
     }
 
@@ -562,7 +587,7 @@ final class AppModel {
     var coordinateSource: String {
         if let location = schedule.location {
             if let name = location.name, !name.isEmpty { return name }
-            return L10n.t("model.place.manual")
+            return L10n.t(schedule.automaticLocation ? "model.place.current" : "model.place.manual")
         }
         return schedule.effectiveCoordinate == nil
             ? L10n.t("common.none")
@@ -584,7 +609,9 @@ final class AppModel {
     /// The chip at the timeline's top right: keep it short and truncate if needed.
     var placeChipLabel: String {
         if let name = schedule.location?.name, !name.isEmpty { return name }
-        if schedule.location != nil { return L10n.t("model.place.chip.custom") }
+        if schedule.location != nil {
+            return L10n.t(schedule.automaticLocation ? "model.place.current" : "model.place.chip.custom")
+        }
         if schedule.effectiveCoordinate != nil { return L10n.t("model.place.chip.timeZone") }
         return L10n.t("model.place.chip.choose")
     }
@@ -600,49 +627,127 @@ final class AppModel {
         return Solar.events(on: AppModel.now(), at: coordinate)
     }
 
-    /// Request coordinates once from the system, then save them instead of relying on time-zone inference.
+    /// Automatic requests never open a permission dialog or show a transient failure banner.
+    func refreshAutomaticLocation() {
+        guard !awaitingReadableConfig, locating != .requesting, canRefreshLocation(),
+              let latest = try? Store.load(),
+              LocationRefresh.isDue(latest, now: AppModel.now(), lastAttempt: lastLocationAttempt) else { return }
+        replaceSchedule(latest)
+        requestLocation(manual: false)
+    }
+
     func requestPreciseLocation() {
-        guard locating != .requesting else { return }
+        requestLocation(manual: true)
+    }
+
+    private func requestLocation(manual: Bool) {
+        guard !awaitingReadableConfig, locating != .requesting,
+              let initial = try? Store.load() else { return }
+        let generation = UUID()
+        locationGeneration = generation
+        lastLocationAttempt = AppModel.now()
         locating = .requesting
-        PreciseLocation.shared.request { outcome in
+        requestLocationFix { [weak self] outcome in
             MainActor.assumeIsolated {
-                let model = AppModel.shared
+                guard let model = self, model.locationGeneration == generation else { return }
+                model.locating = .idle
+                // Reread disk: a CLI edit may precede the config watcher's callback.
+                guard var latest = try? Store.load(),
+                      latest.location == initial.location,
+                      latest.automaticLocation == initial.automaticLocation,
+                      latest.locationCheckedAt == initial.locationCheckedAt else { return }
                 switch outcome {
                 case .coordinate(let coordinate):
-                    model.locating = .idle
-                    // Save the precise coordinates first. Reverse lookup only provides a readable name;
-                    // do not replace them with an administrative center, which may be tens of kilometers
-                    // away in a large city. That precision is what the location permission granted us.
-                    model.setManualLocation(coordinate)
-                    model.show(L10n.t("model.located",
-                                      coordinate.latitude, coordinate.longitude))
+                    let replace = manual || LocationRefresh.shouldReplace(latest.location, with: coordinate)
+                    if replace { latest.location = coordinate }
+                    latest.locationCheckedAt = AppModel.now()
+                    latest.locationCheckedTimeZone = TimeZone.current.identifier
+                    guard model.commit(latest, reportErrors: manual) else { return }
+                    if manual {
+                        model.show(L10n.t("model.located", coordinate.latitude, coordinate.longitude))
+                    }
+                    guard replace || latest.location?.name == nil,
+                          let savedCoordinate = latest.location else { return }
+                    let checkedAt = latest.locationCheckedAt
                     Task { @MainActor [weak model] in
-                        let loc = CLLocation(latitude: coordinate.latitude,
-                                             longitude: coordinate.longitude)
-                        guard let city = await PlaceSearch.reverse(loc), let model else { return }
-                        // The user may have chosen another place meanwhile; do not overwrite that choice.
-                        guard model.schedule.location?.latitude == coordinate.latitude,
-                              model.schedule.location?.longitude == coordinate.longitude else { return }
-                        var named = coordinate
-                        named.name = city.name
-                        model.setManualLocation(named)
-                        model.show(L10n.t("model.located.named", city.name))
+                        guard let model, model.locationGeneration == generation,
+                              let name = await model.reverseLocationName(savedCoordinate),
+                              model.locationGeneration == generation,
+                              var named = try? Store.load(),
+                              named.location == savedCoordinate,
+                              named.automaticLocation == initial.automaticLocation,
+                              named.locationCheckedAt == checkedAt else { return }
+                        // Reverse lookup supplies only a label, never city-center coordinates.
+                        named.location?.name = name
+                        guard model.commit(named, reportErrors: manual) else { return }
+                        if manual { model.show(L10n.t("model.located.named", name)) }
                     }
                 case .denied:
                     model.locating = .denied
                 case .failed(let reason):
-                    model.locating = .failed(reason)
+                    if manual { model.locating = .failed(reason) }
                 }
             }
         }
     }
 
-    /// Set explicit coordinates; nil clears them and restores time-zone inference.
+    func setAutomaticLocation(_ enabled: Bool) {
+        guard var updated = try? Store.load() else { return }
+        updated.automaticLocation = enabled
+        updated.locationCheckedAt = nil
+        updated.locationCheckedTimeZone = nil
+        guard commit(updated) else { return }
+        invalidateLocationRequest()
+        if enabled { requestPreciseLocation() }
+    }
+
+    /// Explicit city, coordinates, or time-zone inference opts out of automatic replacement.
     @discardableResult
     func setManualLocation(_ coordinate: Coordinate?) -> Bool {
-        var updated = schedule
+        guard var updated = try? Store.load() else { return false }
         updated.location = coordinate
-        return commit(updated)
+        updated.automaticLocation = false
+        updated.locationCheckedAt = nil
+        updated.locationCheckedTimeZone = nil
+        guard commit(updated) else { return false }
+        invalidateLocationRequest()
+        return true
+    }
+
+    private func invalidateLocationRequest() {
+        locationGeneration = UUID()
+        lastLocationAttempt = nil
+        locating = .idle
+    }
+
+    private func observeLocationEvents() {
+        let center = NotificationCenter.default
+        for event in [NSNotification.Name.NSCalendarDayChanged, .NSSystemTimeZoneDidChange,
+                      .NSSystemClockDidChange] {
+            locationObservers.append(center.addObserver(forName: event, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated {
+                    if event == .NSSystemTimeZoneDidChange {
+                        NSTimeZone.resetSystemTimeZone()
+                        AppModel.shared.lastLocationAttempt = nil
+                    }
+                    AppModel.shared.refreshAutomaticLocation()
+                }
+            })
+        }
+        locationWakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { AppModel.shared.refreshAutomaticLocation() }
+            }
+    }
+
+    var automaticLocationStatus: String {
+        if let checked = schedule.locationCheckedAt {
+            let formatter = DateFormatter()
+            formatter.dateStyle = .short
+            formatter.timeStyle = .short
+            return L10n.t("place.auto.checked", formatter.string(from: checked))
+        }
+        return L10n.t("place.auto.pending")
     }
 
     @discardableResult
@@ -793,7 +898,7 @@ final class AppModel {
 
     /// Persist changes. Editing keeps drafts in memory; only Apply reaches this method.
     @discardableResult
-    private func commit(_ updated: Schedule) -> Bool {
+    private func commit(_ updated: Schedule, reportErrors: Bool = true) -> Bool {
         guard !awaitingReadableConfig else {
             show(L10n.t("model.startup.configFailed"))
             return false
@@ -806,7 +911,7 @@ final class AppModel {
                 try scheduler.update(schedule: updated)
             }
         } catch {
-            show(L10n.t("model.saveFailed", error.localizedDescription))
+            if reportErrors { show(L10n.t("model.saveFailed", error.localizedDescription)) }
             return false
         }
         // Like the engine, persist before committing in memory, so failure never shows a configuration absent from disk.

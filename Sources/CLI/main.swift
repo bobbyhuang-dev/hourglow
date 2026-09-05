@@ -91,7 +91,8 @@ func loadSchedule() -> Schedule {
 func showList() {
     let schedule = loadSchedule()
     let coordinate = schedule.effectiveCoordinate
-    let source = L10n.t(schedule.location == nil ? "cli.place.fromTimeZone" : "cli.place.manual")
+    let source = L10n.t(schedule.location == nil ? "cli.place.fromTimeZone"
+        : (schedule.automaticLocation ? "cli.place.automatic" : "cli.place.manual"))
 
     print(labeled("cli.label.config", Store.fileURL.path))
     if let c = coordinate {
@@ -255,6 +256,9 @@ func showSolar() {
 
 func setLocation() {
     var schedule = loadSchedule()
+    schedule.automaticLocation = false
+    schedule.locationCheckedAt = nil
+    schedule.locationCheckedTimeZone = nil
     if positional.isEmpty {
         schedule.location = nil
         do {
