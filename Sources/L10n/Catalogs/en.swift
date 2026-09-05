@@ -35,8 +35,8 @@ extension StringCatalog {
         "phase.day": "Day",
         "phase.sunset": "Sunset",
         "phase.night": "Night",
-        "trigger.solar.after": "%2$d min after %1$@",
-        "trigger.solar.before": "%2$d min before %1$@",
+        "trigger.solar.after": "%2$@ min after %1$@",
+        "trigger.solar.before": "%2$@ min before %1$@",
         "trigger.phase": "%1$@ %2$d/%3$d",
 
         // MARK: Aerial categories
@@ -93,8 +93,8 @@ extension StringCatalog {
         "slot.phase.position": "%1$@ · frame %2$d of %3$d",
         "slot.phase.note": "Split evenly between today's nautical dawn, sunrise, sunset and civil dusk. Import again after the frame count changes and it is recomputed.",
         "slot.offset.exact": "Exactly at %@",
-        "slot.offset.after": "%2$d min after %1$@",
-        "slot.offset.before": "%2$d min before %1$@",
+        "slot.offset.after": "%2$@ min after %1$@",
+        "slot.offset.before": "%2$@ min before %1$@",
         "slot.today.noCoordinate": "No coordinates · skipped",
         "slot.today.polar": "Polar day or night · skipped",
         "slot.today": "%@ today",
@@ -203,6 +203,11 @@ extension StringCatalog {
         "model.located": "Located at %1$.4f, %2$.4f",
         "model.located.named": "Located: %@",
         "model.saveFailed": "Couldn't save: %@",
+        "config.error.coordinate": "Latitude must be between −90 and 90, and longitude between −180 and 180.",
+        "config.error.clock": "Clock hours must be 0–23 and minutes must be 0–59.",
+        "config.error.phase": "A daylight phase needs a positive count and an index within that count.",
+        "config.error.duplicateID": "Duplicate slot IDs. Each slot must have its own ID.",
+        "model.startup.configFailed": "Scheduling stopped because the configuration could not be read. Repair schedule.json to retry automatically.",
         "model.promote.configFailed": "The background engine exited, but the configuration wouldn't load — retrying",
         "model.promote.tookOver": "The background engine exited — the menu bar app is scheduling now",
 

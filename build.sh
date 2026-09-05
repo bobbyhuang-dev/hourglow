@@ -26,6 +26,7 @@ swiftc -O "${COMMON[@]}" Sources/App/SlotDraft.swift Sources/App/Onboarding.swif
 swiftc -O "${L10N[@]}" Sources/App/AppUpdater.swift Tests/UpdateCheck/main.swift -o build/updatecheck
 # 面板的离屏渲染，改版式时用来对照（见 Tests/PanelShot/main.swift）。
 swiftc -O "${COMMON[@]}" "${UI[@]}" Tests/PanelShot/main.swift -o build/panelshot
+swiftc -O "${COMMON[@]}" "${UI[@]}" Tests/AppStartupCheck/main.swift -o build/appstartupcheck
 
 # HourGlow.app —— 手工 bundle，不经过 Xcode。
 # LSUIElement 让它没有 Dock 图标、没有主窗口；图标只在访达和「登录项」里露面。
@@ -89,4 +90,4 @@ codesign --force --sign - \
     "$APP" >/dev/null 2>&1
 
 echo "built: HourGlow $VERSION ($BUILD_NUMBER)"
-echo "built: build/hourglow-cli, build/solarcheck, build/modelcheck, build/enginecheck, build/importcheck, build/l10ncheck, build/appcheck, build/updatecheck, build/panelshot, $APP"
+echo "built: build/hourglow-cli, build/solarcheck, build/modelcheck, build/enginecheck, build/importcheck, build/l10ncheck, build/appcheck, build/appstartupcheck, build/updatecheck, build/panelshot, $APP"

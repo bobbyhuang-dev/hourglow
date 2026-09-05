@@ -137,8 +137,8 @@ struct SlotPage: View {
     private func offsetLabel(event: SolarEvent, offset: Int) -> String {
         let name = L10n.t("sun.\(event.rawValue)")
         if offset == 0 { return L10n.t("slot.offset.exact", name) }
-        return offset > 0 ? L10n.t("slot.offset.after", name, offset)
-                          : L10n.t("slot.offset.before", name, -offset)
+        return offset > 0 ? L10n.t("slot.offset.after", name, String(offset.magnitude))
+                          : L10n.t("slot.offset.before", name, String(offset.magnitude))
     }
 
     /// 偏移是相对量，光看「日落前 30 分」不知道今天几点。把算出来的时刻摆在同一行的右端。

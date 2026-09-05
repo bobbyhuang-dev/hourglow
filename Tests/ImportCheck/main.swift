@@ -290,6 +290,17 @@ do {
     check(false, "怪名字文件夹可读：\(error)")
 }
 
+// 外部目录名不能让分辨率评分乘法溢出；带图片扩展名的目录也不能当图片复制。
+let extreme = sandbox.appendingPathComponent("extreme")
+touch(extreme.appendingPathComponent("9223372036854775807x2/day.jpg"))
+try? FileManager.default.createDirectory(at: extreme.appendingPathComponent("night.jpg"),
+                                         withIntermediateDirectories: true)
+do {
+    let files = try SceneImport.listImages(in: extreme)
+    check(files.count == 1 && files.first?.lastPathComponent == "day.jpg",
+          "超大分辨率目录不崩溃，图片扩展名的目录不算素材")
+} catch { check(false, "极端目录可以扫描：\(error)") }
+
 if failures > 0 {
     FileHandle.standardError.write(Data("\n\(failures) 项导入测试失败\n".utf8))
     exit(1)

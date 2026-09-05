@@ -17,17 +17,19 @@ HourGlow 是一个 macOS 菜单栏壁纸调度器：按固定时刻、日出日�
 （`panelshot` 除外，它会短暂弹一个窗口）。
 
 ```bash
-./build.sh                    # 一次编出全部：CLI、七个靶子、panelshot、build/HourGlow.app
+./build.sh                    # 一次编出全部：CLI、八个靶子、panelshot、build/HourGlow.app
 ./build/modelcheck            # 求值：跨午夜回绕、solar 触发、天光分段、Codable 兼容
 ./build/enginecheck           # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
 ./build/importcheck           # 导入：文件名与分子目录归类、多分辨率、均分、跳过与清理
 ./build/appcheck              # 应用状态：草稿、保存边界、外部配置冲突、新手指引的弹出规则
+./build/appstartupcheck        # 损坏配置启动、修复后自动接管（约 30 秒）
 ./build/updatecheck           # 更新器：SemVer、Release 解析、SHA-256
 ./build/l10ncheck Sources     # 文案表：漏词/空词/多词、占位符、挑语言的规则、代码里的 key 是否存在
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 bash Tests/verify-app-signature.sh build/HourGlow.app   # 签名与稳定的 designated requirement
 ./build/solarcheck            # 日出日落，被 verify-solar.py 当作被测程序调用
 python3 Tests/verify-solar.py # 以 ephem 星历对拍（需 pip install ephem，容差 30 秒）
+python3 Tests/verify-cli-boundaries.py # 非法输入与夏令时 23/25 小时日
 ./build/panelshot ~/Desktop   # 五个页面 + 新手指引五步画成 PNG（固定时刻那一栏另出一张），改版式时对照
 ./build/panelshot ~/Desktop --only timeline --now 2026-09-04T06:20   # 只抓一页，并把「现在」定格在某一刻
 ./build/panelshot ~/Desktop --appearance dark                        # 钉住外观（light | dark），不跟系统
@@ -319,7 +321,7 @@ Configuration: { type: "imageFile", url: { relative: "file:///path/to.heic" } }
 全部是 `L10n.t("key")` 查出来的。新文案先写进 `Catalogs/zh-Hans.swift`（原文语言），再补别的。
 
 **为什么不是 `.lproj/Localizable.strings`**：这个仓库不走 Xcode 工程，产物里有一堆没有 bundle
-的裸二进制（`hourglow-cli`、`panelshot`、七个靶子）。`Bundle.main.localizedString` 在它们身上
+的裸二进制（`hourglow-cli`、`panelshot`、八个靶子）。`Bundle.main.localizedString` 在它们身上
 只会把 key 原样退回来，靶子也就查不出漏翻。文案编进二进制里，三种产物拿到的是同一份，
 加一门语言只是加一个 Swift 文件。
 
@@ -583,3 +585,19 @@ UserDefaults dev.bobbyhuang.hourglow language                 # 界面语言偏�
 **例外是面向外部读者的文件，它们用英文**：`CONTRIBUTING.md`、`SECURITY.md`，
 以及 `README.md`。README 是双语的 —— `README.md`（英文，仓库首页那份）与 `README.zh-CN.md`
 （中文），两份内容对等、互相在顶部链接，**改其中一份就必须同步改另一份**，不允许只更新一边。
+
+
+### 2026-09-05 发版边界回归
+
+- **坏配置不是首次安装**。`AppModel` 初次读取失败时使用空时间轴并留在从属重试状态，
+  不抢排程锁、不拿 Tahoe 预设换壁纸、也不允许设置动作覆盖原文件；配置修复后由监听与
+  30 秒接管重试恢复。`appstartupcheck` 编入真实 AppModel 验证整条链，恢复时用暂停配置。
+- **配置校验要同时守住解码与保存**。经纬度必须有限且在合法范围内，固定时刻不能超出
+  23:59，slot ID 不能重复；保存前先校验，失败不触碰原文件。旧配置 `id: null` 与省略 ID
+  一样会生成 UUID，必须回写，不然每次加载都变身份。
+- **外部整数不能直接取负或相乘**。太阳偏移的 `Int.min` 用 `magnitude` 转字符串展示，
+  中英文占位符都用 `%@`，避免溢出和 `%d` 的 32 位截断；图集分辨率评分乘法检测溢出。
+  扫描时只收普通文件，名为 `night.jpg` 的目录不是图片。
+- **本地一天不是永远 24 小时**。CLI `simulate` 按 Calendar 的 day interval 扫描，
+  夏令时开始/结束日分别覆盖 23/25 小时。`verify-cli-boundaries.py` 从真实 CLI 验证。
+- 更新 helper 回归除成功替换外还覆盖等待活着的父进程、第二次 move 失败后恢复旧 app。

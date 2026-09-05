@@ -83,7 +83,7 @@ func humanize(_ interval: TimeInterval) -> String {
 
 func loadSchedule() -> Schedule {
     do { return try Store.load() }
-    catch { fail(L10n.t("cli.loadFailed", "\(error)")) }
+    catch { fail(L10n.t("cli.loadFailed", error.localizedDescription)) }
 }
 
 // MARK: - 命令
@@ -260,7 +260,7 @@ func setLocation() {
         do {
             try Store.save(schedule)
             print(L10n.t("cli.location.cleared"))
-        } catch { fail("\(error)") }
+        } catch { fail(error.localizedDescription) }
         return
     }
     if positional.count >= 2,
@@ -270,7 +270,7 @@ func setLocation() {
         do {
             try Store.save(schedule)
             print(L10n.t("cli.location.set", lat, lon, name.map { " \($0)" } ?? ""))
-        } catch { fail("\(error)") }
+        } catch { fail(error.localizedDescription) }
         return
     }
 
@@ -282,7 +282,7 @@ func setLocation() {
         try Store.save(schedule)
         print(L10n.t("cli.location.place", city.name,
                      city.coordinate.latitude, city.coordinate.longitude))
-    } catch { fail("\(error)") }
+    } catch { fail(error.localizedDescription) }
 }
 
 func showCities() {
@@ -313,16 +313,18 @@ func runSimulate() {
     } else {
         day = Date()
     }
-    guard let start = calendar.date(bySettingHour: 0, minute: 0, second: 0, of: day) else {
+    guard let interval = calendar.dateInterval(of: .day, for: day) else {
         fail(L10n.t("cli.simulate.midnightFailed"))
     }
+    let start = interval.start
 
     print(L10n.t("cli.simulate.header", dayFormat.string(from: day)) + "\n")
 
     let nameWidth = column(schedule.slots.map { describe($0.wallpaper) }, min: 20)
     var previous: UUID?
     var transitions = 0
-    for minute in 0..<(24 * 60) {
+    // 夏令时当天可能只有 23 或 25 小时；按下一个本地午夜收尾。
+    for minute in 0..<Int(ceil(interval.duration / 60)) {
         let instant = start.addingTimeInterval(Double(minute) * 60)
         guard let resolution = schedule.resolve(at: instant, calendar: calendar) else { continue }
         if resolution.active.id != previous {

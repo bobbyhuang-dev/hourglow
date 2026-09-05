@@ -42,10 +42,11 @@ enum Store {
         let schedule = try JSONDecoder().decode(Schedule.self, from: data)
         let object = try JSONSerialization.jsonObject(with: data) as? [String: Any]
         let rawSlots = object?["slots"] as? [[String: Any]] ?? []
-        return (schedule, rawSlots.contains { $0["id"] == nil })
+        return (schedule, rawSlots.contains { $0["id"] == nil || $0["id"] is NSNull })
     }
 
     static func save(_ schedule: Schedule) throws {
+        try schedule.validate()
         try FileManager.default.createDirectory(at: directoryURL,
                                                 withIntermediateDirectories: true)
         let encoder = JSONEncoder()

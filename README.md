@@ -278,11 +278,13 @@ offline, none of which touch your real wallpaper:
 ./build/enginecheck            # engine: the assert-vs-stand-down matrix, and timer scheduling
 ./build/importcheck            # import: 24 Hour Wallpaper filenames, multi-resolution scenes, even split
 ./build/appcheck               # app state: drafts, save boundaries, external config conflicts, onboarding rules
+./build/appstartupcheck        # damaged-config startup and automatic recovery (about 30 seconds)
 ./build/updatecheck            # updater: SemVer ordering, Release parsing, SHA-256
 ./build/l10ncheck Sources      # strings: nothing missing, empty or extra; placeholders match; every key used in code exists
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 bash Tests/verify-app-signature.sh build/HourGlow.app   # signature and its stable designated requirement
 python3 Tests/verify-solar.py  # sun times cross-checked against the ephem ephemeris (10 cases, max deviation 4s)
+python3 Tests/verify-cli-boundaries.py # invalid input and 23/25-hour daylight-saving days
 ./build/panelshot ~/Desktop    # render every panel page plus the guide's five steps to PNG, for comparing layout changes
 ```
 

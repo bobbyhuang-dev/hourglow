@@ -8,6 +8,11 @@ struct Coordinate: Codable, Equatable, Hashable {
     /// 选地点时记下的城市名。旧配置没有这一项，解码为 nil。
     var name: String? = nil
 
+    var isValid: Bool {
+        latitude.isFinite && longitude.isFinite
+            && (-90...90).contains(latitude) && (-180...180).contains(longitude)
+    }
+
     private enum Key: String, CodingKey { case latitude, longitude, name }
 
     init(latitude: Double, longitude: Double, name: String? = nil) {
@@ -21,6 +26,7 @@ struct Coordinate: Codable, Equatable, Hashable {
         latitude = try c.decode(Double.self, forKey: .latitude)
         longitude = try c.decode(Double.self, forKey: .longitude)
         name = try c.decodeIfPresent(String.self, forKey: .name)
+        guard isValid else { throw ScheduleError.invalidCoordinate }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -70,8 +76,12 @@ extension Trigger: Codable {
         let c = try decoder.container(keyedBy: Key.self)
         switch try c.decode(String.self, forKey: .type) {
         case "clock":
-            self = .clock(hour: try c.decode(Int.self, forKey: .hour),
-                          minute: try c.decodeIfPresent(Int.self, forKey: .minute) ?? 0)
+            let hour = try c.decode(Int.self, forKey: .hour)
+            let minute = try c.decodeIfPresent(Int.self, forKey: .minute) ?? 0
+            guard (0..<24).contains(hour), (0..<60).contains(minute) else {
+                throw ScheduleError.invalidClock
+            }
+            self = .clock(hour: hour, minute: minute)
         case "solar":
             self = .solar(event: try c.decode(SolarEvent.self, forKey: .event),
                           offsetMinutes: try c.decodeIfPresent(Int.self, forKey: .offsetMinutes) ?? 0)
@@ -120,8 +130,9 @@ extension Trigger: CustomStringConvertible {
         case .solar(let e, let off):
             let name = L10n.t("sun.\(e.rawValue)")
             if off == 0 { return name }
-            return off > 0 ? L10n.t("trigger.solar.after", name, off)
-                           : L10n.t("trigger.solar.before", name, -off)
+            // Int.min 不能取负；先转十进制文字也避免 %d 把 64 位偏移截成 32 位。
+            return off > 0 ? L10n.t("trigger.solar.after", name, String(off.magnitude))
+                           : L10n.t("trigger.solar.before", name, String(off.magnitude))
         case .solarPhase(let phase, let index, let count):
             return L10n.t("trigger.phase", phase.name, index + 1, count)
         }
@@ -207,11 +218,44 @@ struct Schedule: Codable {
         slots = try c.decodeIfPresent([Slot].self, forKey: .slots) ?? []
         paused = try c.decodeIfPresent(Bool.self, forKey: .paused) ?? false
         location = try c.decodeIfPresent(Coordinate.self, forKey: .location)
+        try validate()
+    }
+
+    /// 手改 JSON 与 UI/CLI 保存共用边界，避免非法值落盘后才被求值器静默跳过。
+    func validate() throws {
+        if let location, !location.isValid { throw ScheduleError.invalidCoordinate }
+        guard Set(slots.map(\.id)).count == slots.count else { throw ScheduleError.duplicateID }
+        for slot in slots {
+            switch slot.trigger {
+            case .clock(let hour, let minute):
+                guard (0..<24).contains(hour), (0..<60).contains(minute) else {
+                    throw ScheduleError.invalidClock
+                }
+            case .solar: break
+            case .solarPhase(_, let index, let count):
+                guard count > 0, index >= 0, index < count else {
+                    throw ScheduleError.invalidPhase
+                }
+            }
+        }
     }
 
     /// 实际用于计算的坐标：手填优先，否则按系统时区推断。
     var effectiveCoordinate: Coordinate? {
         location ?? ApproxLocation.fromTimeZone()
+    }
+}
+
+enum ScheduleError: LocalizedError {
+    case invalidCoordinate, invalidClock, invalidPhase, duplicateID
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidCoordinate: return L10n.t("config.error.coordinate")
+        case .invalidClock: return L10n.t("config.error.clock")
+        case .invalidPhase: return L10n.t("config.error.phase")
+        case .duplicateID: return L10n.t("config.error.duplicateID")
+        }
     }
 }
 

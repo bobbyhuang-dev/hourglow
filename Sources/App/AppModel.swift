@@ -82,6 +82,7 @@ final class AppModel {
     private var watcher: ConfigWatcher?
     private var ticker: Timer?
     private var messageExpiry: DispatchWorkItem?
+    private var awaitingReadableConfig = false
     @ObservationIgnored private var updateTicker: Timer?
     @ObservationIgnored private var updateTask: Task<Void, Never>?
     @ObservationIgnored private var languageObserver: NSObjectProtocol?
@@ -94,11 +95,22 @@ final class AppModel {
         catalog = (try? AerialCatalog.load()) ?? []
         assetNames = Dictionary(catalog.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })
 
-        let loaded = (try? Store.load()) ?? Tahoe.preset
+        let loaded: Schedule
+        let loadFailed: Bool
+        do {
+            loaded = try Store.load()
+            loadFailed = false
+        } catch {
+            // 配置损坏不是首次安装，不能用预设接管用户壁纸，也不能让设置动作覆盖坏文件。
+            // 借从属模式的监听与定期接管重试，等用户修好原文件再启动排程。
+            loaded = Schedule()
+            loadFailed = true
+        }
+        awaitingReadableConfig = loadFailed
         schedule = loaded
         // 面板可能比 start() 先被打开，先把当前时段算出来，别闪一下「没有生效的时段」。
         resolution = loaded.resolve(at: AppModel.now())
-        let acquiredLock = EngineLock.acquire()
+        let acquiredLock = loadFailed ? nil : EngineLock.acquire()
         lock = acquiredLock
         isFollower = acquiredLock == nil
         scheduler = Scheduler(schedule: loaded)
@@ -152,6 +164,7 @@ final class AppModel {
         }
         RunLoop.main.add(updateTicker, forMode: .common)
         self.updateTicker = updateTicker
+        if awaitingReadableConfig { show(L10n.t("model.startup.configFailed")) }
     }
 
     // MARK: - 查询
@@ -741,7 +754,7 @@ final class AppModel {
             do {
                 try paused ? scheduler.pause() : scheduler.resume()
             } catch {
-                show(L10n.t("model.saveFailed", "\(error)"))
+                show(L10n.t("model.saveFailed", error.localizedDescription))
             }
         }
         refresh()
@@ -756,6 +769,10 @@ final class AppModel {
     /// 落盘。编辑期间不会走到这里 —— 草稿只在内存里，点「应用」才调过来。
     @discardableResult
     private func commit(_ updated: Schedule) -> Bool {
+        guard !awaitingReadableConfig else {
+            show(L10n.t("model.startup.configFailed"))
+            return false
+        }
         do {
             if isFollower {
                 // 存下去就够了，对方的 ConfigWatcher 会接着求值。
@@ -764,7 +781,7 @@ final class AppModel {
                 try scheduler.update(schedule: updated)
             }
         } catch {
-            show(L10n.t("model.saveFailed", "\(error)"))
+            show(L10n.t("model.saveFailed", error.localizedDescription))
             return false
         }
         // 引擎也是先落盘再提交内存；UI 遵守同一个顺序，失败时不会显示一份磁盘上不存在的配置。
@@ -816,6 +833,7 @@ final class AppModel {
     }
 
     private func replaceSchedule(_ updated: Schedule) {
+        awaitingReadableConfig = false
         if var session = draftSession {
             let current = updated.slots.first { $0.id == session.slot.id }
             session.reconcile(with: current)

@@ -233,11 +233,13 @@ LaunchAgent 日志 `~/Library/Logs/HourGlow.log`。整个配置目录可以用 `
 ./build/enginecheck            # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
 ./build/importcheck            # 导入：24 Hour Wallpaper 文件名、多分辨率、均分
 ./build/appcheck               # 应用状态：草稿、保存边界、外部配置冲突、新手指引的弹出规则
+./build/appstartupcheck        # 损坏配置启动、修复后自动接管（约 30 秒）
 ./build/updatecheck            # 更新器：SemVer 排序、Release 解析、SHA-256
 ./build/l10ncheck Sources      # 文案表：不漏词、不空、不多词，占位符对得上，代码里用到的 key 都存在
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 bash Tests/verify-app-signature.sh build/HourGlow.app   # 签名与稳定的 designated requirement
 python3 Tests/verify-solar.py  # 日出日落对拍 ephem 星历（10 个案例，最大偏差 4 秒）
+python3 Tests/verify-cli-boundaries.py # 非法输入与夏令时 23/25 小时日
 ./build/panelshot ~/Desktop    # 把各个界面和新手指引五步画成 PNG，改版式时对照
 ```
 

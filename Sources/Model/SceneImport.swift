@@ -253,6 +253,8 @@ enum SceneImport {
             let ext = url.pathExtension.lowercased()
             guard imageExts.contains(ext) else { continue }
             if url.lastPathComponent.hasPrefix(".") { continue }
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            else { continue }
             files.append(url)
         }
         return files
@@ -295,7 +297,11 @@ enum SceneImport {
             let name = current.lastPathComponent
             if isResolutionComponent(name) {
                 let parts = name.lowercased().split(separator: "x")
-                if let width = Int(parts[0]), let height = Int(parts[1]) { return width * height }
+                if let width = Int(parts[0]), let height = Int(parts[1]) {
+                    // 目录名来自外部图集，两个各自合法的 Int 相乘仍可能溢出。
+                    let area = width.multipliedReportingOverflow(by: height)
+                    return area.overflow ? Int.max : area.partialValue
+                }
             }
             let parent = current.deletingLastPathComponent()
             if parent.path == current.path { break }

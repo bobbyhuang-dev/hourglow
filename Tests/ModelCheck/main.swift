@@ -254,6 +254,80 @@ do {
     check(false, "solarPhase Codable：\(error)")
 }
 
+// MARK: - 发布前输入边界
+
+for trigger in [
+    #"{"type":"clock","hour":24}"#,
+    #"{"type":"clock","hour":-1}"#,
+    #"{"type":"clock","hour":12,"minute":60}"#,
+    #"{"type":"clock","hour":12,"minute":-1}"#,
+] {
+    check((try? JSONDecoder().decode(Trigger.self, from: Data(trigger.utf8))) == nil,
+          "非法固定时刻不能解码：\(trigger)")
+}
+for (latitude, longitude) in [(91.0, 0.0), (-91, 0), (0, 181), (0, -181)] {
+    let json = "{\"latitude\":\(latitude),\"longitude\":\(longitude)}"
+    check((try? JSONDecoder().decode(Coordinate.self, from: Data(json.utf8))) == nil,
+          "拒绝越界坐标 \(latitude), \(longitude)")
+}
+check(Coordinate(latitude: 90, longitude: -180).isValid, "南北极与换日线端点合法")
+check(!Coordinate(latitude: .nan, longitude: 0).isValid, "拒绝 NaN 坐标")
+check(!Coordinate(latitude: 0, longitude: .infinity).isValid, "拒绝无限坐标")
+check(Trigger.solar(event: .sunrise, offsetMinutes: Int.min).description
+      .contains(String(Int.min.magnitude)), "最小整数偏移展示不溢出、不截断")
+check(Trigger.solar(event: .sunset, offsetMinutes: Int.max).description
+      .contains(String(Int.max)), "最大整数偏移展示不截断")
+
+do {
+    let nullID = Data(#"{"slots":[{"id":null,"trigger":{"type":"clock","hour":9},"wallpaper":{"type":"image","path":"/null.jpg"}}]}"#.utf8)
+    try nullID.write(to: Store.fileURL)
+    let first = try Store.load()
+    let second = try Store.load()
+    check(first.slots.first?.id == second.slots.first?.id,
+          "显式 null ID 也会回写，反复加载保持稳定")
+    let saved = try Data(contentsOf: Store.fileURL)
+    for invalid in [
+        Schedule(slots: first.slots, location: Coordinate(latitude: 91, longitude: 0)),
+        Schedule(slots: [morning, morning]),
+        Schedule(slots: [Slot(trigger: .clock(hour: 25, minute: 0), wallpaper: .image(path: "/bad"))]),
+    ] {
+        do {
+            try Store.save(invalid)
+            check(false, "非法配置不能覆盖原文件")
+        } catch {
+            let afterFailure = try Data(contentsOf: Store.fileURL)
+            check(afterFailure == saved, "非法保存失败后原配置保持不变")
+        }
+    }
+    let damaged = Data("{broken".utf8)
+    try damaged.write(to: Store.fileURL)
+    check((try? Store.load()) == nil, "损坏配置必须报错，不回退预设")
+    let afterLoad = try Data(contentsOf: Store.fileURL)
+    check(afterLoad == damaged, "读取失败保留原始配置供修复")
+} catch {
+    check(false, "配置边界检查可以完成：\(error)")
+}
+
+var newYork = Calendar(identifier: .gregorian)
+newYork.timeZone = TimeZone(identifier: "America/New_York")!
+let skippedClock = Trigger.clock(hour: 2, minute: 30)
+let springDay = localDate("2026-03-08 12:00", calendar: newYork)
+check(skippedClock.fireDate(on: springDay, coordinate: nil, calendar: newYork)
+      == localDate("2026-03-08 03:00", calendar: newYork),
+      "夏令时跳过的 02:30 在 03:00 补触发")
+let repeatedClock = Trigger.clock(hour: 1, minute: 30)
+let autumnDay = localDate("2026-11-01 12:00", calendar: newYork)
+check(repeatedClock.fireDate(on: autumnDay, coordinate: nil, calendar: newYork)
+      == ISO8601DateFormatter().date(from: "2026-11-01T05:30:00Z"),
+      "夏令时回拨的 01:30 只取第一次")
+for slot in [morning, night] {
+    let instant = slot.trigger.fireDate(on: noon, coordinate: nil, calendar: calendar)!
+    check(clockSchedule.resolve(at: instant, calendar: calendar)?.active.id == slot.id,
+          "恰好到达边界时新时段立即生效")
+    check(clockSchedule.resolve(at: instant.addingTimeInterval(-0.001), calendar: calendar)?.active.id != slot.id,
+          "边界前一毫秒仍是上一段")
+}
+
 if failures > 0 {
     FileHandle.standardError.write(Data("\n\(failures) 项测试失败\n".utf8))
     exit(1)

@@ -73,11 +73,13 @@ the only one that puts anything on screen, and only briefly.
 ./build/enginecheck    # engine: the assert-vs-stand-down matrix, timer scheduling
 ./build/importcheck    # import: filename and subfolder classification, multi-resolution, even split
 ./build/appcheck       # app state: drafts, save boundaries, config conflicts, onboarding rules
+./build/appstartupcheck        # damaged-config startup and automatic recovery (about 30 seconds)
 ./build/updatecheck    # updater: SemVer ordering, Release parsing, SHA-256
 ./build/l10ncheck Sources   # strings: nothing missing, empty or extra; placeholders match; every key used in code exists
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 bash Tests/verify-app-signature.sh build/HourGlow.app
 python3 Tests/verify-solar.py   # sun times cross-checked against the ephem ephemeris
+python3 Tests/verify-cli-boundaries.py # invalid input and 23/25-hour daylight-saving days
 ```
 
 `verify-solar.py` needs `pip install ephem`. Everything else runs as-is.

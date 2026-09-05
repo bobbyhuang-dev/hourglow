@@ -1,4 +1,4 @@
-# 每次推送与 PR 都跑一遍：编得出来、五个编译靶子全绿、日出日落对得上星历。
+# 每次推送与 PR 都跑一遍：编得出来、编译靶子全绿、日出日落对得上星历。
 name: CI
 
 on:
@@ -40,6 +40,7 @@ jobs:
           ./build/enginecheck
           ./build/importcheck
           ./build/appcheck
+          ./build/appstartupcheck
           ./build/updatecheck
           # 带上 Sources：除了对表本身，还把代码里写死的 key 与原文表对一遍。
           ./build/l10ncheck Sources
@@ -54,6 +55,7 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install ephem
           python3 Tests/verify-solar.py
+          python3 Tests/verify-cli-boundaries.py
 
       # 只跑纯计算的子命令：runner 上没有 aerial 素材库，也没有壁纸配置，
       # `catalog` / `now` / `status` 这些要读系统文件的在这里没有意义。

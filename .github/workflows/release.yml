@@ -60,6 +60,7 @@ jobs:
           ./build/enginecheck
           ./build/importcheck
           ./build/appcheck
+          ./build/appstartupcheck
           ./build/updatecheck
           ./build/l10ncheck Sources
           bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
@@ -73,6 +74,7 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install ephem
           python3 Tests/verify-solar.py
+          python3 Tests/verify-cli-boundaries.py
 
       # 用 ditto 而不是 zip：只有它能原样保留 bundle 的符号链接与扩展属性，
       # 用 zip 打出来的 .app 解压后签名会坏。

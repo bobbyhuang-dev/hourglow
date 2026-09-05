@@ -33,8 +33,8 @@ extension StringCatalog {
         "phase.day": "白昼",
         "phase.sunset": "日落",
         "phase.night": "夜晚",
-        "trigger.solar.after": "%1$@后%2$d分",
-        "trigger.solar.before": "%1$@前%2$d分",
+        "trigger.solar.after": "%1$@后%2$@分",
+        "trigger.solar.before": "%1$@前%2$@分",
         "trigger.phase": "%1$@ %2$d/%3$d",
 
         // MARK: aerial 分类
@@ -91,8 +91,8 @@ extension StringCatalog {
         "slot.phase.position": "%1$@ · 第 %2$d / %3$d 张",
         "slot.phase.note": "按当天航海晨光 / 日出 / 日落 / 民用黄昏均分。张数变了重新导入就会重算。",
         "slot.offset.exact": "正好在%@",
-        "slot.offset.after": "%1$@后 %2$d 分钟",
-        "slot.offset.before": "%1$@前 %2$d 分钟",
+        "slot.offset.after": "%1$@后 %2$@ 分钟",
+        "slot.offset.before": "%1$@前 %2$@ 分钟",
         "slot.today.noCoordinate": "缺少坐标，会跳过",
         "slot.today.polar": "极昼或极夜，会跳过",
         "slot.today": "今天是 %@",
@@ -200,6 +200,11 @@ extension StringCatalog {
         "model.located": "已定位到 %1$.4f, %2$.4f",
         "model.located.named": "已定位到 %@",
         "model.saveFailed": "保存失败: %@",
+        "config.error.coordinate": "纬度必须在 −90 到 90 之间，经度必须在 −180 到 180 之间。",
+        "config.error.clock": "固定时刻的小时必须为 0–23，分钟必须为 0–59。",
+        "config.error.phase": "天光分段的张数必须大于 0，序号必须在该段范围内。",
+        "config.error.duplicateID": "时段 ID 重复，请为每个时段使用不同的 ID。",
+        "model.startup.configFailed": "配置读取失败，已停止排程。请修复 schedule.json，修复后自动重试。",
         "model.promote.configFailed": "后台引擎已退出，但配置读取失败，稍后重试",
         "model.promote.tookOver": "后台引擎已退出，菜单栏 app 已接管调度",
 
