@@ -1,12 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// 主面板：顶部是「现在挂着哪张、几点换下一张」，中间是时间轴，底部是三个操作。
+/// Main panel: current wallpaper and next change at the top, timeline in the middle, three actions below.
 struct TimelinePage: View {
     @Environment(AppModel.self) private var model
     var open: (Page) -> Void
 
-    /// 列表实际有多高。时段少的时候面板跟着收，不留一屏空白。
+    /// Actual list height. Shrink the panel for fewer slots rather than leaving a screenful of whitespace.
     @State private var listHeight: CGFloat = Panel.rowHeight
 
     var body: some View {
@@ -24,7 +24,7 @@ struct TimelinePage: View {
         }
     }
 
-    // MARK: - 顶部
+    // MARK: - Header
 
     private var title: some View {
         HStack(spacing: 6) {
@@ -38,7 +38,7 @@ struct TimelinePage: View {
         .padding(.top, 10)
     }
 
-    /// 日出日落按这个点算。中国全境一个时区，不选地区就永远是上海。
+    /// Solar times use this coordinate. China has one time zone, so inference without a chosen location always picks Shanghai.
     private var placeChip: some View {
         Button { open(.place) } label: {
             HStack(spacing: 3) {
@@ -57,7 +57,7 @@ struct TimelinePage: View {
         .help(L10n.t("timeline.place.help"))
     }
 
-    /// 当前生效的那一段。缩略图 + 名字 + 下次切换，一眼看完。
+    /// The active slot: thumbnail, name, and next change at a glance.
     private var status: some View {
         HStack(spacing: 10) {
             Thumbnail(url: model.resolution.flatMap { model.thumbnailURL(for: $0.active.wallpaper) },
@@ -74,8 +74,8 @@ struct TimelinePage: View {
                      ?? L10n.t("timeline.noActive"))
                     .font(Panel.Font.headline)
                     .lineLimit(1)
-                // 暂停时这一句本身就是「已暂停」，不另立一个标记：说的是同一件事，
-                // 说两遍反而像两处状态。图标 + 橙色足够把它和「下一次切换」区分开。
+                // While paused, the subtitle already says so; a separate badge would repeat one state as two.
+                // The icon and orange tint distinguish it from the next-change message.
                 Label {
                     Text(subtitle)
                 } icon: {
@@ -95,9 +95,9 @@ struct TimelinePage: View {
         .padding(.bottom, 10)
     }
 
-    /// 大图上方那行小字：说清楚下面这个名字到底是什么。
-    /// 用户手动换过、或引擎还没来得及写（暂停中、缺坐标跳过），挂着的就不是这张，
-    /// 那时候只能说它是「排程中的」——具体差在哪由下面的提示条负责。
+    /// The caption above the large thumbnail explains what its name represents.
+    /// After a manual change, or before the engine writes (paused or missing coordinates), this is not
+    /// the actual wallpaper. Call it scheduled; the notice below explains the specific discrepancy.
     private var caption: String? {
         guard model.resolution != nil else { return nil }
         return L10n.t(model.activeIsActual ? "timeline.caption.actual"
@@ -121,13 +121,13 @@ struct TimelinePage: View {
         if let message = model.message {
             PanelNotice(symbol: "arrow.triangle.2.circlepath", text: message)
         } else if model.needsCoordinate {
-            // 这条提示本身就是入口：点进设置页去定位或手填经纬度。
+            // The notice itself links to location controls for locating or entering coordinates.
             PanelNotice(symbol: "exclamationmark.triangle.fill",
                         text: L10n.t("timeline.notice.noCoordinate"), tint: .orange,
                         action: { open(.place) })
         } else if model.solarUnavailable {
-            // 极圈的极昼极夜：坐标没问题，是今天根本没有日出日落。天光分段一段都排不上，
-            // 壁纸会一直停着 —— 不说一声，看起来就像 app 坏了。
+            // Polar day/night: coordinates are valid, but today has no sunrise/sunset and no daylight slots resolve.
+            // The wallpaper stays unchanged; without an explanation, the app looks broken.
             PanelNotice(symbol: "sun.max.trianglebadge.exclamationmark.fill",
                         text: L10n.t("timeline.notice.polar"), tint: .orange,
                         action: { open(.place) })
@@ -140,7 +140,7 @@ struct TimelinePage: View {
         }
     }
 
-    // MARK: - 时间轴
+    // MARK: - Timeline
 
     private var list: some View {
         ScrollView {
@@ -153,6 +153,7 @@ struct TimelinePage: View {
             .padding(.horizontal, Panel.rowInset)
             .padding(.vertical, 6)
             .measureHeight(into: $listHeight)
+            .background(VerticalOnlyScroll())
         }
         .frame(height: min(listHeight, Panel.listMaxHeight))
     }
@@ -174,7 +175,7 @@ struct TimelinePage: View {
                             .font(Panel.Font.body.weight(isActive ? .semibold : .regular))
                             .monospacedDigit()
                             .foregroundStyle(isActive ? Color.accentColor : .primary)
-                        // 固定时刻的规则就是左边那个时间本身，不必再说一遍。
+                        // A fixed-time rule is already shown by the time on the left; do not repeat it.
                         if slot.trigger.dependsOnSun {
                             Text(slot.trigger.description)
                                 .font(Panel.Font.caption)
@@ -201,9 +202,9 @@ struct TimelinePage: View {
             .padding(.horizontal, 8)
             .frame(height: Panel.rowHeight)
             .opacity(slot.enabled ? 1 : 0.55)
-            // 行首一根竖条，标「现在挂着的就是这一段」。
-            // 曾经是整行铺强调色，但那是 macOS 列表里「我选中了它」的样子 ——
-            // 这里的行点下去是翻到编辑页，没有选中态可言，状态得用别的记号说。
+            // A leading vertical bar marks the currently displayed slot.
+            // A full-row accent background used to imply macOS list selection, but these rows
+            // navigate to an editor and have no selected state; status needs a different visual cue.
             .overlay(alignment: .leading) {
                 if isActive {
                     Capsule()
@@ -234,10 +235,10 @@ struct TimelinePage: View {
         .buttonStyle(PanelRowStyle())
     }
 
-    // MARK: - 底部
+    // MARK: - Footer
 
-    /// 只剩暂停与 ⋯。曾经还有一个「立即应用」，但它做的事引擎自己一直在做 ——
-    /// 到点、唤醒、改配置都会重新求值 —— 按下去多半什么也不会变，白占一个主按钮的位置。
+    /// Pause and ⋯ remain. The old Apply Now button duplicated automatic engine evaluation
+    /// on deadlines, wake, and configuration changes; usually doing nothing, it wasted a primary action.
     private var footer: some View {
         HStack(spacing: 8) {
             Button(L10n.t(model.schedule.paused ? "timeline.resume" : "timeline.pause")) {

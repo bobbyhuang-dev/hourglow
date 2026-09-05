@@ -2,10 +2,10 @@ import CoreLocation
 import Foundation
 import MapKit
 
-/// 把用户打的地名变成坐标。
+/// Resolves a user-entered place name to coordinates.
 ///
-/// 先走系统 MapKit 地理编码（`MKGeocodingRequest`，不用自己申请 key），
-/// 没结果再问 OpenStreetMap Nominatim。日出日落仍然本地算，网络只在选地点时用一次。
+/// Tries system MapKit geocoding first (`MKGeocodingRequest`, no API key required), then OpenStreetMap
+/// Nominatim if no result is found. Sunrise and sunset remain local calculations; only place selection uses the network.
 enum PlaceSearch {
 
     static func remote(_ query: String) async -> [City] {
@@ -35,7 +35,7 @@ enum PlaceSearch {
         }
     }
 
-    /// 收网络结果的信箱。超时返回后回调还可能再写一次，裸 `var` 会和调用方的读并发。
+    /// Stores network results safely: a callback can still write after timeout, racing the caller's read of an unprotected var.
     private final class Mailbox: @unchecked Sendable {
         private let lock = NSLock()
         private var cities: [City] = []
@@ -51,10 +51,10 @@ enum PlaceSearch {
         }
     }
 
-    /// CLI 用：不经过主线程，避免和 RunLoop 互相等。
+    /// CLI path that avoids the main thread to prevent mutual waits with the RunLoop.
     static func nominatimBlocking(_ query: String) -> [City] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        // 一个字的查询在任何地名库里都能命中一堆不相干的东西，不值得为它跑一趟网络。
+        // Single-character queries match too many unrelated places to justify a network request.
         guard q.count >= 2, let request = nominatimRequest(q) else { return [] }
         let mailbox = Mailbox()
         let done = DispatchSemaphore(value: 0)
@@ -66,8 +66,8 @@ enum PlaceSearch {
         return mailbox.take()
     }
 
-    /// 反查只用来给坐标起个名字。查不到就返回 nil —— 调用方该留住手里那个精确坐标，
-    /// 而不是拿一个编出来的地名把它换掉。
+    /// Reverse lookup only names coordinates. Returns nil on failure so the caller preserves
+    /// the precise coordinates rather than replacing them with a fabricated place.
     static func reverse(_ location: CLLocation) async -> City? {
         guard let request = MKReverseGeocodingRequest(location: location),
               let item = try? await request.mapItems.first else { return nil }
@@ -97,7 +97,7 @@ enum PlaceSearch {
               let url = URL(string: "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=\(encoded)")
         else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 8)
-        // Nominatim 要求可识别的 UA，匿名会 403。
+        // Nominatim requires an identifiable User-Agent; anonymous requests receive 403.
         request.setValue("HourGlow/1.1 (https://github.com/bobbyhuang-dev/hourglow)",
                          forHTTPHeaderField: "User-Agent")
         request.setValue("zh-CN,en", forHTTPHeaderField: "Accept-Language")

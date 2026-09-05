@@ -1,54 +1,54 @@
 import AppKit
 import SwiftUI
 
-// 面板的固定尺寸与共用零件。所有页面共享同一套度量，换页时不跳尺寸。
+// Fixed panel dimensions and shared components. Every page uses the same metrics to avoid resizing on navigation.
 
 enum Panel {
     static let width: CGFloat = 360
-    /// 选壁纸那页固定这么高（网格要铺得开）；时间轴与时段页按内容收，收到这个上限为止。
+    /// Fixed picker height to fit the grid; timeline and slot pages fit their content up to this limit.
     static let height: CGFloat = 470
-    /// 时间轴列表最多这么高，再多就滚动。约等于 7 行。
+    /// Maximum timeline list height, roughly 7 rows; additional rows scroll.
     static let listMaxHeight: CGFloat = 300
-    /// 左右留白。行的圆角背景要比它再往外一点，所以行自己用 `rowInset`。
+    /// Horizontal padding. Rounded row backgrounds extend farther out, so rows use `rowInset`.
     static let inset: CGFloat = 12
     static let rowInset: CGFloat = 8
     static let rowHeight: CGFloat = 44
-    /// 底部操作条（时间轴的三个操作、时段页的「应用」）的高度。
+    /// Height of the bottom action bar: timeline actions or the slot editor's Apply button.
     static let footerHeight: CGFloat = 42
     static let corner: CGFloat = 7
-    /// 分区卡片与「删除」那一行的圆角，比列表行大一点。
+    /// Section-card and Delete-row corners are slightly rounder than list rows.
     static let cardCorner: CGFloat = 8
-    /// 时间轴上标「现在正在跑的是这一段」的那根竖条。
-    /// 它是状态，不是选中 —— 所以只在行首立一根，绝不给整行铺强调色底。
+    /// The timeline's vertical marker for the currently active slot.
+    /// It indicates status, not selection: use a leading bar, never a full-row accent background.
     static let nowBar = CGSize(width: 3, height: 18)
     static let animation: Animation = .snappy(duration: 0.22)
 
-    /// 状态区下面那条「今日天光条」：24 小时横带 + 一行刻度。
+    /// Today's daylight bar beneath the status area: a 24-hour strip plus tick labels.
     static let dayBarHeight: CGFloat = 14
     static let dayBarCorner: CGFloat = 4
-    /// 时段标记：一根圆头短竖线；「现在」的游标比它细、比它高。
+    /// Slot marker: a short round-ended vertical line; the "now" cursor is thinner and taller.
     static let dayBarMarker = CGSize(width: 2, height: 8)
     static let dayBarLabelHeight: CGFloat = 13
 
-    /// 字号只有这几档。视图里不散写数字，两页之间同一层级的文字才会一样大。
+    /// Shared font sizes keep equivalent text consistent across pages; avoid scattered view-local sizes.
     enum Font {
-        /// 状态区的壁纸名、地点页当前地名。
+        /// Wallpaper name in status and current place name on the location page.
         static let headline = SwiftUI.Font.system(size: 13, weight: .semibold)
-        /// 列表行的主文字、开关标题。
+        /// Primary list-row text and toggle titles.
         static let body = SwiftUI.Font.system(size: 12.5)
-        /// 表单控件旁的标签：「每天」、设置项标题。
+        /// Form labels beside controls, such as "Every day" and setting titles.
         static let control = SwiftUI.Font.system(size: 12)
-        /// 副标题、注脚、提示条。
+        /// Subtitles, footnotes, and notices.
         static let secondary = SwiftUI.Font.system(size: 11)
-        /// 行内的触发说明、网格里的名字、「已停用」。
+        /// Inline trigger descriptions, grid names, and disabled labels.
         static let caption = SwiftUI.Font.system(size: 10.5)
-        /// 分区标题、地点页的分组标题。
+        /// Section headings and location-page group headings.
         static let section = SwiftUI.Font.system(size: 11, weight: .semibold)
     }
 
-    /// 分区卡片、输入框与缩略图描边的颜色随外观走。
-    /// 曾经写死 `black.opacity(0.12)` 描边、`quaternary` 铺卡片，暗色下前者等于没有，
-    /// 后者与窗底几乎同色 —— 卡片的边界只能靠猜。
+    /// Section cards, fields, and thumbnail borders adapt to appearance.
+    /// Hardcoded `black.opacity(0.12)` borders vanished in dark mode, while `quaternary` card fills
+    /// nearly matched the window background, making card boundaries impossible to distinguish.
     static let cardFill = adaptive(light: NSColor.black.withAlphaComponent(0.05),
                                    dark: NSColor.white.withAlphaComponent(0.07))
     static let fieldFill = adaptive(light: NSColor.black.withAlphaComponent(0.07),
@@ -56,8 +56,8 @@ enum Panel {
     static let hairline = adaptive(light: NSColor.black.withAlphaComponent(0.12),
                                    dark: NSColor.white.withAlphaComponent(0.10))
 
-    /// 动态色：按视图实际所在的外观解析，不必把 `colorScheme` 传遍每个视图。
-    /// `panelshot --appearance` 只改窗口的 `appearance`，走这条路照样认得。
+    /// Resolve dynamic colors against the view's actual appearance without passing `colorScheme` everywhere.
+    /// This also supports `panelshot --appearance`, which changes only the window's `appearance`.
     private static func adaptive(light: NSColor, dark: NSColor) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
             appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light
@@ -65,38 +65,38 @@ enum Panel {
     }
 }
 
-/// 天光的调色板。应用图标、新手指引的顶栏与时间轴的天光条用同一族颜色，
-/// 三处看上去是同一件东西。
+/// Shared sky palette for the app icon, onboarding header, and timeline daylight bar,
+/// making all three feel like the same product.
 enum Sky {
     static let night = Color(red: 0.13, green: 0.16, blue: 0.32)
-    /// 民用黄昏那种带紫的蓝。
+    /// The violet blue of civil dusk.
     static let dusk = Color(red: 0.33, green: 0.30, blue: 0.47)
-    /// 日出日落前后的暖橙。
+    /// Warm orange around sunrise and sunset.
     static let glow = Color(red: 0.78, green: 0.47, blue: 0.33)
-    /// 白昼的天蓝。指引里用不到（那条渐变只画到晨光为止），天光条上白天占大半。
+    /// Daytime sky blue. Unused in the guide's night-to-dawn gradient, but fills much of the daylight bar.
     static let day = Color(red: 0.55, green: 0.74, blue: 0.92)
 }
 
-/// 新手指引那扇窗的度量。和 `Panel` 分开，因为它不是同一块画布 ——
-/// 菜单栏面板锁死 360 pt 是为了贴着状态项挂下来，而指引是一扇独立的窗，
-/// 360 pt 宽讲不清一段话。度量仍旧集中在这里，视图里不散写数字。
+/// Onboarding window metrics, separate from `Panel` because this is a different canvas.
+/// The menu bar panel is locked to 360 pt to hang beneath its status item; the standalone guide
+/// needs more width for prose. Keep metrics centralized rather than scattering numbers through views.
 enum Guide {
     static let width: CGFloat = 480
-    /// 高度按内容最满的那一步定（第五步的清单 + 两条说明），不是随手取的整数。
+    /// Sized for the fullest step (step five's checklist and two notes), not an arbitrary round number.
     static let height: CGFloat = 566
-    /// 顶部那条插图带。五步共用同一片天光渐变，只换上面的图。
+    /// Header illustration strip. All five steps share the sky gradient and change only the illustration.
     static let heroHeight: CGFloat = 140
-    /// 底部：跳过 / 进度点 / 上一步 · 继续。
+    /// Footer: Skip / progress dots / Back · Continue.
     static let footerHeight: CGFloat = 54
     static let inset: CGFloat = 24
-    /// 正文区。固定这么高，翻页时标题不会上下跳；内容多了自己滚。
-    /// 减 1 是那条分隔线。
+    /// Fixed body height prevents title jumps during navigation; overflowing content scrolls.
+    /// Subtract 1 for the divider.
     static var contentHeight: CGFloat { height - heroHeight - footerHeight - 1 }
 }
 
-// MARK: - 页头
+// MARK: - Page header
 
-/// 统一的页头：左侧返回、居中标题、右侧附件。三页都用它，标题位置不会左右跳。
+/// Shared header: back on the left, centered title, accessory on the right. Keeps titles aligned across all three pages.
 struct PanelHeader<Trailing: View>: View {
     var title: String
     var back: (() -> Void)?
@@ -134,9 +134,9 @@ extension PanelHeader where Trailing == EmptyView {
     }
 }
 
-// MARK: - 分区
+// MARK: - Sections
 
-/// 「系统设置」那种分组：小标题 + 一块浅底圆角卡片。
+/// System Settings-style group: a small heading above a lightly filled rounded card.
 struct PanelSection<Content: View>: View {
     var title: String
     @ViewBuilder var content: () -> Content
@@ -158,12 +158,44 @@ struct PanelSection<Content: View>: View {
     }
 }
 
-// MARK: - 行
+// MARK: - Scrolling
 
-/// 列表行的按钮样式：悬停时一层淡底，按下再深一点。菜单栏面板里最像原生的做法。
+/// Locks the enclosing SwiftUI `ScrollView` to vertical scrolling only.
 ///
-/// 底色只表示「鼠标在这儿」和「正在按」这两件事，任何行都一样 —— 常驻的底色是列表
-/// 「选中项」的语言，而这个面板里的行点下去是翻页，从来没有选中态。
+/// On macOS a vertical `ScrollView` is backed by an `NSScrollView` whose horizontal elasticity
+/// defaults to `.automatic`: a sideways trackpad swipe drags the whole list out and snaps it
+/// back. The panel width is fixed, so there is never anything to scroll horizontally.
+/// `.scrollBounceBehavior(.basedOnSize, axes: .horizontal)` still leaves AppKit at `.automatic`
+/// and does not stop it; the only reliable fix is to find that `NSScrollView` and turn
+/// horizontal elasticity off. Place it inside the `ScrollView` content
+/// (`.background(VerticalOnlyScroll())`), not on the `ScrollView` itself.
+struct VerticalOnlyScroll: NSViewRepresentable {
+    func makeNSView(context: Context) -> Probe { Probe() }
+
+    func updateNSView(_ view: Probe, context: Context) { view.apply() }
+
+    final class Probe: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+        }
+
+        /// Re-apply whenever the view enters a window: SwiftUI may replace the backing
+        /// `NSScrollView` (for example when the whole panel is rebuilt after a language change).
+        func apply() {
+            guard let scrollView = enclosingScrollView else { return }
+            scrollView.horizontalScrollElasticity = .none
+            scrollView.hasHorizontalScroller = false
+        }
+    }
+}
+
+// MARK: - Rows
+
+/// Native-feeling panel row button style: a light hover fill, darkened while pressed.
+///
+/// Fill indicates hover or pressing for every row. A persistent fill implies list selection,
+/// but panel rows navigate to another page and never have a selected state.
 struct PanelRowStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         RowBody(configuration: configuration)
@@ -187,10 +219,10 @@ struct PanelRowStyle: ButtonStyle {
     }
 }
 
-// MARK: - 缩略图
+// MARK: - Thumbnails
 
-/// 缩略图解码不在主线程做，结果按 URL 缓存。
-/// 156 张 aerial 缩略图各约 50 KB，滚动时逐张同步解码会明显掉帧。
+/// Decode thumbnails off the main thread and cache by URL.
+/// Synchronously decoding 156 aerial thumbnails of roughly 50 KB each causes visible scrolling stutter.
 final class ThumbnailCache {
     static let shared = ThumbnailCache()
 
@@ -211,8 +243,8 @@ final class ThumbnailCache {
         return image
     }
 
-    /// 走 ImageIO 直接出缩略图：本地图片可能是几十 MB 的 HEIC，
-    /// 整张解码进内存只为了画 100 pt 宽的一格并不值得。
+    /// Ask ImageIO for a thumbnail directly: a local HEIC may be tens of MB,
+    /// and decoding the whole image just to draw a 100 pt cell wastes memory.
     private static func decode(_ url: URL, maxPixel: Int) -> NSImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
@@ -226,7 +258,7 @@ final class ThumbnailCache {
     }
 }
 
-/// 一格壁纸缩略图。读不到（未下载的本地图、缺文件）时退化成一个占位方块。
+/// A wallpaper thumbnail cell, falling back to a placeholder when unreadable (undownloaded local image or missing file).
 struct Thumbnail: View {
     var url: URL?
     var size: CGSize
@@ -238,7 +270,7 @@ struct Thumbnail: View {
         self.url = url
         self.size = size
         self.corner = corner
-        // 缓存里已经有就直接拿：翻回上一页、重新滚回来时不该再闪一下占位方块。
+        // Use cached images immediately so returning to a page or scrolling back does not flash a placeholder.
         _image = State(initialValue: url.flatMap { ThumbnailCache.shared.cached($0) })
     }
 
@@ -271,19 +303,19 @@ struct Thumbnail: View {
     }
 }
 
-// MARK: - 时刻输入
+// MARK: - Time input
 
-/// 「每天 09:00」里那个时刻输入框，只有小时和分钟。
+/// The hours-and-minutes field in "Every day 09:00".
 ///
-/// 为什么不用 SwiftUI 的 `DatePicker(.stepperField)`：数字几乎贴着 AppKit 画的框线，
-/// 而那点横向内边距从 SwiftUI 这一层够不到 —— 给它宽度它不撑（只把控件在盒子里居中），
-/// 换 `controlSize` 只长高不长宽。所以这里自己包一层 `NSDatePicker`，关掉它自带的
-/// 边框与底色，留白改由外面的 padding 决定；点小时/分钟分别改、上下键、步进器
-/// 这些编辑行为仍旧是系统原生那一套。
+/// SwiftUI's `DatePicker(.stepperField)` places digits too close to the AppKit border, and SwiftUI
+/// cannot adjust that horizontal inset: assigning width only centers the control in a larger box,
+/// while `controlSize` changes height, not width. Wrap `NSDatePicker` instead, removing its border
+/// and background so outer padding controls spacing. Editing individual hour/minute segments,
+/// arrow keys, and the stepper all retain native behavior.
 ///
-/// 代价是没了系统的聚焦光晕；正在改哪一段仍然靠数字本身的高亮看得出来。
+/// This loses the system focus ring, but digit highlighting still identifies the segment being edited.
 ///
-/// 底色与留白也一起包在这里，不留给调用方：上下两边**不等**，散在视图里只会被当成笔误。
+/// Own background and padding here: top and bottom are deliberately **unequal**, not a caller's typo.
 struct TimeField: View {
     @Binding var date: Date
 
@@ -291,12 +323,12 @@ struct TimeField: View {
         Field(date: $date)
             .fixedSize()
             .padding(.horizontal, 8)
-            // 上下差半点是补出来的，不是随手写的：`NSDatePicker` 的内容贴着自己盒子的
-            // 底边画，下面固定留着字体的降部空间（12 pt 字体是 6.5 pt），上面把余下的
-            // 高度全吃掉。而时刻只有数字和冒号，一个降部都用不上 —— 上下给一样的
-            // padding，看上去就是「上 8.5 下 10」的偏上。补这半点之后数字与右边的
-            // 步进器同时正好居中。字号跟着改成 12（与左边的「每天」一齐），
-            // 13 pt 时这个差额是 1.5 pt，补平数字就会把步进器顶歪。
+            // The half-point vertical adjustment is deliberate. `NSDatePicker` draws against its bottom
+            // edge, reserving font descender space below (6.5 pt for a 12 pt font) and consuming the rest
+            // above. Times contain only digits and colons, so they need none of that descender space.
+            // Equal padding looks top-heavy ("8.5 above, 10 below"). This half-point correction centers
+            // both digits and the right-hand stepper. Use 12 pt to match "Every day" on the left:
+            // at 13 pt, the 1.5 pt discrepancy would misalign the stepper if corrected for the digits.
             .padding(.top, 3.5)
             .padding(.bottom, 3)
             .background(Panel.fieldFill,
@@ -321,7 +353,7 @@ private struct Field: NSViewRepresentable {
 
     func updateNSView(_ picker: NSDatePicker, context: Context) {
         context.coordinator.date = $date
-        // 正在输入时别把光标顶回开头。
+        // Do not reset the insertion point to the beginning while the user types.
         if picker.dateValue != date { picker.dateValue = date }
     }
 
@@ -335,12 +367,12 @@ private struct Field: NSViewRepresentable {
     }
 }
 
-// MARK: - 提示条
+// MARK: - Notices
 
-/// 页面顶部的一行说明（缺坐标、被手动换过、谁在排程）。始终一行高，不撑版面。
+/// A one-line page-top explanation (missing coordinates, manual override, scheduler ownership) that does not expand the layout.
 ///
-/// 给了 `action` 就变成可点的一条 —— 说的是「哪儿不对」，点进去就该是「在哪儿改」。
-/// 末尾多一个尖括号，好让它看起来确实能点，不然一条提示条上的点击是猜出来的。
+/// Providing `action` makes the notice clickable: explaining what is wrong should link to where it can be fixed.
+/// A trailing chevron makes the interaction discoverable rather than something users must guess.
 struct PanelNotice: View {
     var symbol: String
     var text: String
@@ -380,19 +412,19 @@ struct PanelNotice: View {
     }
 }
 
-// MARK: - 量内容高度
+// MARK: - Content height measurement
 
 extension View {
-    /// 把自己的高度报给外面。用来让列表按内容收——面板宽度是固定的，
-    /// 但只有四个时段却撑出一屏空白并不好看。
+    /// Report this view's height so lists can shrink to fit. Panel width is fixed,
+    /// but four slots should not leave a screenful of empty space.
     func measureHeight(into height: Binding<CGFloat>) -> some View {
         onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { height.wrappedValue = $0 }
     }
 }
 
-// MARK: - 经纬度
+// MARK: - Coordinates
 
-/// 经纬度输入框。固定宽度，等宽数字 —— 两个框并排时数字不会因为位数不同而跳。
+/// Coordinate field with fixed width and monospaced digits, keeping side-by-side values stable across digit counts.
 struct CoordinateField: View {
     @Binding var text: String
 
@@ -409,7 +441,7 @@ struct CoordinateField: View {
     }
 }
 
-// MARK: - 时刻格式
+// MARK: - Time formatting
 
 enum Clock {
     static let hourMinute: DateFormatter = {
@@ -422,7 +454,7 @@ enum Clock {
         date.map { hourMinute.string(from: $0) } ?? "—:—"
     }
 
-    /// 「还有 2 小时 12 分」。倒计时只给到分钟，秒级精度在这里没有意义。
+    /// "2 hours 12 minutes remaining." Minute precision is enough; seconds add no useful information here.
     static func remaining(until date: Date) -> String {
         let minutes = max(0, Int((date.timeIntervalSince(AppModel.now()) / 60).rounded()))
         let (hours, rest) = (minutes / 60, minutes % 60)

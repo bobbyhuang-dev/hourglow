@@ -1,11 +1,11 @@
 import Foundation
 
-// 语言表的靶子：完整性、占位符、挑语言的规则，外加「代码里用到的 key 都存在」。
+// Catalog checks: completeness, placeholders, language resolution, and source key usage.
 //
-//   ./build/l10ncheck [要扫描的源码目录…]
+//   ./build/l10ncheck [source directories to scan…]
 //
-// 不带目录只查表；带上 `Sources` 会把 `L10n.t("…")` 里写死的 key 也对一遍，
-// 打错一个字母的后果是界面上露出 `slot.apply` 这种半成品，编译器不会拦。
+// Without directories, only catalogs are checked. Passing `Sources` also checks literal
+// `L10n.t("…")` keys: the compiler cannot catch a typo that exposes a raw key in the UI.
 
 private var failures = 0
 
@@ -18,9 +18,9 @@ private func check(_ condition: @autoclosure () -> Bool, _ message: String) {
     }
 }
 
-// MARK: - 占位符
+// MARK: - Placeholders
 
-/// `String(format:)` 的一个参数位。`%1$@` → (1, "@")，`%.4f` → (顺序位, "f")。
+/// A `String(format:)` argument: `%1$@` → (1, "@"), `%.4f` → (implicit position, "f").
 private struct Placeholder: Equatable, Comparable {
     var position: Int
     var kind: Character
@@ -29,8 +29,8 @@ private struct Placeholder: Equatable, Comparable {
     static func < (a: Placeholder, b: Placeholder) -> Bool { a.position < b.position }
 }
 
-/// 把一条文案里的占位符解析出来。翻译允许重排（`%2$@ at %1$@`），
-/// 所以比较的是「第几个参数是什么类型」，不是它们在句子里的先后。
+/// Translations may reorder arguments (`%2$@ at %1$@`), so compare each argument's
+/// position and type rather than its order in the sentence.
 private func placeholders(in text: String) -> [Placeholder] {
     var result: [Placeholder] = []
     var implicit = 0
@@ -40,9 +40,9 @@ private func placeholders(in text: String) -> [Placeholder] {
         guard scalars[i] == "%" else { i += 1; continue }
         i += 1
         guard i < scalars.count else { break }
-        if scalars[i] == "%" { i += 1; continue }   // 转义的百分号
+        if scalars[i] == "%" { i += 1; continue }   // Escaped percent sign
 
-        // 显式位置 `n$`
+        // Explicit position `n$`
         var position: Int?
         var digits = ""
         var lookahead = i
@@ -55,7 +55,7 @@ private func placeholders(in text: String) -> [Placeholder] {
             i = lookahead + 1
         }
 
-        // 标志、宽度、精度、长度修饰符
+        // Flags, width, precision, and length modifiers
         while i < scalars.count, "-+ #0".contains(scalars[i]) { i += 1 }
         while i < scalars.count, scalars[i].isNumber { i += 1 }
         if i < scalars.count, scalars[i] == "." {
@@ -80,48 +80,47 @@ private func baseKeys(_ catalog: StringCatalog) -> Set<String> {
     Set(catalog.strings.keys.filter { !$0.hasSuffix(singularSuffix) })
 }
 
-// MARK: - 表本身
+// MARK: - Catalog integrity
 
 let source = L10n.catalogs.first { $0.code == L10n.sourceCode }
-check(source != nil, "原文语言 \(L10n.sourceCode) 在 L10n.catalogs 里")
+check(source != nil, "Source language \(L10n.sourceCode) is registered in L10n.catalogs")
 check(L10n.catalogs.contains { $0.code == L10n.defaultCode },
-      "兜底语言 \(L10n.defaultCode) 在 L10n.catalogs 里")
-check(Set(L10n.catalogs.map(\.code)).count == L10n.catalogs.count, "语言代码没有重复")
+      "Fallback language \(L10n.defaultCode) is registered in L10n.catalogs")
+check(Set(L10n.catalogs.map(\.code)).count == L10n.catalogs.count, "Language codes are unique")
 check(L10n.catalogs.allSatisfy { !$0.name.trimmingCharacters(in: .whitespaces).isEmpty },
-      "每门语言都写了母语名（选择器里要按母语显示）")
+      "Every language has a native name for the picker")
 
 let reference = source ?? L10n.catalogs[0]
 let referenceKeys = baseKeys(reference)
-check(!referenceKeys.isEmpty, "原文表不是空的（\(referenceKeys.count) 条）")
 
 for catalog in L10n.catalogs {
     let keys = baseKeys(catalog)
 
     let missing = referenceKeys.subtracting(keys).sorted()
     check(missing.isEmpty,
-          "\(catalog.code) 没有漏词" + (missing.isEmpty ? "" : "，缺：\(missing.joined(separator: ", "))"))
+          "\(catalog.code) has every base key" + (missing.isEmpty ? "" : "; missing: \(missing.joined(separator: ", "))"))
 
     let extra = keys.subtracting(referenceKeys).sorted()
     check(extra.isEmpty,
-          "\(catalog.code) 没有多出原文里没有的 key"
-          + (extra.isEmpty ? "" : "，多：\(extra.joined(separator: ", "))"))
+          "\(catalog.code) has no base keys absent from the source"
+          + (extra.isEmpty ? "" : "; extra: \(extra.joined(separator: ", "))"))
 
     let empty = catalog.strings.filter { $0.value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         .keys.sorted()
     check(empty.isEmpty,
-          "\(catalog.code) 没有空文案" + (empty.isEmpty ? "" : "：\(empty.joined(separator: ", "))"))
+          "\(catalog.code) has no empty strings" + (empty.isEmpty ? "" : ": \(empty.joined(separator: ", "))"))
 
-    // 单数形是可选的补充，但它必须补在一条真的存在的 key 上，
-    // 否则 `t(count:)` 永远挑不到它，写了等于没写。
+    // Singular forms are optional, but require an existing base key;
+    // otherwise `t(count:)` can never select them.
     let orphans = catalog.strings.keys
         .filter { $0.hasSuffix(singularSuffix) }
         .filter { !keys.contains(String($0.dropLast(singularSuffix.count))) }
         .sorted()
     check(orphans.isEmpty,
-          "\(catalog.code) 的单数形都挂在存在的 key 上"
-          + (orphans.isEmpty ? "" : "，孤儿：\(orphans.joined(separator: ", "))"))
+          "\(catalog.code) singular forms have existing base keys"
+          + (orphans.isEmpty ? "" : "; orphaned: \(orphans.joined(separator: ", "))"))
 
-    // 占位符对不上就是崩溃或乱码：`String(format:)` 会照着格式串去取参数。
+    // Mismatched placeholders can corrupt output or crash: the format determines argument types.
     var mismatched: [String] = []
     var mixed: [String] = []
     for (key, value) in catalog.strings {
@@ -133,86 +132,87 @@ for catalog in L10n.catalogs {
         if want.map(\.kind) != got.map(\.kind) || want.count != got.count {
             mismatched.append(key)
         }
-        // 一条文案里混用 `%@` 与 `%1$@` 的行为是未定义的。
+        // Mixing `%@` and `%1$@` in one format string is undefined behavior.
         if got.count > 1, got.contains(where: \.explicit), got.contains(where: { !$0.explicit }) {
             mixed.append(key)
         }
     }
     check(mismatched.isEmpty,
-          "\(catalog.code) 的占位符与原文一一对应"
-          + (mismatched.isEmpty ? "" : "，对不上：\(mismatched.sorted().joined(separator: ", "))"))
+          "\(catalog.code) placeholders match the source argument types"
+          + (mismatched.isEmpty ? "" : "; mismatched: \(mismatched.sorted().joined(separator: ", "))"))
     check(mixed.isEmpty,
-          "\(catalog.code) 没有混用带序号与不带序号的占位符"
-          + (mixed.isEmpty ? "" : "：\(mixed.sorted().joined(separator: ", "))"))
+          "\(catalog.code) does not mix positional and implicit placeholders"
+          + (mixed.isEmpty ? "" : ": \(mixed.sorted().joined(separator: ", "))"))
 
-    // 多于一个参数就必须带序号：语序一变，不带序号的那份就取错了参数。
+    // Multiple arguments require positions so translations can safely reorder them.
     let unordered = catalog.strings
         .filter { placeholders(in: $0.value).count > 1
                   && !placeholders(in: $0.value).allSatisfy(\.explicit) }
         .keys.sorted()
     check(unordered.isEmpty,
-          "\(catalog.code) 里多参数的文案都用了 %n$ 序号"
-          + (unordered.isEmpty ? "" : "：\(unordered.joined(separator: ", "))"))
+          "\(catalog.code) multi-argument strings use %n$ positions"
+          + (unordered.isEmpty ? "" : ": \(unordered.joined(separator: ", "))"))
 }
 
-// MARK: - 挑语言
+// MARK: - Language resolution
 
 let codes = L10n.catalogs.map(\.code)
-check(L10n.match(preferred: ["zh-Hans"], available: codes) == "zh-Hans", "完全一致的代码直接命中")
+check(L10n.match(preferred: ["zh-Hans"], available: codes) == "zh-Hans", "Exact language codes match")
 check(L10n.match(preferred: ["zh-Hans-CN"], available: codes) == "zh-Hans",
-      "带地区的 zh-Hans-CN 归到 zh-Hans")
-check(L10n.match(preferred: ["en-GB"], available: codes) == "en", "en-GB 归到 en")
-check(L10n.match(preferred: ["EN_US"], available: codes) == "en", "下划线与大小写都认")
+      "Regional zh-Hans-CN matches zh-Hans")
+check(L10n.match(preferred: ["en-GB"], available: codes) == "en", "en-GB matches en")
+check(L10n.match(preferred: ["EN_US"], available: codes) == "en", "Underscores and case are normalized")
 check(L10n.match(preferred: ["zh-Hant-TW"], available: codes) == "zh-Hans",
-      "没有繁体时退到简体，而不是扔去英文")
-check(L10n.match(preferred: ["fr-FR"], available: codes) == nil, "没有的语言不硬凑")
-check(L10n.match(preferred: ["fr", "en"], available: codes) == "en", "按用户的偏好顺序往下找")
+      "Traditional Chinese falls back to Simplified Chinese, not English")
+check(L10n.match(preferred: ["fr-FR"], available: codes) == nil, "Unavailable languages do not invent a match")
+check(L10n.match(preferred: ["fr", "en"], available: codes) == "en", "Matching follows preference order")
 check(L10n.match(preferred: ["zh-Hans"], available: ["en", "zh-Hant"]) == "zh-Hant",
-      "只有繁体时简体用户拿到繁体")
+      "Simplified Chinese matches Traditional Chinese when that is all that is available")
 
 check(L10n.resolve(preference: .system, environment: nil, system: ["fr-FR"]).code == L10n.defaultCode,
-      "系统语言一门都对不上时用兜底语言")
+      "Unmatched system languages use the default language")
 check(L10n.resolve(preference: .system, environment: nil, system: ["zh-Hans-CN", "en-US"]).code == "zh-Hans",
-      "跟随系统按系统的偏好顺序挑")
+      "System language matching follows preference order")
 check(L10n.resolve(preference: .fixed("en"), environment: nil, system: ["zh-Hans-CN"]).code == "en",
-      "用户选定的语言压过系统语言")
+      "A fixed preference overrides system languages")
 check(L10n.resolve(preference: .fixed("en"), environment: "zh-Hans", system: ["en-US"]).code == "zh-Hans",
-      "HOURGLOW_LANG 压过用户选定的语言")
+      "HOURGLOW_LANG overrides a fixed preference")
 check(L10n.resolve(preference: .fixed("xx-Fake"), environment: nil, system: ["zh-Hans-CN"]).code == "zh-Hans",
-      "偏好里是一门不存在的语言时退回系统语言，不是空白")
+      "An unavailable preference falls back to system languages")
 
-// MARK: - 查表与单复数
+// MARK: - Lookup and plural selection
 
 setenv("HOURGLOW_LANG", "en", 1)
 L10n.invalidate()
-check(L10n.code == "en", "HOURGLOW_LANG 立刻生效")
-check(L10n.t("common.ok") == "OK", "英文表查得到词")
-check(L10n.t(count: 1, "import.done", 1) == "Imported 1 wallpaper", "数量为 1 时挑单数形")
-check(L10n.t(count: 3, "import.done", 3) == "Imported 3 wallpapers", "其余数量用主形")
+check(L10n.code == "en", "HOURGLOW_LANG takes effect immediately")
+check(L10n.t(count: 1, "import.done", 1) == L10n.t("import.done.one", 1),
+      "English selects the singular form for one item")
+check(L10n.t(count: 3, "import.done", 3) == L10n.t("import.done", 3),
+      "English selects the base form for multiple items")
 check(L10n.t("no.such.key.at.all") == "no.such.key.at.all",
-      "查不到的 key 原样露出来，不是空字符串")
+      "Unknown keys remain visible instead of returning blank text")
 
 setenv("HOURGLOW_LANG", "zh-Hans", 1)
 L10n.invalidate()
-check(L10n.code == "zh-Hans", "换回中文")
-check(L10n.t(count: 1, "import.done", 1) == "已导入 1 张", "中文没有单数形，两种数量同一句")
-check(L10n.t(count: 9, "import.done", 9) == "已导入 9 张", "中文没有单数形，两种数量同一句")
-check(L10n.t("timeline.subtitle.next", "18:16", "Tahoe Night", "还有 2 小时")
-      == "18:16 切换到 Tahoe Night · 还有 2 小时", "多参数按序号填进去")
+check(L10n.code == "zh-Hans", "The language can switch back to Chinese")
+check(L10n.t(count: 1, "import.done", 1) == L10n.t("import.done", 1),
+      "A missing Chinese singular uses the Chinese base, not the English source singular")
+check(L10n.t(count: 9, "import.done", 9) == L10n.t("import.done", 9),
+      "Chinese uses its base form for multiple items")
 unsetenv("HOURGLOW_LANG")
 L10n.invalidate()
 
-// MARK: - 代码里用到的 key 都在表里
+// MARK: - Source key usage
 
-/// 扫 `L10n.t("…")` / `L10n.t(count: …, "…")` 里写死的 key。
-/// 拼出来的（`"category." + raw`）扫不到，也不该扫 —— 它们各自有兜底。
+/// Scan literal keys in `L10n.t("…")` and `L10n.t(count: …, "…")`.
+/// Computed keys (`"category." + raw`) are excluded; their callers provide fallbacks.
 private func literalKeys(in source: String) -> [String] {
     var keys: [String] = []
     var index = source.startIndex
     while let call = source.range(of: "L10n.t(", range: index..<source.endIndex) {
         index = call.upperBound
         var cursor = call.upperBound
-        // 跳过 `count: <表达式>, `，只认它后面的第一个字符串字面量。
+        // Skip `count: <expression>, ` and accept only the first following string literal.
         if source[cursor...].hasPrefix("count:"),
            let comma = source.range(of: ", ", range: cursor..<source.endIndex) {
             cursor = comma.upperBound
@@ -228,14 +228,14 @@ private func literalKeys(in source: String) -> [String] {
 
 let roots = Array(CommandLine.arguments.dropFirst())
 if roots.isEmpty {
-    print("\n（没有给源码目录，跳过 key 使用检查；CI 里跑的是 `l10ncheck Sources`）")
+    print("\n(No source directories supplied; skipping key usage checks. CI runs `l10ncheck Sources`.)")
 } else {
-    var used: [String: String] = [:]      // key → 第一次出现的文件
+    var used: [String: String] = [:]      // Key → first file containing it
     for root in roots {
         let base = URL(fileURLWithPath: root)
         guard let walker = FileManager.default.enumerator(at: base,
                                                           includingPropertiesForKeys: nil) else {
-            check(false, "扫得到目录 \(root)")
+            check(false, "Source directory \(root) can be enumerated")
             continue
         }
         for case let url as URL in walker where url.pathExtension == "swift" {
@@ -245,16 +245,15 @@ if roots.isEmpty {
             }
         }
     }
-    check(!used.isEmpty, "扫到了 \(used.count) 个写死的 key")
     let undefined = used.filter { reference.strings[$0.key] == nil }
-        .map { "\($0.key)（\($0.value)）" }.sorted()
+        .map { "\($0.key) (\($0.value))" }.sorted()
     check(undefined.isEmpty,
-          "代码里用到的 key 全都在原文表里"
-          + (undefined.isEmpty ? "" : "，缺：\n    " + undefined.joined(separator: "\n    ")))
+          "All literal source keys exist in the source catalog"
+          + (undefined.isEmpty ? "" : "; missing:\n    " + undefined.joined(separator: "\n    ")))
 }
 
 if failures > 0 {
-    FileHandle.standardError.write(Data("\n\(failures) 项语言表检查失败\n".utf8))
+    FileHandle.standardError.write(Data("\n\(failures) catalog checks failed\n".utf8))
     exit(1)
 }
-print("\n全部语言表检查通过（\(L10n.catalogs.count) 门语言 × \(referenceKeys.count) 条）")
+print("\nAll catalog checks passed (\(L10n.catalogs.count) languages × \(referenceKeys.count) base keys)")

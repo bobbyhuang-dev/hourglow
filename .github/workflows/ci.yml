@@ -1,4 +1,4 @@
-# 每次推送与 PR 都跑一遍：编得出来、编译靶子全绿、日出日落对得上星历。
+# Run on every push and PR: build, pass verification targets, and compare sunrise/sunset against an ephemeris.
 name: CI
 
 on:
@@ -9,30 +9,30 @@ on:
 
 jobs:
   build:
-    name: 构建与验证
-    runs-on: macos-26      # 项目 LSMinimumSystemVersion 是 26.0，只能在 Tahoe 的 SDK 上编
+    name: Build and verify
+    runs-on: macos-26      # LSMinimumSystemVersion is 26.0, requiring the Tahoe SDK.
     steps:
       - uses: actions/checkout@v5
 
-      # runner 上常并存多个 Xcode，默认那个不一定最新；这里挑版本号最大的。
-      - name: 选 Xcode
+      # Runners often have several Xcode versions; select the newest rather than relying on the default.
+      - name: Select Xcode
         run: |
           latest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1 || true)
           if [ -n "$latest" ]; then sudo xcode-select -s "$latest"; fi
           xcodebuild -version
           swift --version
 
-      - name: 构建
+      - name: Build
         run: ./build.sh
 
-      # 普通 ad-hoc 签名默认用 cdhash 当身份，每次重编都会变。
-      # macOS 26 的菜单栏许可会因此误伤新版本，所以这里单独守住稳定 requirement。
-      - name: App 签名身份
+      # Default ad-hoc signing uses the cdhash as identity, which changes with every rebuild.
+      # This can disrupt macOS 26 menu bar permission for new versions, so verify the stable requirement separately.
+      - name: Verify app signing identity
         run: bash Tests/verify-app-signature.sh build/HourGlow.app
 
-      # 靶子本身不碰真实配置（ModelCheck 自己改道 HOURGLOW_HOME），
-      # 这里再兜一层，保证 runner 上任何写入都落在临时目录里。
-      - name: 靶子
+      # Targets avoid real configuration (ModelCheck redirects HOURGLOW_HOME itself).
+      # Add another safeguard here so all runner writes stay in a temporary directory.
+      - name: Run verification targets
         env:
           HOURGLOW_HOME: ${{ runner.temp }}/hourglow-home
         run: |
@@ -44,7 +44,7 @@ jobs:
           ./build/panelvisibilitycheck
           ./build/updatecheck
           python3 Tests/verify-updater-location.py
-          # 带上 Sources：除了对表本身，还把代码里写死的 key 与原文表对一遍。
+          # Include Sources to check hardcoded keys against the source catalog as well as checking the catalogs themselves.
           ./build/l10ncheck Sources
           bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 
@@ -52,19 +52,19 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: 日出日落对拍星历
+      - name: Compare sunrise and sunset against an ephemeris
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install ephem
           python3 Tests/verify-solar.py
           python3 Tests/verify-cli-boundaries.py
 
-      # 只跑纯计算的子命令：runner 上没有 aerial 素材库，也没有壁纸配置，
-      # `catalog` / `now` / `status` 这些要读系统文件的在这里没有意义。
+      # Run only computational subcommands: the runner has no aerial assets or wallpaper configuration,
+      # so catalog / now / status, which read system files, are not useful here.
       #
-      # TZ 必须指一个真实城市：runner 是 UTC，而 UTC 在 zone.tab 里查不到坐标，
-      # 没手填经纬度时 solar 相关的子命令会正确地报「没有坐标可用」并退出 1。
-      - name: CLI 冒烟
+      # TZ must name a real city: runners use UTC, which has no coordinates in zone.tab.
+      # Without explicit coordinates, solar-related subcommands correctly report no coordinates and exit 1.
+      - name: Smoke-test CLI
         env:
           HOURGLOW_HOME: ${{ runner.temp }}/hourglow-cli-home
           TZ: Asia/Shanghai
@@ -73,10 +73,10 @@ jobs:
           ./build/hourglow-cli solar
           ./build/hourglow-cli cities 深圳
           ./build/hourglow-cli simulate 2026-12-21
-          # 每门语言都跑一遍：漏词与占位符由 l10ncheck 挡，
-          # 这里挡的是「某门语言下 CLI 直接崩了」这种只有真跑才暴露的问题。
-          # 语言清单从文案表里数出来（`build.sh` 生成 CFBundleLocalizations 用的是同一招），
-          # 加一门语言不用回来改这里。
+          # Exercise every language: l10ncheck catches missing strings and placeholder errors,
+          # while actual execution catches language-specific CLI crashes.
+          # Derive languages from the catalogs, just as build.sh generates CFBundleLocalizations,
+          # so adding a language does not require updating this workflow.
           for lang in $(grep -h -o 'code: "[^"]*"' Sources/L10n/Catalogs/*.swift \
                         | sed -e 's/code: "//' -e 's/"//'); do
             HOURGLOW_LANG="$lang" ./build/hourglow-cli language

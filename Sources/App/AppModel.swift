@@ -4,75 +4,75 @@ import Observation
 import ServiceManagement
 import UniformTypeIdentifiers
 
-/// UI 与引擎之间唯一的一层。
+/// The sole layer between the UI and engine.
 ///
-/// 视图只读这里的展示状态、只调这里的方法；求值与写入仍然全在 `Scheduler` 里，
-/// M3 没有为 UI 复制一份调度逻辑。
+/// Views only read presentation state and call methods here; evaluation and writes remain
+/// entirely in `Scheduler`. M3 does not duplicate scheduling logic for the UI.
 ///
-/// ## 领跑 / 从属
+/// ## Leader / follower
 ///
-/// 后台可能已经有一个 `hourglow-cli run`（或 M2 装的 LaunchAgent）在排程。
-/// 两个引擎同时跑会互相把对方的写入当成「用户手动改的」，所以启动时先抢
-/// `EngineLock`：
+/// A background `hourglow-cli run` (or an M2-installed LaunchAgent) may already be scheduling.
+/// Two engines would mistake each other's writes for manual user changes, so startup first
+/// attempts to acquire `EngineLock`:
 ///
-/// - **领跑**（抢到锁）：本进程起 `Scheduler`，定时器与系统事件都归它。
-/// - **从属**（没抢到）：不排程，只编辑 `schedule.json`，由对方的 `ConfigWatcher`
-///   跟上；面板顶部会说明现在是谁在管。
+/// - **Leader** (lock acquired): this process starts `Scheduler`, owning timers and system events.
+/// - **Follower** (lock unavailable): only edits `schedule.json`, without scheduling; the leader's
+///   `ConfigWatcher` picks up changes. The panel header identifies who is in control.
 @MainActor
 @Observable
 final class AppModel {
 
     static let shared = AppModel()
 
-    /// 面板上一切「现在」都从这里取，不直接 `Date()`。
+    /// Every notion of "now" in the panel comes from here, never directly from `Date()`.
     ///
-    /// 只有 `panelshot --now` 会改它：演示图与截图要把时间轴定格在一天里的某一刻
-    /// （哪一段在跑、下一次几点换）。app 与 CLI 从不碰它，永远是真实时钟。
-    /// `nonisolated(unsafe)`：`Clock.remaining` 不在 main actor 上，而这个值只在
-    /// 进程启动、任何视图出现之前被赋一次。
+    /// Only `panelshot --now` changes this: demos and screenshots freeze the timeline at a
+    /// particular time of day (active slot and next switch). The app and CLI always use the real clock.
+    /// `nonisolated(unsafe)` is needed because `Clock.remaining` is not main-actor isolated;
+    /// this value is assigned only once at process startup, before any views appear.
     nonisolated(unsafe) static var now: () -> Date = { Date() }
 
-    // MARK: - 展示状态
+    // MARK: - Presentation state
 
     private(set) var schedule: Schedule
     /// Current and next slots; refreshed on engine events and every 30 seconds while visible.
     private(set) var resolution: Resolution?
-    /// 系统里此刻实际挂着的那张。
+    /// The wallpaper actually set in the system now.
     private(set) var actual: Wallpaper?
-    /// 引擎上次写下去的那张 —— 与 `actual` 不一致就说明用户中途手动换过。
+    /// The engine's last write; a difference from `actual` indicates an intervening manual change.
     private(set) var lastWritten: Wallpaper?
-    /// 最近一条引擎日志，显示几秒后自行消失。
+    /// The latest engine log message, automatically dismissed after a few seconds.
     private(set) var message: String?
 
     let catalog: [AerialAsset]
     private(set) var isFollower: Bool
 
-    /// 开机自启与 LaunchAgent 的现状。两者都要问系统（`SMAppService` 是同步 IPC、
-    /// LaunchAgent 更是要 fork 一个 `launchctl`），所以只在设置页出现时刷一次，
-    /// 不放进视图的 body 里每次重绘都问一遍。
+    /// Current launch-at-login and LaunchAgent state. Both query the system (`SMAppService`
+    /// uses synchronous IPC; LaunchAgent even forks `launchctl`), so refresh only when settings
+    /// appear, not on every redraw inside a view's body.
     private(set) var launchAtLogin = SMAppService.Status.notRegistered
     private(set) var agentInstalled = false
-    /// 开机自启那一栏的补充说明（被系统设置关掉了、bundle 不在原位、注册报错）。
+    /// Extra launch-at-login context: disabled in System Settings, moved bundle, or registration failure.
     private(set) var launchAtLoginNote: String?
     private(set) var locating = LocatingState.idle
 
-    /// 语言换了就 +1。`PanelRoot` 拿它当 `.id`，整棵面板重建一次。
+    /// Incremented on language changes. `PanelRoot` uses it as `.id` to rebuild the entire panel.
     ///
-    /// 文案是各视图在自己的 body 里查表拿到的，不经过任何 `@Observable` 属性 ——
-    /// 换句话说 SwiftUI 追不到「语言变了」这件事，得由这个计数器替它说一声。
+    /// Views look up copy in their own bodies without reading any `@Observable` property.
+    /// SwiftUI cannot track language changes directly, so this counter notifies it.
     private(set) var languageGeneration = 0
 
-    /// 更新与壁纸调度彼此独立；这里仅保存设置页要展示的状态。
+    /// Updates are independent of wallpaper scheduling; this only stores state displayed in settings.
     private(set) var updateState = AppUpdater.pendingRateLimit()
         .map { AppUpdateState.failed($0.localizedDescription) } ?? .idle
     private(set) var automaticUpdatesEnabled = AppUpdater.automaticUpdatesEnabled
     private(set) var importingScene = false
 
-    /// 正在编辑的那个时段。改动先落在这里，点「应用」才写进 `schedule`。
+    /// The slot being edited. Changes stay here until Apply writes them into `schedule`.
     ///
-    /// 草稿放在这里而不是 `SlotPage` 的 `@State` 里：选壁纸是另一页，SlotPage 会被
-    /// 卸下来重建，草稿得比页面活得久。面板一失焦就收起，草稿也得比面板活得久 ——
-    /// 「选本地图片」会弹系统对话框，那一下必定把面板关掉。
+    /// Stored here rather than in `SlotPage`'s `@State`: wallpaper selection is a separate page,
+    /// so SlotPage is unmounted and rebuilt. Drafts must also outlive the panel, which closes
+    /// on losing focus, as always happens when choosing a local image in the system dialog.
     private var draftSession: SlotDraft?
 
     var draft: Slot? { draftSession?.slot }
@@ -91,8 +91,8 @@ final class AppModel {
     @ObservationIgnored private var languageObserver: NSObjectProtocol?
 
     private init() {
-        // 必须赶在 `Store.load()` 之前问一次「配置文件在不在」—— 那个调用会顺手
-        // 把 Tahoe 预设写下去，之后再问就永远是「在」，新手指引也就永远弹不出来。
+        // Check whether the configuration exists before `Store.load()`, which writes the Tahoe
+        // preset if needed. Checking afterward would always find a file and prevent onboarding.
         Onboarding.captureFirstRun(
             configExists: FileManager.default.fileExists(atPath: Store.fileURL.path))
         catalog = (try? AerialCatalog.load()) ?? []
@@ -104,14 +104,14 @@ final class AppModel {
             loaded = try Store.load()
             loadFailed = false
         } catch {
-            // 配置损坏不是首次安装，不能用预设接管用户壁纸，也不能让设置动作覆盖坏文件。
-            // 借从属模式的监听与定期接管重试，等用户修好原文件再启动排程。
+            // Corruption is not a fresh install: do not take over wallpaper with a preset or overwrite the bad file.
+            // Reuse follower watching and periodic takeover retries; start scheduling only once the user repairs it.
             loaded = Schedule()
             loadFailed = true
         }
         awaitingReadableConfig = loadFailed
         schedule = loaded
-        // 面板可能比 start() 先被打开，先把当前时段算出来，别闪一下「没有生效的时段」。
+        // The panel may open before start(); resolve now to avoid briefly showing no active slot.
         resolution = loaded.resolve(at: AppModel.now())
         let acquiredLock = loadFailed ? nil : EngineLock.acquire()
         lock = acquiredLock
@@ -119,7 +119,7 @@ final class AppModel {
         scheduler = Scheduler(schedule: loaded)
     }
 
-    // MARK: - 生命周期
+    // MARK: - Lifecycle
 
     func start() {
         guard !isStarted else { return }
@@ -132,7 +132,7 @@ final class AppModel {
         }
 
         if isFollower {
-            // 别人在排程，我们只需要知道配置被改成了什么样。
+            // Another process schedules; we only need to follow configuration changes.
             let watcher = ConfigWatcher(fileURL: Store.fileURL) {
                 MainActor.assumeIsolated { AppModel.shared.reloadFromDisk() }
             }
@@ -142,8 +142,8 @@ final class AppModel {
             scheduler.start()
         }
 
-        // 语言是从设置页改的，但改完之后整块面板都要跟着换 —— 谁改的不重要，
-        // 只认「变了」这件事本身。
+        // Language is changed from settings, but the whole panel must follow.
+        // Observe the change itself regardless of who initiated it.
         languageObserver = NotificationCenter.default.addObserver(
             forName: L10n.didChangeNotification, object: nil, queue: .main) { _ in
                 MainActor.assumeIsolated { AppModel.shared.languageGeneration += 1 }
@@ -153,8 +153,8 @@ final class AppModel {
 
         updateRefreshTimer()
 
-        // App 通常一跑就是很多天，不能只在启动那一刻检查。每小时醒一次很便宜，
-        // AppUpdater 里的 24 小时间隔才是实际的联网频率。
+        // The app often runs for days, so checking only at startup is insufficient. Hourly wakeups
+        // are cheap; AppUpdater's 24-hour interval determines the actual network frequency.
         checkForUpdates(manual: false)
         let updateTicker = Timer(timeInterval: 60 * 60, repeats: true) { _ in
             MainActor.assumeIsolated { AppModel.shared.checkForUpdates(manual: false) }
@@ -191,7 +191,7 @@ final class AppModel {
         self.ticker = ticker
     }
 
-    // MARK: - 查询
+    // MARK: - Queries
 
     func slot(_ id: UUID) -> Slot? {
         schedule.slots.first { $0.id == id }
@@ -213,15 +213,15 @@ final class AppModel {
         }
     }
 
-    /// 时间轴的一行：时段 + 它今天的实际触发时刻。
+    /// A timeline row: a slot and its actual trigger time today.
     struct Entry: Identifiable {
         let slot: Slot
-        /// solar 触发在缺坐标或极昼极夜时算不出来。
+        /// Solar triggers cannot resolve without coordinates or during polar day/night.
         let time: Date?
         var id: UUID { slot.id }
     }
 
-    /// 按今天的实际时刻排序 —— 「日落前 30 分」排在哪里随季节变，这正是时间轴该有的样子。
+    /// Sort by today's actual times: "30 minutes before sunset" naturally moves with the seasons.
     var entries: [Entry] {
         let coordinate = schedule.effectiveCoordinate
         let calendar = Calendar.current
@@ -240,32 +240,32 @@ final class AppModel {
             }
     }
 
-    /// 面板顶上那张大图，是不是系统里此刻真挂着的那张。
+    /// Whether the large image at the top of the panel is the actual current system wallpaper.
     ///
-    /// 不比 `lastWritten` 而直接比 `resolution.active`：引擎还没写过任何东西时
-    /// （首次运行、刚清过 `state.json`）`isManuallyOverridden` 恒为假，但那张图
-    /// 仍然只是「排程算出来的」，不能对用户说这就是目前的壁纸。
+    /// Compare directly with `resolution.active`, not `lastWritten`: before the engine's first
+    /// write (first run or a cleared `state.json`), `isManuallyOverridden` is always false.
+    /// The image is still merely the scheduled result, so we cannot label it as the current wallpaper.
     var activeIsActual: Bool {
         guard let actual, let active = resolution?.active.wallpaper else { return false }
         return WallpaperWriter.normalized(actual) == WallpaperWriter.normalized(active)
     }
 
-    /// 当前壁纸不是引擎写下去的那张 —— 用户自己换过，下一个触发点才会接管。
+    /// The current wallpaper differs from the engine's last write; a manual change lasts until the next trigger.
     var isManuallyOverridden: Bool {
         guard let lastWritten, let actual else { return false }
         return WallpaperWriter.normalized(actual) != WallpaperWriter.normalized(lastWritten)
     }
 
-    /// 有 solar 时段却没有坐标，这些段会被整个跳过，得说一声。
+    /// Solar slots without coordinates are skipped entirely; the user needs to know.
     var needsCoordinate: Bool {
         schedule.effectiveCoordinate == nil
             && schedule.slots.contains { $0.enabled && $0.trigger.dependsOnSun }
     }
 
-    /// 坐标有、但今天算不出日出日落（极圈的极昼极夜）。
+    /// Coordinates exist, but today's sunrise and sunset cannot be resolved (polar day/night).
     ///
-    /// 导入一套壁纸后整张表都是天光分段，这时一段都排不上，壁纸会一动不动地
-    /// 停几个星期。`needsCoordinate` 盖不住它 —— 坐标是有的，是太阳不配合。
+    /// An imported wallpaper set may use solar phases for every slot, leaving none schedulable
+    /// and the wallpaper unchanged for weeks. `needsCoordinate` cannot catch this: coordinates exist, but solar events do not.
     var solarUnavailable: Bool {
         guard let coordinate = schedule.effectiveCoordinate else { return false }
         guard schedule.slots.contains(where: { $0.enabled && $0.trigger.dependsOnSun }) else {
@@ -274,19 +274,19 @@ final class AppModel {
         return Solar.events(on: AppModel.now(), at: coordinate) == nil
     }
 
-    // MARK: - 编辑（草稿）
+    // MARK: - Editing drafts
 
-    /// 时段页要显示的那一段：正在编辑就用草稿，否则用配置里的。
+    /// The slot shown on the slot page: the draft while editing, otherwise the saved configuration.
     func editing(_ id: UUID) -> Slot? {
         draftSession?.slot.id == id ? draftSession?.slot : slot(id)
     }
 
-    /// 草稿还没进过配置 —— 是「添加时段」新起的那一份。
+    /// The draft has never been saved: it was created by Add Slot.
     var draftIsNew: Bool {
         draftSession?.isNew ?? false
     }
 
-    /// 有没有未应用的改动。新时段恒为真（配置里那份是 nil）。
+    /// Whether changes remain unapplied. Always true for new slots, whose saved counterpart is nil.
     var draftIsDirty: Bool {
         draftSession?.isDirty ?? false
     }
@@ -297,25 +297,25 @@ final class AppModel {
 
     var draftCanDiscard: Bool { draftIsDirty || draftHasConflict }
 
-    /// 新时段不在配置里也能继续编辑；已有时段若被别处删除，就不能借草稿把它复活。
+    /// New unsaved slots remain editable; an existing slot deleted elsewhere must not be resurrected from its draft.
     func canContinueEditing(_ id: UUID) -> Bool {
         guard let session = draftSession, session.slot.id == id else { return slot(id) != nil }
         return session.isNew || session.conflict != .deleted
     }
 
     func beginEditing(_ id: UUID) {
-        // 从选壁纸页返回时还会再走一次，别把半路的改动冲掉。
+        // Returning from wallpaper selection calls this again; preserve edits already in progress.
         guard draftSession?.slot.id != id else { return }
         draftSession = slot(id).map(SlotDraft.init(existing:))
     }
 
-    /// 改草稿。界面立刻跟手，但配置与壁纸都还没动。
+    /// Edit the draft. The UI updates immediately, but configuration and wallpaper remain unchanged.
     func editDraft(_ transform: (inout Slot) -> Void) {
         draftSession?.edit(transform)
     }
 
-    /// 新时段默认接着当前这一段：同一张壁纸、下一个整点。改哪一项都行，先给个能用的。
-    /// 只是一份草稿 —— 点「添加」才会进配置。
+    /// New slots default to the current wallpaper at the next whole hour: a usable starting point, fully editable.
+    /// This is only a draft; Add is what saves it to the configuration.
     @discardableResult
     func beginNewSlot() -> UUID {
         let wallpaper = resolution?.active.wallpaper
@@ -327,7 +327,7 @@ final class AppModel {
         return slot.id
     }
 
-    /// 点「应用 / 添加」：这是配置唯一会因为编辑而改变的入口。
+    /// Apply / Add: the only entry point where editing changes the configuration.
     @discardableResult
     func applyDraft() -> Bool {
         guard var session = draftSession, session.canApply else { return false }
@@ -341,8 +341,8 @@ final class AppModel {
             }
             updated.slots[index] = session.slot
         }
-        // 先把会话标成已应用，让领跑模式同步回调时不会把自己的写入误判成外部冲突；
-        // 保存失败则恢复，页面仍保留未应用的改动。
+        // Mark applied before synchronous leader callbacks, so our own write is not mistaken for an external conflict.
+        // Restore on save failure, preserving the page's unapplied edits.
         let previous = session
         session.markApplied()
         draftSession = session
@@ -353,7 +353,7 @@ final class AppModel {
         return true
     }
 
-    /// 把草稿退回配置里那一份。新时段没有「那一份」，直接丢掉。
+    /// Reset the draft to its saved counterpart. New slots have none, so discard them.
     func discardDraft() {
         guard let session = draftSession else { return }
         guard !session.isNew, let current = slot(session.slot.id) else {
@@ -380,30 +380,30 @@ final class AppModel {
         return true
     }
 
-    // MARK: - 设置：开机自启
+    // MARK: - Settings: launch at login
 
-    /// 只有从 `.app` 里跑起来才谈得上「开机自启」（`panelshot` 是裸二进制）。
+    /// Launch at login requires running inside an `.app` (`panelshot` is a bare binary).
     var canLaunchAtLogin: Bool { LaunchAtLogin.isAvailable }
 
-    /// 在不在「应用程序」里。登录项记的是 bundle 的**路径**，所以「先搬家、再开自启」
-    /// 是有先后的 —— 新手指引要在开关旁边先说这一句，别等自启失效了再解释。
+    /// Whether the app is in Applications. Login items store the bundle's **path**, so moving
+    /// must precede enabling launch at login. Explain this beside the onboarding toggle, not after it breaks.
     var runsFromApplicationsFolder: Bool {
         Bundle.main.bundleURL.path.hasPrefix("/Applications/")
     }
 
-    /// app 现在待的那个文件夹叫什么（「下载」「桌面」…）。只用来把上面那句话说具体。
+    /// The app's enclosing folder (Downloads, Desktop, etc.), used to make the explanation above specific.
     var enclosingFolderName: String {
         let parent = Bundle.main.bundleURL.deletingLastPathComponent()
         return FileManager.default.displayName(atPath: parent.path)
     }
 
-    /// 读一次系统状态。设置页 `onAppear` 调，别在 body 里问。
+    /// Query system state once from settings' `onAppear`, not from body.
     func refreshSettings() {
         if canLaunchAtLogin {
             launchAtLogin = LaunchAtLogin.status
-            // `.notFound` 不是错：实测从来没注册过的 app（尤其不在「应用程序」里的）
-            // 一上来就是这个状态，照样能注册成功。所以它与 `.notRegistered` 一样，
-            // 只表示「没开」，不该在界面上报警。真正要说的只有被系统设置关掉那一种。
+            // `.notFound` is not an error: never-registered apps, especially outside Applications,
+            // have been observed to start in this state and still register successfully. Like
+            // `.notRegistered`, it just means off; only disabling through System Settings warrants a notice.
             launchAtLoginNote = switch launchAtLogin {
             case .requiresApproval: L10n.t("model.launchAtLogin.requiresApproval")
             case .enabled, .notRegistered, .notFound: nil
@@ -420,29 +420,29 @@ final class AppModel {
         } catch {
             failure = L10n.t("model.launchAtLogin.failed", (error as NSError).localizedDescription)
         }
-        // 系统说了算：注册完再读回来，被用户在系统设置里关过的话这里仍然是关着的。
-        // 报错要在这之后再写回去 —— `refreshSettings` 会按状态重算这行说明，
-        // 先写就被它抹掉了，用户点一下开关什么反馈都没有。
+        // The system is authoritative: read back after registration, since a System Settings override may keep it off.
+        // Write errors afterward; `refreshSettings` recalculates the note and would otherwise
+        // erase the error, leaving the user's toggle action without feedback.
         refreshSettings()
         if let failure { launchAtLoginNote = failure }
     }
 
     func openLoginItemsSettings() { LaunchAtLogin.openSystemSettings() }
 
-    // MARK: - 设置：语言
+    // MARK: - Settings: language
 
     var languagePreference: L10n.Preference { L10n.storedPreference }
 
-    /// 即时生效。写盘与广播都在 `L10n` 里，这里只负责把「没变」挡掉，
-    /// 免得点回原来那一项也让面板整个重建一次。
+    /// Apply immediately. `L10n` handles persistence and notification; skip unchanged preferences
+    /// here so selecting the current language does not rebuild the entire panel.
     func setLanguage(_ preference: L10n.Preference) {
         guard preference != L10n.storedPreference else { return }
         L10n.setPreference(preference)
     }
 
-    /// 注册的是**当前这个 bundle 的路径**。`build.sh` 每次都 `rm -rf` 重建
-    /// `build/HourGlow.app`，登录项就此指向一个不存在的 bundle；把 app 挪个地方也一样。
-    /// 所以不在「应用程序」里跑的时候要说一声 —— 这不是错误，是个容易忘的前提。
+    /// Registration stores **this bundle's current path**. Every `build.sh` run removes and
+    /// recreates `build/HourGlow.app`, leaving the login item pointing to a missing bundle; moving it does the same.
+    /// Warn when running outside Applications: not an error, but an easily forgotten prerequisite.
     var launchAtLoginPathWarning: String? {
         guard canLaunchAtLogin, launchAtLogin == .enabled else { return nil }
         let path = Bundle.main.bundleURL.path
@@ -450,20 +450,20 @@ final class AppModel {
         return L10n.t("model.launchAtLogin.path", path)
     }
 
-    /// 卸掉 M2 那条 LaunchAgent。app 自己会开机自启之后它就是多余的一份 ——
-    /// 留着不会出错（`EngineLock` 会让后起的那个退成从属），但白占一个后台进程。
+    /// Remove M2's LaunchAgent, now redundant with the app's launch-at-login support.
+    /// Keeping it is harmless (`EngineLock` makes the later process a follower), but wastes a background process.
     func uninstallAgent() {
-        // 提示条只有一行、后来的会顶掉先来的，所以说明和结果拼成一句再显示。
+        // The one-line banner replaces earlier messages, so combine the explanation and result.
         let note = LaunchAgentInstaller.uninstall()
         show(note.map { L10n.t("model.agent.uninstalled.note", $0) }
              ?? L10n.t("model.agent.uninstalled"))
         refreshSettings()
-        // 如果被卸掉的正是当前领跑者，尽快接班；bootout 尚未释放锁时，30 秒 ticker
-        // 还会继续尝试，不会让这个 app 永久停在从属模式。
+        // Take over promptly if the removed agent was the leader. If bootout has not released
+        // the lock yet, the 30-second ticker keeps trying rather than leaving this app a follower forever.
         promoteIfPossible()
     }
 
-    // MARK: - 设置：更新
+    // MARK: - Settings: updates
 
     var canUpdate: Bool { AppUpdater.isAvailable }
     var updateUnavailableReason: String? { AppUpdater.unavailabilityError?.localizedDescription }
@@ -480,12 +480,12 @@ final class AppModel {
     func setAutomaticUpdates(_ enabled: Bool) {
         automaticUpdatesEnabled = enabled
         AppUpdater.automaticUpdatesEnabled = enabled
-        // 用户刚明确打开时立即检查，不必等上一次检查满 24 小时。
+        // Check immediately when explicitly enabled, without waiting 24 hours after the last check.
         if enabled { checkForUpdates(manual: false, force: true) }
     }
 
-    /// 手动检查忽略 24 小时间隔，但仍遵守服务器的限流期限。手动检查即使发现新版也先展示，
-    /// 等用户点「更新并重启」，避免他正在看设置页时 app 突然消失。
+    /// Manual checks ignore the 24-hour interval but honor server rate limits. Show discovered
+    /// updates and wait for Update and Restart, rather than disappearing while the user reads settings.
     func checkForUpdates(manual: Bool = true, force: Bool = false) {
         if let reason = updateUnavailableReason {
             if manual { updateState = .failed(reason) }
@@ -544,21 +544,21 @@ final class AppModel {
         let staged = try await AppUpdater.stage(release)
         try Task.checkCancellation()
         try AppUpdater.launchInstaller(stagedApp: staged)
-        // helper 已经独立运行；只有当前进程真正退出以后，它才会动 bundle。
+        // The helper now runs independently and will not touch the bundle until this process actually exits.
         NSApplication.shared.terminate(nil)
     }
 
-    // MARK: - 设置：位置
+    // MARK: - Settings: location
 
     enum LocatingState: Equatable {
         case idle
         case requesting
-        /// 权限被拒。手填经纬度是唯一的出路，UI 要把它顶到前面。
+        /// Permission denied: manual coordinates are the only option, so the UI should prioritize them.
         case denied
         case failed(String)
     }
 
-    /// 坐标从哪来的。三条路：手填/定位写下的 > 时区推断 > 没有。
+    /// Coordinate source precedence: manual entry / location request, then time-zone inference, then none.
     var coordinateSource: String {
         if let location = schedule.location {
             if let name = location.name, !name.isEmpty { return name }
@@ -569,7 +569,7 @@ final class AppModel {
             : L10n.t("model.place.fromTimeZone", TimeZone.current.identifier)
     }
 
-    /// 地点页顶上那一行：有名字用名字，否则是坐标或时区。
+    /// The location page header: the name if available, otherwise coordinates or time zone.
     var placeLabel: String {
         if let location = schedule.location {
             if let name = location.name, !name.isEmpty { return name }
@@ -581,7 +581,7 @@ final class AppModel {
         return L10n.t("model.place.none")
     }
 
-    /// 时间轴右上角那颗胶囊：尽量短，满了就截。
+    /// The chip at the timeline's top right: keep it short and truncate if needed.
     var placeChipLabel: String {
         if let name = schedule.location?.name, !name.isEmpty { return name }
         if schedule.location != nil { return L10n.t("model.place.chip.custom") }
@@ -589,7 +589,7 @@ final class AppModel {
         return L10n.t("model.place.chip.choose")
     }
 
-    /// 今天的日出日落。设置页用它证明坐标是对的 —— 数字对不对，本地人一眼就知道。
+    /// Today's sunrise and sunset let locals recognize whether the settings coordinates are correct.
     var solarToday: (sunrise: Date, sunset: Date)? {
         guard let coordinate = schedule.effectiveCoordinate else { return nil }
         return Solar.times(on: AppModel.now(), at: coordinate)
@@ -600,7 +600,7 @@ final class AppModel {
         return Solar.events(on: AppModel.now(), at: coordinate)
     }
 
-    /// 向系统要一次坐标。拿到就写进配置，从此不再依赖时区推断。
+    /// Request coordinates once from the system, then save them instead of relying on time-zone inference.
     func requestPreciseLocation() {
         guard locating != .requesting else { return }
         locating = .requesting
@@ -610,9 +610,9 @@ final class AppModel {
                 switch outcome {
                 case .coordinate(let coordinate):
                     model.locating = .idle
-                    // 先把刚拿到的精确坐标写下去。反查只是为了给它起个看得懂的名字，
-                    // 不能拿反查回来的行政区中心点替换掉它 —— 大城市能差几十公里，
-                    // 而一次定位授权换来的就是这几十公里的精度。
+                    // Save the precise coordinates first. Reverse lookup only provides a readable name;
+                    // do not replace them with an administrative center, which may be tens of kilometers
+                    // away in a large city. That precision is what the location permission granted us.
                     model.setManualLocation(coordinate)
                     model.show(L10n.t("model.located",
                                       coordinate.latitude, coordinate.longitude))
@@ -620,7 +620,7 @@ final class AppModel {
                         let loc = CLLocation(latitude: coordinate.latitude,
                                              longitude: coordinate.longitude)
                         guard let city = await PlaceSearch.reverse(loc), let model else { return }
-                        // 期间用户可能又选了别的地方，别把人家的选择盖回去。
+                        // The user may have chosen another place meanwhile; do not overwrite that choice.
                         guard model.schedule.location?.latitude == coordinate.latitude,
                               model.schedule.location?.longitude == coordinate.longitude else { return }
                         var named = coordinate
@@ -637,7 +637,7 @@ final class AppModel {
         }
     }
 
-    /// 写死一个坐标；传 nil 表示清掉，回退到时区推断。
+    /// Set explicit coordinates; nil clears them and restores time-zone inference.
     @discardableResult
     func setManualLocation(_ coordinate: Coordinate?) -> Bool {
         var updated = schedule
@@ -650,13 +650,13 @@ final class AppModel {
         setManualLocation(city.asCoordinate)
     }
 
-    // MARK: - 导入
+    // MARK: - Import
 
-    /// 用一组图片替换当前时间轴。
+    /// Replace the current timeline with a set of images.
     ///
-    /// 菜单栏面板一失焦就收起：从 ⋯ 菜单里立刻 `runModal`，对话框会被一起取消，
-    /// 看起来像「不能导入」。等这一轮 UI 收完、临时把 app 变成普通前台，
-    /// 选文件夹、一组图片或 `.sundialScene` 都能点「导入」。
+    /// The menu bar panel closes on losing focus: calling `runModal` immediately from the ⋯ menu
+    /// cancels the dialog too, making import appear broken. Wait for the UI to settle and temporarily
+    /// use regular app activation so importing folders, image sets, or `.sundialScene` files works.
     func importSceneFromPanel() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             AppModel.shared.presentImportPanel()
@@ -667,8 +667,8 @@ final class AppModel {
         importScene(from: [url])
     }
 
-    /// 导入会整体替换时间轴，而且没有撤销。素材拷贝放到后台：24HW 一套几百 MB，
-    /// 在主线程上拷会把菜单栏 app 卡住。
+    /// Import replaces the entire timeline without undo. Copy assets in the background: a 24HW
+    /// set can be hundreds of MB, and copying on the main thread would freeze the menu bar app.
     func importScene(from urls: [URL]) {
         guard !importingScene else {
             show(L10n.t("import.busy"))
@@ -684,15 +684,15 @@ final class AppModel {
                 let outcome = try await Task.detached(priority: .userInitiated) {
                     try SceneImport.apply(urls: urls, to: current)
                 }.value
-                // 拷贝期间位置或暂停状态可能被另一个进程改过。导入只承诺替换时间轴，
-                // 因此把新 slots 合到此刻最新的配置里，不能拿任务开始前的整份快照覆盖回来。
+                // Another process may change location or pause state during copying. Import only replaces
+                // the timeline, so merge new slots into the latest configuration rather than restoring the initial snapshot.
                 var updated = schedule
                 updated.slots = outcome.schedule.slots
                 guard commit(updated) else {
                     await Task.detached(priority: .utility) { SceneImport.discard(outcome) }.value
                     return
                 }
-                // 只有配置成功落盘后旧素材才不再被引用。清理可能涉及几百 MB，留在后台做。
+                // Old assets become unreferenced only after saving succeeds. Cleanup may span hundreds of MB; keep it off the main thread.
                 await Task.detached(priority: .utility) { SceneImport.finalize(outcome) }.value
                 let imported = updated.slots.count
                 var text = L10n.t(count: imported, "import.done.detail", imported)
@@ -716,7 +716,7 @@ final class AppModel {
         }
     }
 
-    /// 时间轴是整体替换的，问一句再动。面板此时已经收起，只能用对话框。
+    /// Ask before replacing the whole timeline. The panel has already closed, so use a dialog.
     private func confirmReplace() -> Bool {
         guard !schedule.slots.isEmpty else { return true }
         let alert = NSAlert()
@@ -754,7 +754,7 @@ final class AppModel {
         importScene(from: panel.urls)
     }
 
-    /// 面板此时已经收起，提示条看不见，用对话框把结果说清楚。
+    /// The panel and its banner are hidden now; explain the result in a dialog.
     private func announceImport(success: Bool, text: String) {
         let alert = NSAlert()
         alert.messageText = L10n.t(success ? "import.result.ok" : "import.result.failed")
@@ -765,15 +765,15 @@ final class AppModel {
         alert.runModal()
     }
 
-    // MARK: - 操作
+    // MARK: - Actions
 
     func setPaused(_ paused: Bool) {
         if isFollower {
             var updated = schedule
             updated.paused = paused
             guard commit(updated) else { return }
-            // 恢复是明确的用户意图：无视中途的手动改动立刻校正。
-            // 对方收到配置变更时的求值不是 assertive 的，得由这里补上。
+            // Resume expresses explicit user intent: correct immediately despite intervening manual changes.
+            // The leader's configuration-change evaluation is not assertive, so perform that correction here.
             if !paused { oneShot(reason: .resume) }
         } else {
             do {
@@ -789,9 +789,9 @@ final class AppModel {
         NSWorkspace.shared.activateFileViewerSelecting([Store.fileURL])
     }
 
-    // MARK: - 内部
+    // MARK: - Internals
 
-    /// 落盘。编辑期间不会走到这里 —— 草稿只在内存里，点「应用」才调过来。
+    /// Persist changes. Editing keeps drafts in memory; only Apply reaches this method.
     @discardableResult
     private func commit(_ updated: Schedule) -> Bool {
         guard !awaitingReadableConfig else {
@@ -800,7 +800,7 @@ final class AppModel {
         }
         do {
             if isFollower {
-                // 存下去就够了，对方的 ConfigWatcher 会接着求值。
+                // Saving is enough; the leader's ConfigWatcher will evaluate the change.
                 try Store.save(updated)
             } else {
                 try scheduler.update(schedule: updated)
@@ -809,15 +809,15 @@ final class AppModel {
             show(L10n.t("model.saveFailed", error.localizedDescription))
             return false
         }
-        // 引擎也是先落盘再提交内存；UI 遵守同一个顺序，失败时不会显示一份磁盘上不存在的配置。
+        // Like the engine, persist before committing in memory, so failure never shows a configuration absent from disk.
         schedule = updated
         resolution = updated.resolve(at: AppModel.now())
         refresh()
         return true
     }
 
-    /// 从属模式下的一次性求值。`state.json` 才是权威，所以借一个临时 `Scheduler`
-    /// 走同一套决策逻辑是安全的 —— CLI 的 `resume` 也是这么干的。
+    /// One-shot evaluation in follower mode. `state.json` is authoritative, so a temporary
+    /// `Scheduler` can safely use the same decision logic, just as the CLI's `resume` does.
     private func oneShot(reason: Scheduler.Reason) {
         let scheduler = Scheduler(schedule: schedule)
         scheduler.onLog = { line in
@@ -838,8 +838,8 @@ final class AppModel {
         refresh()
     }
 
-    /// 另一个引擎退出后从属者必须能接班。否则 app 在 CLI/LaunchAgent 之后启动，
-    /// 后者再被用户卸载或退出时，菜单栏仍会永远显示“从属”，实际上已经没人排程。
+    /// Followers must take over when the other engine exits. Otherwise an app launched after
+    /// the CLI/LaunchAgent stays a follower forever after that leader exits or is uninstalled, leaving no scheduler.
     private func promoteIfPossible() {
         guard isFollower, let acquired = EngineLock.acquire() else { return }
         guard let latest = try? Store.load() else {

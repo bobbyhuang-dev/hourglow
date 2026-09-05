@@ -14,10 +14,10 @@ enum WallpaperError: Error, CustomStringConvertible {
     }
 }
 
-/// 读写 macOS 壁纸配置。
+/// Reads and writes macOS wallpaper configuration.
 ///
-/// 统一写成 `linked`（桌面与屏保共用一张）。写入前备份，
-/// 目标与当前一致时跳过，避免 `killall WallpaperAgent` 带来的闪烁。
+/// Always writes linked mode (one image shared by desktop and screensaver), backing up first.
+/// Skips an unchanged target to avoid flicker from killall WallpaperAgent.
 enum WallpaperWriter {
 
     static var indexURL: URL {
@@ -34,13 +34,13 @@ enum WallpaperWriter {
         indexURL.appendingPathExtension("hourglow.lock")
     }
 
-    // MARK: - 读
+    // MARK: - Reading
 
     static func current() throws -> Wallpaper? {
         let root = try readIndex()
         guard let scope = root["AllSpacesAndDisplays"] as? [String: Any] else { return nil }
 
-        // linked 用 Linked 键；individual 拆成 Desktop / Idle。
+        // linked uses the Linked key; individual mode separates Desktop and Idle.
         for key in ["Linked", "Desktop", "Idle"] {
             guard let slot = scope[key] as? [String: Any],
                   let content = slot["Content"] as? [String: Any],
@@ -65,9 +65,9 @@ enum WallpaperWriter {
         return nil
     }
 
-    // MARK: - 写
+    // MARK: - Writing
 
-    /// 返回 true 表示确实写入了，false 表示目标与当前一致、已跳过。
+    /// Returns true if written, false if skipped because the target already matches.
     @discardableResult
     static func apply(_ wallpaper: Wallpaper,
                       dryRun: Bool = false,
@@ -81,7 +81,7 @@ enum WallpaperWriter {
             }
         }
 
-        // dry-run 不应创建持久锁文件，也沿用原来的“只报告是否需要改”的宽松语义。
+        // Dry runs must not create persistent lock files and retain the permissive "report whether a change is needed" semantics.
         if dryRun {
             if !force, let existing = try? current(), normalized(existing) == target { return false }
             return true
@@ -98,14 +98,14 @@ enum WallpaperWriter {
             let slot = try linkedSlot(for: target)
             root["AllSpacesAndDisplays"] = slot
             root["SystemDefault"] = slot
-            // 清掉逐 Space / 逐显示器的覆盖，否则它们会盖过全局设置。
+            // Clear per-Space and per-display overrides so they cannot supersede the global setting.
             root["Spaces"] = [String: Any]()
             root["Displays"] = [String: Any]()
 
             if FileManager.default.fileExists(atPath: backupURL.path) {
                 try FileManager.default.removeItem(at: backupURL)
             }
-            // 备份是写入的前置条件；失败时不得继续覆盖原配置。
+            // A successful backup is a precondition for writing; never overwrite the original if backup fails.
             try FileManager.default.copyItem(at: indexURL, to: backupURL)
 
             let encoded = try PropertyListSerialization.data(fromPropertyList: root,
@@ -130,8 +130,8 @@ enum WallpaperWriter {
         return root
     }
 
-    /// CLI、常驻引擎和菜单栏 app 都可能同时触发写入。把“比较 → 备份 → 写入”
-    /// 锁成一个跨进程事务，避免两个进程互删备份、重复重启或后写覆盖先写。
+    /// The CLI, resident engine, and menu-bar app can write concurrently. Lock compare → backup → write
+    /// as one cross-process transaction to avoid deleting each other's backups, duplicate restarts, or lost updates.
     private static func withExclusiveLock<T>(_ body: () throws -> T) throws -> T {
         let descriptor = open(lockURL.path, O_CREAT | O_RDWR, 0o600)
         guard descriptor >= 0 else {
@@ -145,8 +145,8 @@ enum WallpaperWriter {
         return try body()
     }
 
-    /// 系统 plist 中的图片 URL 总会读回规范化的绝对路径；比较前使用相同表示，
-    /// 否则 `~`、相对路径或 `..` 会让同一张图片被误判为不同目标。
+    /// Image URLs read from the system plist are normalized absolute paths. Compare the same representation
+    /// so ~, relative paths, and .. do not make the same image appear to be a different target.
     static func normalized(_ wallpaper: Wallpaper) -> Wallpaper {
         switch wallpaper {
         case .aerial:

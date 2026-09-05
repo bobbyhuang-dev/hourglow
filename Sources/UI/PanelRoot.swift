@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// 面板里的一页。层级只有两层深：时间轴 → 时段 → 选壁纸。
-/// 设置、地区与时段并排，都是从时间轴推进一层。
+/// A panel page. Navigation is only two levels deep: timeline → slot → wallpaper picker.
+/// Settings and location sit alongside slots, one level forward from the timeline.
 enum Page: Equatable {
     case timeline
     case slot(UUID)
@@ -20,16 +20,16 @@ enum Page: Equatable {
     }
 }
 
-/// 菜单栏面板的根。
+/// The menu bar panel root.
 ///
-/// 固定 360 × 470，三页在同一块画布上左右推进 —— 和「控制中心」「Wi-Fi」那类
-/// 系统面板一个路子：不开新窗口，尺寸从头到尾不变。
+/// A fixed 360 × 470 canvas with three pages sliding horizontally, like system panels
+/// such as Control Center or Wi-Fi: no new windows and no resizing during navigation.
 struct PanelRoot: View {
     @Environment(AppModel.self) private var model
     @State private var page: Page = .timeline
-    /// 推进还是后退，决定转场从哪一侧进来。
+    /// Navigation direction determines which side the transition enters from.
     @State private var forward = true
-    /// 地区页从时间轴或设置进来，返回要回到来的那一页。
+    /// Location can open from the timeline or settings; return to the originating page.
     @State private var placeBack: Page = .timeline
 
     var body: some View {
@@ -52,17 +52,17 @@ struct PanelRoot: View {
                     .transition(slide)
             }
         }
-        // 换语言时把这一层整棵重建。`.id` 挂在页面上而不是 `PanelRoot` 自己身上，
-        // 所以 `page` 留在原地 —— 在设置页改完语言，人还在设置页。
+        // Rebuild this subtree when the language changes. Put `.id` on the pages, not `PanelRoot`,
+        // so `page` survives: changing the language in settings leaves the user in settings.
         .id(model.languageGeneration)
-        // 宽度锁死；高度由各页自己决定（时间轴按时段数收，选壁纸那页固定铺满）。
+        // Lock width; each page owns its height (timeline fits its slots, picker fills the panel).
         .frame(width: Panel.width)
         .animation(Panel.animation, value: page)
         .background(PanelVisibilityObserver { model.setPanelVisible($0) })
         .onAppear {
-            // 面板一失焦就收起，「选本地图片」更是必定把它关掉。半路的草稿没有丢，
-            // 重新打开时回到那一段继续编辑，而不是把没应用的改动无声地扔掉。
-            // 若关闭期间那一段已被外部配置删除，则丢掉旧草稿，不能把它重新带回来。
+            // Losing focus closes the panel, including when choosing a local image. Keep unfinished drafts
+            // and return to their slot on reopening rather than silently discarding unapplied edits.
+            // If external configuration deleted the slot while closed, discard its draft instead of reviving it.
             switch page {
             case .timeline:
                 if let draft = model.draft {
@@ -79,15 +79,15 @@ struct PanelRoot: View {
             }
         }
         .onChange(of: model.schedule.slots.map(\.id)) {
-            // 时段可能被别处删掉（手改 schedule.json、另一个进程）。
-            // 停在一个已经不存在的时段上会是一片空白，退回时间轴。
-            // 新时段的草稿还没进配置，`editing` 认得它，别把正在填的那一段踢掉。
+            // Slots can disappear externally (manual schedule.json edits or another process).
+            // Return to the timeline rather than showing an empty page for a missing slot.
+            // New drafts are not in the configuration yet; `editing` recognizes them so they remain open.
             if case .slot(let id) = page, !model.canContinueEditing(id) { navigate(.timeline) }
             if case .picker(let id) = page, !model.canContinueEditing(id) { navigate(.timeline) }
         }
     }
 
-    /// 回到时间轴就等于结束这次编辑：没点「应用」的改动到此为止。
+    /// Returning to the timeline ends editing and discards changes that were not applied.
     private func navigate(_ target: Page) {
         if target == .place {
             placeBack = page == .place ? placeBack : page

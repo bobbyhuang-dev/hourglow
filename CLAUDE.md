@@ -1,227 +1,254 @@
 # CLAUDE.md
 
-本文件给 Claude Code（claude.ai/code）以及其他编码代理提供指引。仓库根目录的 `AGENTS.md`
-是它的符号链接，两份内容完全一样 —— 改这一份即可。
+This file guides Claude Code (claude.ai/code) and other coding agents. The root `AGENTS.md`
+is a symlink to it, so both have identical content — edit this file only.
 
-HourGlow 是一个 macOS 菜单栏壁纸调度器：按固定时刻、日出日落（带偏移）或天光分段，自动切换
-系统 aerial 动态壁纸或本地图片。Swift 6.3 + SwiftUI，零第三方依赖，**不使用 Xcode 工程**
-（`swiftc` 直接编译 + 手工组装 `.app` bundle）。当前版本 1.4，已发布。
+HourGlow is a macOS menu bar wallpaper scheduler: it switches system aerial wallpapers or
+local images at fixed times, relative to sunrise/sunset (with offsets), or in solar phases.
+Swift 6.3 + SwiftUI, zero third-party dependencies, **no Xcode project** (`swiftc` compiles
+directly and the `.app` bundle is assembled by hand). Version 1.5 is the current release.
 
-面向用户的说明看 `README.md` / `README.zh-CN.md`，贡献流程看 `CONTRIBUTING.md`。
-本文件是实现者视角：怎么构建、怎么验证、哪些系统事实可以直接依赖、哪些坑别再踩一次。
-冷启动读完这一份就能接上，不需要回溯对话历史；做完一项工作后把结论回写进来。
+For user-facing documentation, see `README.md` / `README.zh-CN.md`; for contributing, see
+`CONTRIBUTING.md`. This file takes the implementer's perspective: how to build and verify,
+which system facts to rely on, and which mistakes not to repeat. Reading it should be enough
+to start cold without reconstructing conversation history; record conclusions here after
+finishing a task.
 
-## 构建与验证
+## Building and verification
 
-没有 XCTest，也没有 `swift test`。验证靠几个独立编译的「靶子」二进制，全部离线、不碰真实壁纸
-（`panelshot` 除外，它会短暂弹一个窗口）。
+There is no XCTest and no `swift test`. Verification uses separately compiled check binaries,
+all offline and without changing your real wallpaper (`panelshot` briefly shows a window,
+as does the native visibility check listed below).
 
 ```bash
-./build.sh                    # 一次编出全部：CLI、八个靶子、panelshot、build/HourGlow.app
-./build/modelcheck            # 求值：跨午夜回绕、solar 触发、天光分段、Codable 兼容
-./build/enginecheck           # 引擎：覆盖 vs 让位的决策矩阵、定时器排期
-./build/importcheck           # 导入：文件名与分子目录归类、多分辨率、均分、跳过与清理
-./build/appcheck              # 应用状态：草稿、保存边界、外部配置冲突、新手指引的弹出规则
+./build.sh                    # Build everything: CLI, eight check binaries, panelshot, build/HourGlow.app
+./build/modelcheck            # Resolution: midnight wraparound, solar triggers, solar phases, Codable compatibility
+./build/enginecheck           # Engine: assert-vs-stand-down decision matrix, timer scheduling
+./build/importcheck           # Import: filename/subfolder classification, multi-resolution, even split, skips and cleanup
+./build/appcheck              # App state: drafts, save boundaries, external config conflicts, onboarding rules
 ./build/appstartupcheck        # Startup recovery and visible/hidden refresh (about 2 minutes)
 ./build/panelvisibilitycheck   # Native window visibility and observer teardown; briefly shows a test window
-./build/updatecheck           # 更新器：SemVer、Release 解析、SHA-256
-python3 Tests/verify-updater-location.py # 运行中移动 app/父目录、旧路径副本、助手缺失
-./build/l10ncheck Sources     # 文案表：漏词/空词/多词、占位符、挑语言的规则、代码里的 key 是否存在
+./build/updatecheck           # Updater: SemVer, Release parsing, SHA-256
+python3 Tests/verify-updater-location.py # Move a running app/parent directory, copies at the old path, missing helper
+./build/l10ncheck Sources     # Catalogs: missing/empty/extra keys, placeholders, language selection, keys used in code
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
-bash Tests/verify-app-signature.sh build/HourGlow.app   # 签名与稳定的 designated requirement
-./build/solarcheck            # 日出日落，被 verify-solar.py 当作被测程序调用
-python3 Tests/verify-solar.py # 以 ephem 星历对拍（需 pip install ephem，容差 30 秒）
-python3 Tests/verify-cli-boundaries.py # 非法输入与夏令时 23/25 小时日
-./build/panelshot ~/Desktop   # 五个页面 + 新手指引五步画成 PNG（固定时刻那一栏另出一张），改版式时对照
-./build/panelshot ~/Desktop --only timeline --now 2026-09-04T06:20   # 只抓一页，并把「现在」定格在某一刻
-./build/panelshot ~/Desktop --appearance dark                        # 钉住外观（light | dark），不跟系统
-./build/panelshot ~/Desktop --only settings --update-rate-limit       # 限流提示与恢复时间，不联网
-Tools/makedemo.sh             # README 顶上的 docs/demo.gif + 官网/GitHub 的分享卡片（见下面「演示图与分享卡片」）
+bash Tests/verify-app-signature.sh build/HourGlow.app   # Signature and stable designated requirement
+./build/solarcheck            # Sunrise/sunset; invoked as the program under test by verify-solar.py
+python3 Tests/verify-solar.py # Cross-check against ephem (requires pip install ephem, 30-second tolerance)
+python3 Tests/verify-cli-boundaries.py # Invalid input and 23/25-hour daylight-saving days
+./build/panelshot ~/Desktop   # Five pages + five guide steps as PNGs (extra clock-trigger shot); compare layout changes
+./build/panelshot ~/Desktop --only timeline --now 2026-09-04T06:20   # Capture one page with time frozen
+./build/panelshot ~/Desktop --appearance dark                        # Pin appearance (light | dark), ignoring the system
+./build/panelshot ~/Desktop --only settings --update-rate-limit       # Rate-limit notice and recovery time, offline
+Tools/makedemo.sh             # README's docs/demo.gif + website/GitHub share card (see Demo and share card below)
 ```
 
-配置目录可以用 `HOURGLOW_HOME` 整体改道（`schedule.json` / `state.json` / `run.lock` 都跟着走），
-端到端实测拿一份一次性配置跑，不碰真配置：
+`HOURGLOW_HOME` redirects the entire config directory (`schedule.json`, `state.json`, and
+`run.lock` move together). Use a throwaway configuration for end-to-end checks:
 
 ```bash
-HOURGLOW_HOME=/tmp/hg ./build/hourglow-cli list   # 空目录会自动写入 Tahoe 四段预设
+HOURGLOW_HOME=/tmp/hg ./build/hourglow-cli list   # An empty directory gets the four-slot Tahoe preset
 ```
 
-界面语言用 `HOURGLOW_LANG` 改道，压过存下来的偏好与系统语言，只影响这一次运行、不写任何设置：
+`HOURGLOW_LANG` overrides the stored preference and system language for this run only, without
+writing any settings:
 
 ```bash
-HOURGLOW_LANG=en ./build/hourglow-cli list        # 三种产物都认它
-HOURGLOW_LANG=en ./build/panelshot ~/Desktop      # 换版式或加语言之后对着看
-./build/hourglow-cli language en                  # 这条才是真写偏好（app 与 CLI 共用）
+HOURGLOW_LANG=en ./build/hourglow-cli list        # All three kinds of build output honor it
+HOURGLOW_LANG=en ./build/panelshot ~/Desktop      # Inspect layout changes or a new language
+./build/hourglow-cli language en                  # This actually saves the preference, shared by app and CLI
 ```
 
-开机自启与定位**问不到 CLI 头上** —— 登录项注册的、定位权限授予的都是「调用者自己的 bundle」，
-而 CLI 是裸二进制。这两条排障入口长在 app 的可执行文件上，打印完就退出：
+Launch at login and location **cannot be handled by the CLI**: registration and location
+permission belong to the caller's own bundle, and the CLI is an unbundled binary. These
+diagnostic entry points are on the app executable; they print their result and exit:
 
 ```bash
 build/HourGlow.app/Contents/MacOS/HourGlow --login-item status   # status | on | off
-build/HourGlow.app/Contents/MacOS/HourGlow --locate              # 定位一次，只打印不写配置
-build/HourGlow.app/Contents/MacOS/HourGlow --guide status        # 新手指引：status | reset | show
+build/HourGlow.app/Contents/MacOS/HourGlow --locate              # One fix, printed without changing the config
+build/HourGlow.app/Contents/MacOS/HourGlow --guide status        # Onboarding: status | reset | show
 ```
 
-`--guide show` 是唯一不退出的一个：它把这一次启动标成「无论如何都弹指引」，改完版式直接看效果。
-「看过了」存在 `UserDefaults`（`onboarding.seenVersion`），`HOURGLOW_HOME` 带不走它，
-所以要演一次干净的首次启动得两条一起用：
+`--guide show` is the sole exception that does not exit: it marks this launch to show the guide
+unconditionally, useful for inspecting layout changes. The seen marker is in `UserDefaults`
+(`onboarding.seenVersion`), outside `HOURGLOW_HOME`, so a clean first-launch demonstration
+requires both steps:
 
 ```bash
 HOURGLOW_HOME=/tmp/hg-guide build/HourGlow.app/Contents/MacOS/HourGlow --guide reset
-HOURGLOW_HOME=/tmp/hg-guide build/HourGlow.app/Contents/MacOS/HourGlow   # 配置目录是空的 → 指引自动弹
+HOURGLOW_HOME=/tmp/hg-guide build/HourGlow.app/Contents/MacOS/HourGlow   # Empty config directory → guide opens automatically
 ```
 
-单跑某一项检查：靶子里没有过滤机制，改 `Tests/<Name>/main.swift` 里的 `check(...)` 调用即可；
-它们是顺序执行的断言列表，失败计数非零时退出码为 1。
+To run an individual assertion, edit the `check(...)` calls in `Tests/<Name>/main.swift`;
+the check binaries have no filtering mechanism. They execute ordered assertion lists and
+exit with status 1 when the failure count is nonzero.
 
-排障与手工验证走 CLI：
+Use the CLI for diagnostics and manual verification:
 
 ```bash
-./build/hourglow-cli now                # 当前应生效的壁纸、下次切换、与实际是否一致
-./build/hourglow-cli simulate 2026-12-21 # 时间旅行：打印该日全天每一次切换
-./build/hourglow-cli import ~/Pictures/zhangjiajie  # 一组静帧 → 天光分段时间轴
-./build/hourglow-cli location 深圳      # 按城市名设坐标
-./build/hourglow-cli apply --dry-run    # 看会写什么，不真写
-./build/hourglow-cli run                # 前台常驻引擎，Ctrl-C 退出
-./build/hourglow-cli status             # 引擎视角：上次写了什么、现在是不是还是那张
-open build/HourGlow.app                 # 菜单栏 app
+./build/hourglow-cli now                # Expected wallpaper, next switch, and whether reality matches
+./build/hourglow-cli simulate 2026-12-21 # Time travel: print every switch on that date
+./build/hourglow-cli import ~/Pictures/zhangjiajie  # A set of stills → solar-phase timeline
+./build/hourglow-cli location 深圳      # Set coordinates by city name
+./build/hourglow-cli apply --dry-run    # Show the proposed write without writing
+./build/hourglow-cli run                # Foreground engine; Ctrl-C exits
+./build/hourglow-cli status             # Engine's view: last wallpaper written, and whether it is still current
+open build/HourGlow.app                 # Menu bar app
 ```
 
-应用图标是画出来的：`Tools/makeicon.swift` 用 SF Symbol 的沙漏加一条晨光→夜色的渐变生成
-`Resources/HourGlow.icns`，产物已提交进仓库，`build.sh` 只负责拷进 bundle。改图标才需要
-按那个文件头上的用法重跑一次。
+The app icon is drawn by `Tools/makeicon.swift`: an SF Symbol hourglass with a dawn-to-night
+gradient, generating `Resources/HourGlow.icns`. The generated asset is committed; `build.sh`
+only copies it into the bundle. Rerun the usage shown in that file's header only when changing
+the icon.
 
-### 演示图与分享卡片
+### Demo and share card
 
-`docs/demo.gif`（README 顶上那张，1000 × 625、32 帧、约 10 秒、3.2 MB）与官网仓库的
-`assets/og.png`（1200 × 630，`og:image` / Twitter Card / GitHub Social Preview 三处共用一张）
-都由 `Tools/makedemo.sh` 生成：拿一份一次性配置（深圳、Tahoe 四段、英文、日期钉死 2026-09-04），
-用 `panelshot --only timeline --now …` 在一天里抓十二张时间轴，再由 `Tools/makedemo.swift`
-用 AppKit 离屏合成「桌面 + 菜单栏 + 面板」，ImageIO 编成 GIF —— 不引入 ffmpeg / gifsicle。
-Evening / Night 两段的面板用 `--appearance dark` 抓：壁纸暗下去面板跟着暗，顺带展示深色模式；
-`makedemo.swift` 里 `Phase.dark` 给这两段换成亮色描边，两处名单要一致。
-壁纸底图 `tahoe-*.jpg` 不进这个仓库，默认从旁边的官网仓库 `../hourglow-web/assets/` 取。
+`Tools/makedemo.sh` generates both `docs/demo.gif` (at the top of the README: 1000 × 625,
+32 frames, about 10 seconds, 3.2 MB) and the website repository's `assets/og.png` (1200 × 630,
+shared by `og:image`, Twitter Card, and GitHub Social Preview). It uses a throwaway config
+(Shenzhen, four Tahoe slots, English, date fixed to 2026-09-04), captures twelve timeline
+views throughout the day with `panelshot --only timeline --now …`, then uses
+`Tools/makedemo.swift` and AppKit to composite the desktop, menu bar, and panel offscreen.
+ImageIO encodes the GIF; no ffmpeg or gifsicle dependency is introduced.
+Evening/Night panels are captured with `--appearance dark`, matching the darker wallpaper and
+showing dark mode. `Phase.dark` in `makedemo.swift` gives those phases a lighter border;
+keep the two phase lists in sync. Background images `tahoe-*.jpg` are not in this repository;
+by default they come from the adjacent website repository's `../hourglow-web/assets/`.
 
-面板上的「现在」全部走 `AppModel.now`（`nonisolated(unsafe) static var`），只有 `panelshot --now`
-会改它；app 与 CLI 永远是真实时钟。新加用到「现在」的界面逻辑时别直接写 `Date()`，
-不然定格的截图里那一处会漏出真实时间。
+All uses of “now” in the panel go through `AppModel.now` (`nonisolated(unsafe) static var`).
+Only `panelshot --now` changes it; the app and CLI always use the real clock. Do not use
+`Date()` directly in new time-dependent UI logic, or that part of a frozen screenshot will
+show the real time.
 
-**官网是另一个仓库** `bobbyhuang-dev/hourglow-web`（本机在 `../hourglow-web`），纯静态页 +
-Cloudflare Workers，push 到 `main` 即部署。GitHub 仓库的 Social Preview 没有 API，
-只能在 Settings › General › Social preview 里手工上传 `og.png`；Homepage 与 Topics 可以
-`gh repo edit` 设。
+**The website is a separate repository**, `bobbyhuang-dev/hourglow-web` (locally
+`../hourglow-web`): static pages + Cloudflare Workers, deployed on pushes to `main`. GitHub
+repository Social Preview has no API: upload `og.png` manually under Settings › General ›
+Social preview. Homepage and Topics can be set with `gh repo edit`.
 
-版本号由 `build.sh` 顶上的 `HOURGLOW_VERSION` / `HOURGLOW_BUILD` 决定（默认 `1.4.0` / `1`），
-发版流水线用 tag 与 run number 覆盖它们。CI 与发版都在 GitHub Actions 上：
-`.github/workflows/ci.yml` 每次 push / PR 跑一遍构建 + 主靶子 + 星历对拍，
-`.github/workflows/release.yml` 见到 `v*` tag 就构建、验证、压包、建 Release。
-发版踩过的坑见下面「CI 与发版」。
+Versions come from `HOURGLOW_VERSION` / `HOURGLOW_BUILD` at the top of `build.sh` (defaults
+`1.5.0` / `1`); the release workflow overrides them with the tag and run number. CI and
+releases use GitHub Actions: `.github/workflows/ci.yml` builds, runs the main checks, and
+cross-checks the ephemeris on every push/PR; `.github/workflows/release.yml` builds, verifies,
+packages, and creates a Release for `v*` tags. See “CI and releases” below for past pitfalls.
 
-`build.sh` 里入口文件单列成 `ENTRY`：`@main`（`HourGlowApp.swift`）不能和含顶层代码的
-`main.swift` 编进同一模块，而 `panelshot` 要复用 `UI/`。新增 UI 文件会被 `Sources/UI/*.swift`
-通配到，新增入口则要改脚本。
+`build.sh` lists the entry file separately as `ENTRY`: `@main` (`HourGlowApp.swift`) cannot
+share a module with a `main.swift` containing top-level code, and `panelshot` needs to reuse
+`UI/`. New UI files match `Sources/UI/*.swift`; new entry points require a script change.
 
-## 架构
+## Architecture
 
-分层是单向的：`UI → AppModel → Scheduler → Resolver/WallpaperWriter`。求值与写入的逻辑
-**只有一份**，在 `Engine` 与 `Model` 里；UI 层没有自己的调度副本。
+Dependencies flow one way: `UI → AppModel → Scheduler → Resolver/WallpaperWriter`.
+Resolution and writing logic exist **only once**, in `Engine` and `Model`; the UI has no
+separate copy of the scheduling rules.
 
 ```
 Sources/
-├── L10n/                      // 界面与命令行的全部文案，三种产物共用
-│   ├── L10n.swift             // 挑语言（HOURGLOW_LANG > 偏好 > 系统 > en）、查表、单复数
-│   └── Catalogs/<code>.swift  // 一门语言一个文件；zh-Hans 是原文，加语言只加这里
+├── L10n/                      // All UI and CLI strings, shared by all three kinds of build output
+│   ├── L10n.swift             // Language selection (HOURGLOW_LANG > preference > system > en), lookup, plurals
+│   └── Catalogs/<code>.swift  // One file per language; en is the source catalog
 ├── App/
-│   ├── HourGlowApp.swift      // @main，MenuBarExtra 场景；--login-item / --locate / --guide 入口
-│   ├── AppModel.swift         // UI 与引擎之间唯一的一层，@MainActor @Observable
-│   ├── SlotDraft.swift        // 时段页的草稿模型（编辑不即时生效）
-│   ├── Onboarding.swift       // 新手指引的步骤、文案与「谁该看到它」的规则（纯 Foundation）
-│   └── AppUpdater.swift       // GitHub Release 检查、下载、校验与安装交接
-├── Model/                     // 纯数据与求值，不碰系统
-│   ├── Schedule.swift         // Slot / Trigger / Wallpaper + 手写 Codable（扁平 JSON）
-│   ├── Store.swift            // 原子读写 schedule.json，缺失时写入 Tahoe 预设
-│   ├── Resolver.swift         // 求值：前后各展开一天，跨午夜回绕由此自然成立
-│   ├── TimeMap.swift          // 天光分段：把日出/白昼/日落/夜晚均分到当天的晨昏窗口
-│   └── SceneImport.swift      // 一组静帧 → solarPhase 时段（文件名 / 分子目录 / .sundialScene）
-├── System/                    // 与 macOS 打交道
-│   ├── WallpaperWriter.swift  // 读改写 Index.plist + killall WallpaperAgent
-│   ├── AerialCatalog.swift    // 解析系统的 entries.json：名称、分类、缩略图、下载状态与体积
-│   ├── Solar.swift            // NOAA 太阳位置算法，日出日落与晨昏
-│   ├── Location.swift         // 从 zone.tab 反查近似坐标（免权限的兜底）
-│   ├── PreciseLocation.swift  // CoreLocation 只取一次精确坐标，被拒时回退手填
-│   ├── Cities.swift           // 常用城市离线表，指引与地点页共用
-│   ├── Geocode.swift          // 坐标反查地名（只用来起名字，不替换坐标）
-│   └── LaunchAtLogin.swift    // 开机自启，包 SMAppService.mainApp
+│   ├── HourGlowApp.swift      // @main, MenuBarExtra scene; --login-item / --locate / --guide entry points
+│   ├── AppModel.swift         // Sole layer between UI and engine, @MainActor @Observable
+│   ├── SlotDraft.swift        // Slot editor draft model (edits do not take effect immediately)
+│   ├── Onboarding.swift       // Guide steps, copy, and eligibility rules (Foundation only)
+│   └── AppUpdater.swift       // GitHub Release checks, download, verification, and installation handoff
+├── Model/                     // Pure data and resolution, no system interaction
+│   ├── Schedule.swift         // Slot / Trigger / Wallpaper + handwritten Codable (flat JSON)
+│   ├── Store.swift            // Atomic schedule.json I/O; writes Tahoe preset when missing
+│   ├── Resolver.swift         // Resolution expands one day either side, naturally handling midnight wraparound
+│   ├── TimeMap.swift          // Solar phases: evenly divide sunrise/day/sunset/night across today's twilight windows
+│   └── SceneImport.swift      // Stills → solarPhase slots (filenames / subfolders / .sundialScene)
+├── System/                    // macOS integration
+│   ├── WallpaperWriter.swift  // Read/modify/write Index.plist + killall WallpaperAgent
+│   ├── AerialCatalog.swift    // Parse system entries.json: names, categories, thumbnails, download state and size
+│   ├── Solar.swift            // NOAA solar position algorithm, sunrise/sunset and twilight
+│   ├── Location.swift         // Approximate coordinates from zone.tab (permission-free fallback)
+│   ├── PreciseLocation.swift  // One CoreLocation fix; manual entry when denied
+│   ├── Cities.swift           // Offline common-city table shared by guide and location page
+│   ├── Geocode.swift          // Reverse-geocode coordinates for names only, never replace the coordinates
+│   └── LaunchAtLogin.swift    // Launch at login, wrapping SMAppService.mainApp
 ├── Engine/
-│   ├── Scheduler.swift        // 核心：定时器排到下一个触发点 + 系统事件观察 + 决定写不写
-│   ├── EngineState.swift      // state.json：我们上次写的是哪张
-│   ├── ConfigWatcher.swift    // schedule.json 被手改后立刻跟上
-│   ├── EngineLock.swift       // 单实例锁，app 与 CLI 抢同一把
-│   └── LaunchAgentInstaller.swift  // 无头常驻：把 CLI run 注册成 LaunchAgent
-├── UI/                        // 单面板左右推进，度量集中在 PanelKit
-│   ├── PanelRoot.swift        // 面板的根
-│   ├── PanelKit.swift         // 固定度量、字号档位、随外观走的卡片色、Sky 调色板、页头、分区卡片、行样式、缩略图缓存
-│   ├── TimelineView.swift     // 主面板：时间轴
-│   ├── DayBar.swift           // 时间轴顶上的「今日天光条」：24 小时横带，状态图形、不可点
-│   ├── SlotEditorView.swift   // 单个时段的编辑页
-│   ├── WallpaperPicker.swift  // aerial 缩略图网格 + 本地图片
-│   ├── SettingsView.swift     // 开机自启 + 位置 + 自动更新 + 帮助
-│   ├── PlaceView.swift        // 选择地区
-│   ├── OnboardingView.swift   // 新手指引的五步版式
-│   └── OnboardingWindow.swift // 装它的那扇窗（全项目唯一一扇）
-├── Updater/main.swift         // 主进程退出后原位替换 app 并重启
-└── CLI/                       // 排障与无头常驻入口
+│   ├── Scheduler.swift        // Core: timer at next trigger + system observers + write decision
+│   ├── EngineState.swift      // state.json: last wallpaper we wrote
+│   ├── ConfigWatcher.swift    // Follow manual schedule.json edits immediately
+│   ├── EngineLock.swift       // Single-instance lock shared by app and CLI
+│   └── LaunchAgentInstaller.swift  // Headless service: register CLI run as a LaunchAgent
+├── UI/                        // One panel with horizontal navigation; measurements centralized in PanelKit
+│   ├── PanelRoot.swift        // Panel root
+│   ├── PanelKit.swift         // Fixed measurements, font sizes, adaptive card colors, Sky palette, headers, cards, rows, thumbnail cache
+│   ├── TimelineView.swift     // Main panel: timeline
+│   ├── DayBar.swift           // Today's daylight bar: a 24-hour status graphic, not interactive
+│   ├── SlotEditorView.swift   // Single-slot editor
+│   ├── WallpaperPicker.swift  // Aerial thumbnail grid + local images
+│   ├── SettingsView.swift     // Launch at login + location + automatic updates + help
+│   ├── PlaceView.swift        // Choose location
+│   ├── OnboardingView.swift   // Five-step guide layout
+│   └── OnboardingWindow.swift // Its host window (the project's only independent window)
+├── Updater/main.swift         // Replace the app in place after the main process exits, then relaunch
+└── CLI/                       // Diagnostics and headless-service entry point
 ```
 
-- `Model/` —— `Schedule.swift` 的 `Trigger`/`Wallpaper` 用手写 `Codable` 编成扁平 JSON
-  （便于用户手改）。`Resolver.swift` 按每个 slot 的偏移反推基准日再前后各展开一天。
-  `TimeMap` 把日出/白昼/日落/夜晚均分到当天的航海晨光→民用黄昏窗口；
-  `SceneImport` 按文件名（认不出时看上级文件夹名）把一组静帧编成 `solarPhase` 时段。
-- `System/` —— `WallpaperWriter` 读改写 `Index.plist`（保留未知顶层字段、写前备份、强制
-  `linked`、目标一致时跳过写入以免闪屏、写后 `killall WallpaperAgent`）。坐标有三条路，
-  优先级是 手填/定位写下的 > 时区推断。
-- `Engine/` —— `Scheduler` 是核心：定时器直接排到下一个触发点、**不轮询**，由四类系统通知
-  （唤醒 / 时钟变更 / 时区变更 / 跨日）补齐意外情况，外加最长 6 小时的安全网。
-  `EngineState` 的 `state.json` 记录「我们上次写的是哪张」，是判断用户有没有手动换过的唯一依据。
-- `L10n/` —— 只依赖 Foundation，被 `Model` / `System` / `Engine` / `UI` / `CLI` / `Updater`
-  一起用，所以在依赖图上排在最前面，`build.sh` 里也单列成 `L10N`。细节见「语言与本地化」。
-- `App/Onboarding.swift` —— 纯 Foundation，不碰 UI 也不碰 `Store`，所以能单独编进 `appcheck`。
-- `App/AppUpdater.swift` —— 从 GitHub Releases 查正式版、比较 SemVer、下载并校验 asset digest，
-  解压后同时核对 bundle ID / 版本 / 代码签名；`Updater/main.swift` 在主进程退出后原位替换 app。
+- `Model/` — `Trigger`/`Wallpaper` in `Schedule.swift` use handwritten `Codable` for flat JSON
+  that users can edit. `Resolver.swift` derives a reference day from each slot's offset, then
+  expands one day on either side. `TimeMap` evenly distributes sunrise/day/sunset/night across
+  that day's nautical-dawn-to-civil-dusk windows. `SceneImport` turns stills into `solarPhase`
+  slots using filenames, or their parent folder names when a filename is unrecognized.
+- `System/` — `WallpaperWriter` reads/modifies/writes `Index.plist`: preserve unknown top-level
+  fields, back up before writing, force `linked`, skip writes when the target already matches
+  to avoid flicker, then `killall WallpaperAgent`. Coordinates have three paths, with manually
+  entered or location-service coordinates taking precedence over time-zone inference.
+- `Engine/` — `Scheduler` schedules its timer directly at the next trigger, **without polling**.
+  Four system notifications (wake / clock change / time-zone change / day rollover) handle
+  disruptions, plus a safety net of at most 6 hours. `EngineState`'s `state.json` records the
+  last wallpaper we wrote; it is the sole basis for recognizing manual wallpaper changes.
+- `L10n/` — Foundation only, shared by `Model` / `System` / `Engine` / `UI` / `CLI` / `Updater`.
+  It comes first in the dependency graph and is listed separately as `L10N` in `build.sh`.
+  See “Language and localization.”
+- `App/Onboarding.swift` — Foundation only, no UI or `Store`, so it can compile into `appcheck`
+  independently.
+- `App/AppUpdater.swift` — Finds stable GitHub Releases, compares SemVer, downloads and checks
+  the asset digest, then verifies the unpacked bundle ID, version, and code signature.
+  `Updater/main.swift` replaces the app in place after the main process exits.
 
-### 两条必须守住的语义
+### Two semantics that must hold
 
-**1. 用户手动换了壁纸时谁说了算**（`Scheduler.shouldAssert`，类型注释里有完整推导）：
-跨过了新的触发边界（到点、睡过头、暂停后恢复）就照常写；没跨过的原地重新求值（启动、唤醒、
-时区变更）只有当前壁纸仍是我们上次写的那张时才写，否则让位。判据是
-`EngineState.lastFiredAt` 与本次 `Resolution.since` 谁更晚。`enginecheck` 覆盖了整个决策矩阵。
+**1. Who wins after a manual wallpaper change** (`Scheduler.shouldAssert`; the type comment
+contains the full reasoning): crossing a new trigger boundary (scheduled time, sleeping
+through it, resuming from pause) writes normally. In-place re-evaluation without a boundary
+crossing (launch, wake, time-zone change) writes only if the current wallpaper is still the
+one we last wrote; otherwise it stands down. Compare `EngineState.lastFiredAt` with the
+current `Resolution.since`. `enginecheck` covers the complete decision matrix.
 
-两种极端都试过，都不成立：只看「是不是同一段」，那么合盖睡一小时醒来会拿同一张盖掉用户十分钟前的
-选择；只看「是不是我们写的那张」，那么手动换过一次之后自动切换就永久失效 —— 与「不需要用户额外
-点任何东西」的初衷正好相反。手动选择的有效期到下一次排定的切换为止，跟空调的「临时保持」一个意思。
+Both extremes were tried and failed: checking only “same slot?” overwrites a manual choice
+made ten minutes ago after an hour asleep; checking only “is it our last wallpaper?” disables
+automatic switching forever after a single manual change, contradicting the goal of requiring
+no extra user action. A manual choice lasts until the next scheduled switch, like a
+thermostat's temporary hold.
 
-**2. 领跑 / 从属**（`Engine/EngineLock.swift`）：菜单栏 app 与 `hourglow-cli run` 可能同时在。
-两个引擎同时排程会互相把对方的写入当成「用户手动改的」，所以启动时先抢 `run.lock`：
-抢到的起 `Scheduler`，没抢到的退回从属模式，只编辑 `schedule.json`，由对方的 `ConfigWatcher` 跟上。
-从属方要定期重试：原领跑者退出或 LaunchAgent 被卸载后自动接管，不能留下一个仍显示运行、
-实际无人排程的进程。
+**2. Leader/follower** (`Engine/EngineLock.swift`): the menu bar app and `hourglow-cli run`
+may coexist. Two schedulers would mistake each other's writes for manual changes, so both
+first compete for `run.lock`. The winner starts `Scheduler`; the loser becomes a follower,
+only editing `schedule.json`, which the leader's `ConfigWatcher` picks up. Followers must
+retry periodically and take over when the leader exits or its LaunchAgent is removed; never
+leave a process that appears to be running while nothing actually schedules.
 
-## 已验证的系统事实
+## Verified system facts
 
-这一节是实机验证过的结论，不是推测。实现时直接依赖，不要重新推测。
+These conclusions were verified on a real machine, not inferred. Rely on them when
+implementing rather than speculating again.
 
-### 壁纸配置文件
+### Wallpaper configuration file
 
 ```
 ~/Library/Application Support/com.apple.wallpaper/Store/Index.plist   # binary plist
 ```
 
-写入后需要 `killall WallpaperAgent` 才生效。实测修改不会被系统改回去 ——
-用户自己在系统设置里换的会覆盖我们写的，反过来我们写的也会覆盖他的，所以「谁说了算」
-完全由上面那条语义决定，不能指望系统帮忙仲裁。
+Changes require `killall WallpaperAgent` to take effect. Testing showed that the system does
+not revert our edits: a user's choice in System Settings overwrites ours, and our writes
+can overwrite theirs. Arbitration therefore belongs entirely to the semantics above, not
+to the system.
 
-顶层四个作用域：
+Four top-level scopes:
 
 ```
 AllSpacesAndDisplays
@@ -230,408 +257,509 @@ Spaces      { <space-uuid>: { Default: …, Displays: { <display-uuid>: … } } 
 Displays    { <display-uuid>: … }
 ```
 
-每个 slot 有 `Type` 字段，决定桌面与屏保是否联动：
+Each slot's `Type` determines whether desktop and screen saver are linked:
 
-| Type | 结构 |
+| Type | Structure |
 |---|---|
-| `linked` | 单个 `Linked` 键，桌面和屏保共用一个 choice |
-| `individual` | `Desktop` 和 `Idle` 两个键，分别配置 |
+| `linked` | One `Linked` key; desktop and screen saver share a choice |
+| `individual` | Separate `Desktop` and `Idle` keys |
 
-每个 choice 形如 `{ Provider: <string>, Files: [], Configuration: <嵌套的 binary plist> }`。
+Each choice has the form `{ Provider: <string>, Files: [], Configuration: <nested binary plist> }`.
 
-### 两种 Provider
+### Two providers
 
-**动态壁纸（aerial）**
+**Dynamic wallpaper (aerial)**
 
 ```
 Provider:      com.apple.wallpaper.choice.aerials
 Configuration: { assetID: "CF6347E2-4F81-4410-8892-4830991B6C5A" }
 ```
 
-**静态图片**
+**Static image**
 
 ```
 Provider:      com.apple.wallpaper.choice.image
 Configuration: { type: "imageFile", url: { relative: "file:///path/to.heic" } }
 ```
 
-静态图的格式是通过调用公开 API `NSWorkspace.setDesktopImageURL` 反推出来的 —— 该 API 确实会
-写入 `Index.plist`，但它的读回接口 `desktopImageURL(for:)` 返回的是陈旧值（实测返回
-`DefaultDesktop.heic`），**不可信**。另外它会把 slot 从 `linked` 强制改成 `individual`，
-写入时必须自己纠正回来。
+The static-image format was reverse-engineered by calling the public
+`NSWorkspace.setDesktopImageURL` API. It does write `Index.plist`, but its readback API,
+`desktopImageURL(for:)`, returns stale values (`DefaultDesktop.heic` in testing) and **cannot
+be trusted**. It also forces the slot from `linked` to `individual`; correct that when writing.
 
-### Aerial 素材库
+### Aerial library
 
 ```
 ~/Library/Application Support/com.apple.wallpaper/aerials/
-├── manifest/entries.json      # 156 个 asset 的完整元数据
-├── thumbnails/<uuid>.png      # 156 张缩略图，全部已本地缓存
-└── videos/<uuid>.mov          # 已下载的视频，每个约 430 MB
+├── manifest/entries.json      # Complete metadata for 156 assets
+├── thumbnails/<uuid>.png      # 156 thumbnails, all cached locally
+└── videos/<uuid>.mov          # Downloaded videos, about 430 MB each
 ```
 
-`entries.json` 中每个 asset 的可用字段：`id`、`accessibilityLabel`、`shotID`、
-`localizedNameKey`、`categories[]`、`subcategories[]`、`preferredOrder`、`previewImage`、
-`includeInShuffle`、`showInTopLevel`、`url-4K-SDR-240FPS`。
+Available asset fields in `entries.json`: `id`, `accessibilityLabel`, `shotID`,
+`localizedNameKey`, `categories[]`, `subcategories[]`, `preferredOrder`, `previewImage`,
+`includeInShuffle`, `showInTopLevel`, `url-4K-SDR-240FPS`.
 
-分类共 5 个：Landscapes(18 子类) / Cities(6) / Underwater(17) / Space(21) / Mac(1)。
+There are five categories: Landscapes (18 subcategories) / Cities (6) / Underwater (17) /
+Space (21) / Mac (1).
 
-判断某张是否已下载：检查 `videos/<id>.mov` 是否存在。未下载的可以照常写入配置，由系统自行拉取。
+Check whether `videos/<id>.mov` exists to determine download state. An undownloaded asset can
+still be written to the configuration; the system downloads it itself.
 
-### Tahoe 四张的 assetID
+### Asset IDs for the four Tahoe wallpapers
 
-首次启动写入的预设就是这四段：日出 → Morning、09:00 → Day、日落前 30 分 → Evening、
-日落后 60 分 → Night。它只是一份数据预设，不是硬编码逻辑。
+The first-launch preset has four slots: sunrise → Morning, 09:00 → Day, 30 minutes before
+sunset → Evening, 60 minutes after sunset → Night. This is preset data, not hardcoded logic.
 
-| 时段 | 名称 | shotID | assetID |
+| Period | Name | shotID | assetID |
 |---|---|---|---|
-| 晨 | Tahoe Morning | TA_L_001 | `B2FC91ED-6891-4DEB-85A1-268B2B4160B6` |
-| 昼 | Tahoe Day     | TA_L_002 | `4C108785-A7BA-422E-9C79-B0129F1D5550` |
-| 昏 | Tahoe Evening | TA_D_001 | `52ACB9B8-75FC-4516-BC60-4550CFF3B661` |
-| 夜 | Tahoe Night   | TA_D_002 | `CF6347E2-4F81-4410-8892-4830991B6C5A` |
+| Morning | Tahoe Morning | TA_L_001 | `B2FC91ED-6891-4DEB-85A1-268B2B4160B6` |
+| Day | Tahoe Day     | TA_L_002 | `4C108785-A7BA-422E-9C79-B0129F1D5550` |
+| Evening | Tahoe Evening | TA_D_001 | `52ACB9B8-75FC-4516-BC60-4550CFF3B661` |
+| Night | Tahoe Night   | TA_D_002 | `CF6347E2-4F81-4410-8892-4830991B6C5A` |
 
-## UI 约定
+## UI conventions
 
-贴 macOS 原生、简洁、**版式固定**。所有度量集中在 `UI/PanelKit.swift` 的 `Panel` 里
-（宽度锁死 360 pt；选壁纸页固定 470 pt，其余按内容收）—— 改布局先改那里，不要在视图里散写数字。
-字号也只有 `Panel.Font` 那六档（headline / body / control / secondary / caption / section），
-视图里 `.font(.system(size:))` 只留给 SF Symbol 图标。卡片底、输入框底、缩略图描边走
-`Panel.cardFill` / `fieldFill` / `hairline`，它们是 `NSColor(name:)` 动态色、按视图所在外观解析。
+Keep the UI native to macOS, simple, and **fixed in layout**. All measurements live in `Panel`
+in `UI/PanelKit.swift`: width locked to 360 pt, wallpaper picker height fixed at 470 pt, other
+pages sized to content. Change those first rather than scattering numbers through views.
+Use only the six `Panel.Font` sizes (headline / body / control / secondary / caption /
+section); `.font(.system(size:))` in views is reserved for SF Symbol icons. Card backgrounds,
+input backgrounds, and thumbnail borders use `Panel.cardFill` / `fieldFill` / `hairline`,
+dynamic `NSColor(name:)` colors resolved against the view's appearance.
 
-时间轴的状态区下面是一条**今日天光条**（`UI/DayBar.swift`）：24 小时横带，底色按今天的
-晨昏/日出/日落渐变（颜色来自 `Sky`，和图标、指引顶栏同一族），每个时段在触发时刻立一根白色
-标记，当前生效的一段在底边描强调色，「现在」是一根强调色游标。它是状态图形，**不可点**
-（标记 2 pt 宽、常与游标挤在一起，点了去哪儿说不清，列表就在下面）。没坐标或极昼极夜时
-整条铺中性灰，不编造日出日落；晨昏算不出来时渐变的起止用日出日落各退 45 分钟兜底 ——
-只是画法，与 `TimeMap` 的求值兜底无关。暂停时整条变淡，状态区那句副标题自己变橙并带暂停图标，
-不另立「已暂停」标记。
-行的常驻底色是 macOS 里「选中项」的语言，而这个面板里的行点下去是翻页、没有选中态 ——
-所以底色只留给悬停与按下，「现在正在跑的那一段」靠行首一根强调色竖条（`Panel.nowBar`）标。
+Below the timeline status is **today's daylight bar** (`UI/DayBar.swift`): a 24-hour strip
+whose gradient follows today's twilight/sunrise/sunset. Its colors come from `Sky`, shared
+with the icon and guide header. Each slot has a white trigger marker; the active interval
+has an accent-colored lower edge, and an accent cursor marks now. It is a status graphic,
+**not clickable**: 2 pt markers often crowd the cursor, their destination would be ambiguous,
+and the list is immediately below. Without coordinates, or during polar day/night, use
+neutral gray rather than inventing sun times. If twilight cannot be computed, use 45 minutes
+before sunrise/after sunset for the gradient endpoints — this is drawing behavior, independent
+of `TimeMap`'s resolution fallback. Pausing dims the entire bar; the status subtitle turns
+orange with a pause icon, without adding a separate paused badge.
+Persistent row backgrounds mean “selected” on macOS, but these rows navigate rather than
+select. Reserve backgrounds for hover/press; mark the currently active slot with a leading
+accent bar (`Panel.nowBar`).
 
-设置页（语言 + 开机自启 + 位置 + 自动更新）与时段页并排在第一层，从 ⋯ 菜单或「缺少坐标」那条提示条
-进去 —— 提示条说的是哪儿不对，点进去就该是在哪儿改。它的改动**即时生效**：一个开关、
-一对坐标、换一门语言都是单次动作，没有「一组改动一起应用」的语义。
+Settings (language + launch at login + location + automatic updates) and the slot page sit at
+the same navigation level. Reach settings through the ⋯ menu or the missing-coordinates
+banner: a notice explaining what is wrong should lead to where it is fixed. Changes take
+**immediate effect**: a toggle, coordinate pair, or language choice is a single action, not
+a batch waiting to be applied.
 
-时段页则相反，它的改动**不即时生效**：先落进 `AppModel.draft`（草稿），界面立刻跟手，
-点底部「应用」才写进 `schedule.json`、才可能换壁纸 —— 否则试错的代价是真把壁纸换过去。
-草稿放在 model 里而不是视图的 `@State`：选壁纸是另一页，面板还会一失焦就收起，
-草稿得比两者都活得久。回到时间轴即结束编辑（`endEditing`），没应用的改动到此为止。
-删除是就地两段式确认，不弹对话框（菜单栏面板里弹框太重），确认后立即生效。
+Slot edits are the opposite: they **do not take immediate effect**. They first enter
+`AppModel.draft`, so the UI responds immediately, but only Apply writes `schedule.json` and
+can change the wallpaper. Otherwise experimenting would actually switch the wallpaper.
+The draft belongs in the model, not view `@State`: choosing wallpaper navigates to another
+page, and the panel dismisses on losing focus, so the draft must outlive both. Returning to
+the timeline ends editing (`endEditing`) and discards unapplied changes. Deletion uses an
+inline two-stage confirmation, not a heavyweight dialog in a menu bar panel, and takes effect
+immediately after confirmation.
 
-地区是调度的一部分，不是设置里的附录：入口在时间轴右上角那颗胶囊，选完回到时间轴直接看
-今天的切换时刻。日出日落的偏移用下拉档位（±120 / 90 / 60 / 45 / 30 / 15 / 正好）而不是步进器 ——
-±5 分钟一步在这儿是假精度，而从「正好」按到「一小时后」要点十二下。档位之外的值
-（手改过配置、或旧版步进出来的 37 分）会被临时插进列表里，不然菜单选不中当前值。
+Location is part of scheduling, not an appendix to settings: enter through the pill at the
+timeline's upper right, then return directly to see today's switch times. Sunrise/sunset
+offsets use preset menus (±120 / 90 / 60 / 45 / 30 / 15 / exactly), not steppers: 5-minute steps
+imply false precision and need twelve clicks to go from exactly to one hour later. Values
+outside those presets (manual config edits or an old 37-minute stepper value) are temporarily
+inserted so the menu can select the current value.
+The empty-search section on the location page is “Nearby”: sort the offline table (handwritten
+entries + `zone.tab`) by spherical distance from `effectiveCoordinate`, then take
+`Cities.nearbyCount`. CLI `cities` without arguments does the same. Previously, separate
+China/overseas sections always put China first, hardcoding the developer's location: English
+users in Portland saw a first screen full of Chinese cities. Without coordinates, fall back
+to the handwritten table's original order. Coordinates do not affect ranking when a query
+is present.
 
-**新手指引是全项目唯一一扇独立的窗**（`UI/OnboardingWindow.swift`，480 × 566，度量在
-`PanelKit` 的 `Guide` 里，与 `Panel` 分开）。破例的理由只有一条：`LSUIElement` 的 app
-首次启动后屏幕上什么都不会出现，入口只是菜单栏里一个沙漏，而 `MenuBarExtra` 没有
-「替用户点开」的 API —— 指引要是长在面板里，就只有已经找到入口的人看得见，
-正好把最需要它的人挡在外面。它**只在真·全新安装时自动弹**（`schedule.json` 不存在），
-升级上来的老用户不打扰；入口在 ⋯ 菜单和设置页的「帮助」。关窗即算看过 ——
-跳过、走完、点红灯一视同仁。别拿 `OnboardingWindow` 去开第二扇窗。
+**The onboarding guide is the project's only independent window** (`UI/OnboardingWindow.swift`,
+480 × 566; measurements in `PanelKit`'s `Guide`, separate from `Panel`). The sole reason for
+this exception is discoverability: an `LSUIElement` app puts nothing on screen at first launch,
+only an hourglass in the menu bar, and `MenuBarExtra` has no API to open it for the user. A
+guide inside the panel would reach only people who already found the entrance, excluding those
+who most need it. It **opens automatically only on a genuinely fresh install** (no
+`schedule.json`), never bothering existing users after an upgrade. Manual entry points are
+the ⋯ menu and Help in settings. Closing counts as seen, whether skipping, finishing, or
+clicking the red close button. Do not use `OnboardingWindow` to open a second window.
 
-## 语言与本地化
+## Language and localization
 
-界面有简体中文与英文两种，默认跟随系统。**面向用户的字符串一个都不写在视图、命令或错误里**，
-全部是 `L10n.t("key")` 查出来的。新文案先写进 `Catalogs/zh-Hans.swift`（原文语言），再补别的。
+The UI supports Simplified Chinese and English, following the system by default. **No
+user-visible string belongs directly in a view, command, or error**: use `L10n.t("key")`.
+Write new text in `Catalogs/en.swift` (the source language) first, then add translations.
 
-**为什么不是 `.lproj/Localizable.strings`**：这个仓库不走 Xcode 工程，产物里有一堆没有 bundle
-的裸二进制（`hourglow-cli`、`panelshot`、八个靶子）。`Bundle.main.localizedString` 在它们身上
-只会把 key 原样退回来，靶子也就查不出漏翻。文案编进二进制里，三种产物拿到的是同一份，
-加一门语言只是加一个 Swift 文件。
+**Why not `.lproj/Localizable.strings`?** This repository has no Xcode project and produces
+unbundled binaries (`hourglow-cli`, `panelshot`, eight check binaries).
+`Bundle.main.localizedString` would return raw keys in those binaries, preventing checks from
+finding missing translations. Compiling catalogs into the binaries gives all three kinds of
+build output the same text; adding a language takes one Swift file.
 
-**加一门语言 = 两处改动**：`Sources/L10n/Catalogs/<code>.swift` 加一个文件，
-`L10n.catalogs` 加一行。别的都不用动 —— `build.sh` 按通配拿文件，
-`CFBundleLocalizations` 也是从这些文件里数出来的，CI 的逐语言冒烟同理。
-面向贡献者的完整步骤写在 `CONTRIBUTING.md` 的「Adding a language」里，改了这里记得同步。
+**Adding a language = two changes**: create `Sources/L10n/Catalogs/<code>.swift` and add a line
+to `L10n.catalogs`. Nothing else needs changing: `build.sh` finds the files by wildcard,
+`CFBundleLocalizations` is derived from them, and so is CI's per-language smoke loop. Keep the
+contributor instructions in `CONTRIBUTING.md`'s “Adding a language” section in sync.
 
-**挑哪一门**（`L10n.resolve`，纯函数，`l10ncheck` 按表断言）：
-`HOURGLOW_LANG` > 用户在设置页/CLI 选的 > 系统语言 > `defaultCode`（英文）。
-每一档都走 `match`：完全一致 → 语言+文字一致（`zh-Hans-CN` → `zh-Hans`）→ 只有语言一致
-（`en-GB` → `en`、`zh-Hant` → `zh-Hans`）。最后一档是有意为之，繁体读者看简体比被扔去英文近。
+**Language selection** (`L10n.resolve`, a pure function checked against a table by `l10ncheck`):
+`HOURGLOW_LANG` > user preference from settings/CLI > system languages > `defaultCode` (English).
+Each tier uses `match`: exact → language + script (`zh-Hans-CN` → `zh-Hans`) → language only
+(`en-GB` → `en`, `zh-Hant` → `zh-Hans`). The final step is deliberate: Simplified Chinese is
+closer for a Traditional Chinese reader than switching them to English.
 
-**兜底不是原文语言**：系统是法语、我们只有中英，给英文。`sourceCode`（对完整性、缺词时退回）
-与 `defaultCode`（谁都对不上时用）是两件事，别合成一个。
+**Source and default have distinct roles, even though both are `en`**: `sourceCode` defines
+completeness and fallback for missing text; `defaultCode` chooses the language when no requested
+language matches. A French system with only Chinese and English available gets English.
+Do not combine these two settings just because their current values are equal.
 
-**地名不算翻译工作量**：`StringCatalog.placeNames` 只有 `.chinese` / `.latin` 两档，
-`System/Cities.swift` 按它选一列。翻一门语言不必逐个翻几百个地名。
+**Singular forms are language-dependent**: English source entries may include `<key>.one`
+for a count of exactly 1. These entries are optional in other languages: Chinese does not need
+them and uses its base entry even at 1, rather than falling back to an English singular.
+Only the one-vs-many split is supported; do not work around a richer plural system silently.
 
-**换语言即时生效**：`L10n.setPreference` 写盘 → 清缓存 → 发 `didChangeNotification`，顺序不能反。
-`AppModel` 收到就 `languageGeneration += 1`，`PanelRoot` 拿它当 `.id` 把面板整棵重建。
-`.id` 挂在页面上而不是 `PanelRoot` 自己身上，所以在设置页改完语言，人还留在设置页。
+**Place names are not part of the translation workload**: `StringCatalog.placeNames` has only
+`.chinese` / `.latin`, selecting a column in `System/Cities.swift`. Translating a language does
+not require translating hundreds of place names individually.
 
-**偏好存在 `UserDefaults`，不在 `HOURGLOW_HOME` 里**（和新手指引的 `seenVersion` 一样）：
-app 用 `.standard`，CLI 是裸二进制、得显式指名 `UserDefaults(suiteName: "dev.bobbyhuang.hourglow")`。
-把自己的 bundle ID 当 suite 传给 `UserDefaults(suiteName:)` 是未定义行为，所以分两条路走。
+**Language changes apply immediately**: `L10n.setPreference` writes to disk → clears caches →
+posts `didChangeNotification`, in that order. `AppModel` increments `languageGeneration`;
+`PanelRoot` uses it as `.id` to rebuild the panel tree. The `.id` belongs on the page rather
+than `PanelRoot` itself, keeping users on settings after they change the language.
 
-**`l10ncheck` 守着的**：漏词、空词、多出原文没有的词、孤儿单数形、占位符与原文对不上、
-一条文案里混用 `%@` 与 `%1$@`、多参数没写序号；带上 `Sources` 还会把代码里
-`L10n.t("…")` 写死的 key 与原文表对一遍 —— 打错一个字母的后果是界面上露出 `slot.apply`
-这种半成品，编译器不会拦。
+**Preferences live in `UserDefaults`, not `HOURGLOW_HOME`**, just like onboarding's `seenVersion`.
+The app uses `.standard`; the unbundled CLI must explicitly use
+`UserDefaults(suiteName: "dev.bobbyhuang.hourglow")`. Passing your own bundle ID to
+`UserDefaults(suiteName:)` is undefined behavior, hence the separate paths.
 
-## 运行时路径
+**What `l10ncheck` protects**: missing/empty/extra keys, orphan singular forms, placeholders
+that differ from the source, mixed `%@` and `%1$@` within one string, and unnumbered arguments
+in multi-argument strings. Optional `.one` entries need not be present in every language.
+With `Sources` as an argument it also checks literal `L10n.t("…")` keys against the source
+catalog. A typo otherwise exposes unfinished text such as `slot.apply` in the UI; the compiler
+will not catch it.
+
+## Runtime paths
 
 ```
-~/Library/Application Support/HourGlow/schedule.json   # 配置（HOURGLOW_HOME 可整体改道）
-~/Library/Application Support/HourGlow/state.json      # 上次写了哪张
-~/Library/Application Support/HourGlow/run.lock        # 单实例锁
-~/Library/Application Support/HourGlow/Scenes/         # 导入的壁纸组素材
-UserDefaults dev.bobbyhuang.hourglow onboarding.seenVersion   # 新手指引看过没（不在 HOURGLOW_HOME 里）
-UserDefaults dev.bobbyhuang.hourglow language                 # 界面语言偏好，没有这一条就是跟随系统
-~/Library/Application Support/com.apple.wallpaper/Store/Index.plist  # 系统壁纸配置
-~/Library/Application Support/com.apple.wallpaper/aerials/           # aerial 素材库
-~/Library/LaunchAgents/app.hourglow.agent.plist        # 可选的无头常驻（hourglow-cli agent install）
-~/Library/Logs/HourGlow.log                            # LaunchAgent 日志
-~/Library/Logs/HourGlow-Updater.log                    # 最近一次 helper 安装结果
-~/Library/Caches/HourGlow/Updates/                     # 下载与解包暂存（成功后清理）
+~/Library/Application Support/HourGlow/schedule.json   # Configuration (HOURGLOW_HOME redirects the whole directory)
+~/Library/Application Support/HourGlow/state.json      # Last wallpaper written
+~/Library/Application Support/HourGlow/run.lock        # Single-instance lock
+~/Library/Application Support/HourGlow/Scenes/         # Imported wallpaper-set assets
+UserDefaults dev.bobbyhuang.hourglow onboarding.seenVersion   # Whether the guide was seen (outside HOURGLOW_HOME)
+UserDefaults dev.bobbyhuang.hourglow language                 # UI language preference; absent means follow the system
+~/Library/Application Support/com.apple.wallpaper/Store/Index.plist  # System wallpaper configuration
+~/Library/Application Support/com.apple.wallpaper/aerials/           # Aerial library
+~/Library/LaunchAgents/app.hourglow.agent.plist        # Optional headless service (hourglow-cli agent install)
+~/Library/Logs/HourGlow.log                            # LaunchAgent log
+~/Library/Logs/HourGlow-Updater.log                    # Most recent helper installation result
+~/Library/Caches/HourGlow/Updates/                     # Download/unpack staging (cleaned on success)
 ```
 
-## 非目标
+## Non-goals
 
-以下都**不做**，提这些需求时先确认是不是真的要改变这个边界：
+The following are **out of scope**. Before implementing a request for one, confirm that the
+boundary is deliberately changing:
 
-- 多显示器 / 多 Space 分别设置（统一写 `linked`，桌面与屏保一起换）
-- 桌面与屏保拆开控制
-- 随机 / 文件夹轮播
-- 跟随系统亮暗模式的触发器
-- 天气、Focus 模式触发
-- 锁屏壁纸
-- 整份 `schedule.json` 的导入导出与 iCloud 同步（壁纸组文件夹导入已做，指的不是它）
+- Per-display / per-Space settings (always write `linked`; desktop and screen saver change together)
+- Separate desktop and screen saver controls
+- Random / folder rotation
+- Triggers following system light/dark mode
+- Weather or Focus-mode triggers
+- Lock screen wallpaper
+- Whole-`schedule.json` import/export and iCloud sync (wallpaper-set folder import already exists;
+  this is not referring to that)
 
-## 踩过的坑（别再踩一次）
+## Past pitfalls (do not repeat them)
 
-改对应模块前先看这一节。每一条都是实机上栽过的，不是理论风险。
+Read the relevant section before changing a module. Every item came from a failure on a real
+machine, not a theoretical risk.
 
-### 调度与引擎
+### Scheduling and engine
 
-- **定时器要排在触发时刻之后 1 秒**。早几毫秒会求值到上一段，白跑一轮。
-- **`Timer` 要加到 `.common` mode**。菜单栏面板一打开就是另一个 run loop mode，
-  用 `.default` 的话面板开着定时器就不走了。
-- **收到 `NSSystemTimeZoneDidChange` 后必须 `NSTimeZone.resetSystemTimeZone()`**，
-  否则 `TimeZone.current` 拿到的还是旧时区，日出日落会整天算错。
-- **目录级 vnode 事件接不住原地改写**。`ConfigWatcher` 一开始只盯目录，理由是 `Store.save`
-  用原子写会换掉 inode。结果 `echo >` / `open(path,"w")` 这类原地截断重写根本不产生目录事件，
-  实测漏掉了一次配置变更。现在目录和文件两个 source 都挂，并且每次检查后重新挂一次文件
-  source（inode 可能刚被顶掉）。
-- **自激循环**：`state.json` 和 `schedule.json` 在同一个目录里，引擎每次求值都会写前者，
-  目录事件又会触发下一次求值。靠比对 `schedule.json` 的实际内容挡掉。
-- **相同触发时刻要稳定决胜**：按配置顺序，靠后的生效；并且「下一次」预告与到点结果必须一致。
-- launchd 把 stdout 重定向到文件时是全缓冲的，`setvbuf(_IOLBF)` 之后日志才会实时落盘。
-- 默认的 SIGINT/SIGTERM 处理会直接砍掉进程，`DispatchSource` 收不到；
-  得先 `signal(sig, SIG_IGN)` 再自己接管。
+- **Schedule timers 1 second after the trigger time.** A few milliseconds early resolves to
+  the previous slot and wastes a cycle.
+- **Add `Timer` to `.common` mode.** Opening the menu bar panel changes run-loop mode;
+  `.default` timers stop firing while the panel is open.
+- **Call `NSTimeZone.resetSystemTimeZone()` after `NSSystemTimeZoneDidChange`.** Otherwise
+  `TimeZone.current` still returns the old zone and sun times are wrong all day.
+- **Directory-level vnode events miss in-place writes.** `ConfigWatcher` originally watched
+  only the directory because `Store.save` atomically replaces the inode. But truncation and
+  rewriting with `echo >` / `open(path,"w")` produce no directory event, and a config change
+  was missed in testing. Watch both directory and file, reattaching the file source after
+  each check because its inode may just have been replaced.
+- **Self-triggering loops:** `state.json` shares a directory with `schedule.json`; each engine
+  evaluation writes the former and the directory event triggers another evaluation. Compare
+  the actual contents of `schedule.json` to stop the loop.
+- **Resolve equal trigger times deterministically:** later configuration entries win, and the
+  next-switch preview must match the result when that time arrives.
+- launchd redirects stdout to a fully buffered file; `setvbuf(_IOLBF)` is needed for real-time logs.
+- Default SIGINT/SIGTERM handling kills the process before `DispatchSource` receives them;
+  first call `signal(sig, SIG_IGN)`, then handle them yourself.
 
-### 天光分段与导入
+### Solar phases and import
 
-- **窗口必须每天重算**。用固定「日出后 20 分」近似 3 张日出，冬天晨光变短就会对不齐。
-- 夜晚最后几张的 `fireDate` 落在次日凌晨，靠 Resolver 现成的 ±1 天展开接住，
-  不要给 `solarPhase` 再套一层偏移锚点。
-- **文件名用 token 匹配，不要 `contains("day")`**：`sunday.heic` 会被误伤。
-- **多分辨率去重的键是「去掉 `5120x2880` 那一层之后的整条路径」**，不是光秃秃的文件名。
-  按 basename 去重分不清「同一张图的两个分辨率」和「`sunrise/1.jpg` 与 `night/1.jpg`」——
-  按段分子目录、文件名从 1 编号的图集会被吃掉大半（12 张进去、3 张出来，还报成功）。
-- **判断「是不是同一个目录」一律走 `canonicalPath`**（`resolvingSymlinksInPath`）。
-  `standardizedFileURL` 对 `/private/tmp` 的处理不一致：自己拼的 URL 留着 `/private`，
-  `contentsOfDirectory` 拿回来的已经是 `/tmp`，按字符串比会把刚写好的素材当成别人的删掉。
-- **认不出时段的文件可以不收，但必须报数**。闷声丢掉的结果是一个「已导入」对话框加一条
-  少了几张的时间轴，用户无从知道。
-- **晨昏算不出来时不要回退成日出/日落本身**：那让「晨光→日出」长度为 0，被除零保护撑成 60 秒，
-  一段三张壁纸挤在 20 秒里刷过去，还连着 `killall` 三次 `WallpaperAgent`。用名义时长
-  （45 分钟）兜底，并且只在算不出来时用 —— 赤道的民用黄昏本来就只有二十来分钟。
-- **极昼极夜那几天一段都排不上**，壁纸会停几个星期。`needsCoordinate` 盖不住它（坐标是有的），
-  时间轴要单独给一条提示。
-- **定位拿到的精确坐标不要被反查结果替换**。反查回来的是行政区中心点，大城市差几十公里，
-  而那次定位授权换来的就是这几十公里。反查只用来起名字。
-- **导入是整体替换时间轴且不可撤销，动手前问一句**；素材拷贝放后台，一套几百 MB 会卡住面板。
-- **导入要两阶段提交**：新素材先写进唯一目录，配置成功落盘后才按磁盘上的最新时间轴清理旧目录。
-  这样复制 / 保存失败可以撤掉新目录，同名或并发导入也不会破坏仍在被引用的素材。
-- **菜单栏面板点 ⋯ 的同时会把自己关掉**。立刻 `NSOpenPanel.runModal` 会被一起取消，
-  对话框里「导入」像坏了。要等面板收完，临时把 `activationPolicy` 改成 `.regular`，
-  并且允许选文件、文件夹和 `.sundialScene`，不能只许选目录。
+- **Recompute windows every day.** Approximating three sunrise images with a fixed “20 minutes
+  after sunrise” offset fails when winter dawn shortens.
+- The last night images have a `fireDate` in the following morning. Resolver's existing ±1-day
+  expansion handles this; do not add another offset anchor around `solarPhase`.
+- **Match filename tokens, not `contains("day")`:** that misclassifies `sunday.heic`.
+- **The multi-resolution deduplication key is the complete path after removing the
+  `5120x2880` directory component**, not just the basename. Basenames cannot distinguish two
+  resolutions of one image from `sunrise/1.jpg` and `night/1.jpg`. Sets organized by phase
+  subfolder with numbering from 1 lose most images: 12 go in, 3 come out, and import reports success.
+- **Always use `canonicalPath` (`resolvingSymlinksInPath`) for directory identity.**
+  `standardizedFileURL` handles `/private/tmp` inconsistently: a constructed URL keeps
+  `/private`, while `contentsOfDirectory` returns `/tmp`. String comparison can then delete
+  newly written assets as if they belonged to another directory.
+- **Unrecognized-phase files may be skipped, but report their count.** Silently dropping them
+  leaves an “Imported” dialog and an incomplete timeline, with no way for the user to know.
+- **Do not fall back to sunrise/sunset themselves when twilight is unavailable.** That makes
+  the dawn-to-sunrise window zero-length, inflated to 60 seconds by division-by-zero protection:
+  three wallpapers flash past 20 seconds apart, with three consecutive `killall WallpaperAgent`
+  calls. Use a nominal 45-minute duration only when computation fails; equatorial civil dusk
+  legitimately lasts only about twenty minutes.
+- **No slots can be scheduled during polar day/night**, leaving the wallpaper unchanged for
+  weeks. `needsCoordinate` does not cover this because coordinates exist; show a separate
+  timeline notice.
+- **Never replace precise location coordinates with reverse-geocoded results.** Those are
+  administrative centers, tens of kilometers away in large cities; location permission was
+  granted precisely to get that accuracy. Reverse geocoding only supplies a name.
+- **Import replaces the entire timeline irreversibly, so confirm before starting.** Copy assets
+  in the background: a set of hundreds of MB otherwise freezes the panel.
+- **Use a two-phase import commit.** Write new assets into a unique directory first, then clean
+  old directories against the latest on-disk timeline only after saving the config succeeds.
+  Failed copies/saves can remove the new directory, while same-name or concurrent imports
+  cannot damage assets that are still referenced.
+- **Clicking ⋯ also closes the menu bar panel.** An immediate `NSOpenPanel.runModal` is canceled
+  along with it, making Import look broken. Wait until the panel finishes closing, temporarily
+  switch `activationPolicy` to `.regular`, and allow files, folders, and `.sundialScene`, not
+  just directories.
 
-### 界面
+### UI
 
-- **`@main` 不能和含顶层代码的 `main.swift` 编进同一个模块**。`Tests/PanelShot` 要复用界面代码，
-  所以 `build.sh` 把入口文件 `HourGlowApp.swift` 从 `UI` 里单列成 `ENTRY`。
-- **`ImageRenderer` 画不出 `ScrollView` 里的内容**，也画不出 AppKit 撑着的控件（分段控件、
-  时间步进器、输入框、菜单）—— 第一版截图工具因此只拍到空面板。改成真窗口 + `NSView.cacheDisplay`。
-  那个窗口的 `alphaValue` **必须是 1**：设成 0.02 想让它不显眼，`cacheDisplay` 抓回来的
-  就是黑底、只有图片没有文字的半张图。
-- 顶层代码不是 main actor 隔离的，`Scheduler` 的 `onLog` / `onEvaluate` 和 `Timer` 的回调
-  也都是非隔离闭包 —— 它们确实都跑在主线程上，用 `MainActor.assumeIsolated` 接进来。
-- **菜单栏面板一失焦就收起，`NSOpenPanel` 一开它就没了**。所以选完本地图片直接落到配置里，
-  不能指望面板还开着。
-- **`NSDatePicker` 的内容是贴着自己盒子的底边画的**，下面固定留着字体的降部空间
-  （12 pt 与 13 pt 字体都是 6.5 pt），盒子多出来的高度全加在上面。时刻只有数字和冒号，
-  一个降部都用不上 —— 所以上下给一样的 padding，看上去是偏上的。`TimeField` 里字号用 12
-  （与左边的「每天」一齐），再上 3.5 / 下 3 补平。药丸的底色与留白因此整个包进 `TimeField`，
-  不留给调用方去写。
-- **`NSPopUpButton` 按最宽的那一项定宽**（给它 `frame(width:)` 也不认），换档时不会忽宽忽窄；
-  但它只有一百四十来点宽，单独占一行右边全是空的 —— 所以「今天是 18:16」与它并排摆在同一行的
-  右端。缺坐标 / 极昼极夜那两句因此得短，不然挤不进同一行。
-- **`.fullSizeContentView` 不改变 `contentRect:` → 窗框的换算**。想把天光渐变铺到顶，
-  结果 566 高的内容摆成了 598 高的窗，顶上多一条对不上的空带；`setFrame` 也压不回去
-  （`NSHostingView` 把内容尺寸变成了窗口的最小尺寸）。老老实实用系统标题栏并写上标题。
-- **第一步那台假 Mac 是示意图，不是仿真图**。按真实比例画，菜单栏在一张 88 pt 高的「屏幕」上
-  只剩两三个像素，沙漏根本认不出来 —— 而这一步唯一要说的就是「入口是它」。所以菜单栏占了
-  整台机器三分之一高。桌面上原先还画了一颗带光晕的太阳，删了：整张图最亮的一团在正中间，
-  视线先落那儿，再也到不了右上角。指着谁，谁最显眼。
-- **暗色模式下 `black.opacity(0.12)` 的描边等于没有，`quaternary` 铺的卡片与窗底几乎同色**。
-  缩略图描边、分区卡片、输入框底一律走 `Panel.hairline` / `cardFill` / `fieldFill`，
-  它们是 `NSColor(name:)` 动态色 —— `panelshot --appearance` 只改窗口的 `appearance`，
-  这条路照样认得，不必把 `colorScheme` 传遍每个视图。
-- **分段控件 `frame(maxWidth: .infinity)` 只会把它居中，不会拉宽**。`NSSegmentedControl`
-  按内容定宽，SwiftUI 那层给的宽度它不认。时段页那一排就让它靠左。
-- **天光条的渐变断点必须单调**。赤道附近晨昏很短、或晨昏为 nil 走兜底时，相邻两个断点
-  可能重合甚至倒过来，`Gradient` 会画出一道硬边；写完断点后按顺序钳一遍。
-- `PlacePage` 里已经有一个叫 `search` 的视图属性，抽出来的 `CitySearch` 状态别也叫 `search` ——
-  同名会直接编不过。
-- 空搜时 `Cities.search("")` 会给一份常用城市。地点页那种满屏列表放得下，指引里放不下：
-  默认列表会把「搜」这个动作本身挤到屏幕外。指引里只在真的输入了才出结果。
-- `panelshot` 只抓第一个时段的话，配置里第一段是日出/日落就永远看不到固定时刻那一栏
-  （两栏版式完全不同）。现在会另外抓一张 `2b-slot-clock.png`。
-- **`panelshot --now` 必须在第一次碰 `AppModel.shared` 之前赋值**：`init` 里就按「现在」求过一次值，
-  晚了那张「哪一段在跑」就是真实时间的。演示图要在真实 app 也在跑的机器上抓，所以一定用
-  `HOURGLOW_HOME` 指到一次性目录 —— 否则抢不到 `run.lock`，面板上会多一条「后台守护进程在排程」。
-- **GIF 里照片帧很贵**：1000 × 625 一帧两三百 KB，交叉淡入每多一帧就多这么多。所以停帧长
-  （0.75 秒）、过渡帧只有五帧且很短，总共 32 帧压在 3.2 MB；想加时长加停帧，别加过渡帧。
+- **`@main` cannot share a module with a `main.swift` containing top-level code.**
+  `Tests/PanelShot` reuses UI code, so `build.sh` separates `HourGlowApp.swift` into `ENTRY`.
+- **`ImageRenderer` cannot draw `ScrollView` contents or AppKit-backed controls** (segmented
+  controls, time steppers, text fields, menus). The first screenshot tool therefore captured
+  empty panels. Use a real window + `NSView.cacheDisplay`. Its `alphaValue` **must be 1**:
+  setting 0.02 to hide it yielded a black-backed partial image with pictures but no text.
+- Top-level code is not main-actor isolated; neither are `Scheduler`'s `onLog` / `onEvaluate`
+  or `Timer` callbacks. They do run on the main thread; bridge with `MainActor.assumeIsolated`.
+- **The menu bar panel dismisses on losing focus, including when `NSOpenPanel` opens.** Save
+  a chosen local image directly into configuration; do not assume the panel remains open.
+- **`NSDatePicker` draws content against the bottom of its own box**, leaving fixed descender
+  space below (6.5 pt with both 12 pt and 13 pt fonts); extra height goes entirely above. Times
+  use only digits and colons, no descenders, so symmetric padding looks top-heavy. `TimeField`
+  uses a 12 pt font (matching the label to its left), with 3.5 pt above / 3 pt below to balance
+  it. Keep the pill background and padding inside `TimeField`, not at call sites.
+- **`NSPopUpButton` sizes itself to its widest item**, ignoring `frame(width:)`, so switching
+  presets does not change its width. At roughly 140 pt wide, a row of its own wastes the right
+  side; place today's time at the right end of the same row. Missing-coordinate and polar-day/night
+  notices must therefore be short enough to fit there.
+- **`.fullSizeContentView` does not change the `contentRect:`-to-window-frame conversion.**
+  Extending the daylight gradient upward turned 566 pt of content into a 598 pt window with
+  an unmatched blank strip. `setFrame` could not shrink it because `NSHostingView` made the
+  content size the minimum window size. Use the system title bar and give it a title.
+- **The mock Mac in guide step one is a diagram, not a simulation.** At real proportions, its
+  menu bar would be two or three pixels high on an 88 pt screen and the hourglass unrecognizable,
+  defeating that step's only point: showing the entrance. The menu bar therefore occupies a
+  third of the machine's height. A glowing sun formerly occupied the desktop center; it was
+  removed because the brightest area drew attention away from the upper-right entrance.
+  Make the thing being pointed out the most conspicuous thing.
+- **In dark mode, `black.opacity(0.12)` borders disappear, and `quaternary` cards nearly match
+  the window background.** Use `Panel.hairline` / `cardFill` / `fieldFill` for thumbnail borders,
+  section cards, and fields. These dynamic `NSColor(name:)` colors also honor
+  `panelshot --appearance`, which changes only the window appearance; no need to thread
+  `colorScheme` through every view.
+- **`frame(maxWidth: .infinity)` only centers segmented controls; it does not stretch them.**
+  `NSSegmentedControl` sizes to content and ignores SwiftUI's width. Left-align the slot-page row.
+- **Daylight gradient stops must be monotonic.** Near the equator or when nil twilight uses a
+  fallback, adjacent stops may coincide or reverse, creating a hard edge in `Gradient`.
+  Clamp them in order after computing them.
+- `PlacePage` already has a view property called `search`; do not also name extracted
+  `CitySearch` state `search`, or the duplicate name will fail compilation.
+- `Cities.search("")` returns common cities. The full location-page list fits them, but the
+  guide does not: a default list pushes the search action itself offscreen. In the guide,
+  show results only after the user enters a query.
+- Capturing only the first slot in `panelshot` never shows the clock-trigger controls when the
+  first configured slot uses sunrise/sunset; their layouts differ completely. Capture the
+  extra `2b-slot-clock.png` as well.
+- **Set `panelshot --now` before the first access to `AppModel.shared`.** `init` already resolves
+  using now; setting it later leaves the active-slot display on real time. Demo captures run
+  on a machine with the real app active, so point `HOURGLOW_HOME` at a throwaway directory or
+  failure to acquire `run.lock` adds a background-scheduler notice to the panel.
+- **Photographic GIF frames are expensive:** a 1000 × 625 frame costs 200–300 KB, and every
+  crossfade frame adds that much. Long holds (0.75 seconds) and just five short transition
+  frames keep 32 frames within 3.2 MB. Add duration by extending holds, not adding transitions.
 
-### 语言
+### Language
 
-- **`Preference` 要 `Hashable`，不能只 `Equatable`**。设置页那个 `Picker` 的 `selection`
-  与 `.tag(...)` 都要求 `Hashable`，只写 `Equatable` 编不过，而错误信息指向的是 SwiftUI。
-- **靶子里断言中文原文，就必须先钉住语言**。`modelcheck` 与 `appcheck` 里写着
-  `深圳`、`第 1 步 / 共 5 步`，在英文系统上跑会挂在 `深圳` vs `Shenzhen`。两个文件开头
-  `setenv("HOURGLOW_LANG", L10n.sourceCode, 1)` + `L10n.invalidate()`，别删。
-  真正测「换语言」的是 `l10ncheck`。
-- **`getenv` 而不是 `ProcessInfo.environment`**。后者是进程启动时的快照，靶子里 `setenv`
-  之后再问它拿到的还是旧值（`Store.directoryURL` 同理）。改完环境变量要 `L10n.invalidate()`，
-  语言是缓存住的。
-- **Info.plist 里要写 `CFBundleLocalizations`**，否则系统把 app 当成只有开发语言的单语应用，
-  「语言与地区 › 应用程序」里也不会出现 HourGlow 这一行。它由 `build.sh` 从
-  `Catalogs/*.swift` 里数出来，不另立一份名单 —— 名单一旦有两份，加语言就会漏改一处。
-- **同一个词在句子里和在按钮上不是同一条文案**。`sun.sunrise` 是「日落前30分」里的那个词，
-  英文要小写；时段页与「固定时刻」并排的分段控件是按钮标题，英文要大写。所以另有
-  `slot.kind.sunrise` / `slot.kind.sunset`，中文两处同形，不要合并。
-- **CLI 的列宽按显示宽度现算，不写死数字**。`配置` 占四列、`config` 占六列，
-  `日落前30分` 占十列、`30 min before sunset` 占二十列 —— 写死 14 会让英文的箭头贴上文字。
-  `column(_:min:)` 从当前这批字符串里取最大值，`padded(to:)` 按 `displayWidth` 补齐。
-- **多参数的文案必须写 `%n$` 序号**。语序一变，不带序号的那份就取错了参数，
-  轻则乱码重则崩。`l10ncheck` 会拦，但先知道比被拦住快。
+- **`Preference` must be `Hashable`, not just `Equatable`.** Settings `Picker` selection and
+  `.tag(...)` require it; declaring only `Equatable` fails with an error pointing at SwiftUI.
+- **Language-dependent checks must pin their language.** `modelcheck` and `appcheck` explicitly
+  set `HOURGLOW_LANG` to `en` and call `L10n.invalidate()` before their English-dependent
+  scenarios, so system or stored preferences cannot alter results. Do not remove this setup.
+  `l10ncheck` is responsible for testing language switching.
+- **Choose the catalog before choosing a plural form.** Switching `sourceCode` to `en`
+  exposed an English `.one` fallback over an existing Chinese base entry: the single-wallpaper
+  import string resolved to English in Chinese mode. `t(count:)` now selects the current catalog
+  when its base key exists, otherwise the source catalog, then resolves the optional singular
+  within that catalog. `l10ncheck` covers the boundary; isolated CLI imports verified
+  `imported 1 wallpaper` in English and `已导入 1 张` in Chinese.
+- **Use `getenv`, not `ProcessInfo.environment`.** The latter is a process-start snapshot and
+  still returns the old value after a check calls `setenv` (`Store.directoryURL` has the same
+  concern). Call `L10n.invalidate()` after changing environment variables because language
+  selection is cached.
+- **Include `CFBundleLocalizations` in Info.plist.** Otherwise macOS treats the app as supporting
+  only its development language, and HourGlow does not appear under Language & Region ›
+  Applications. `build.sh` derives it from `Catalogs/*.swift`; do not maintain a second list
+  that will eventually be forgotten when adding a language.
+  The development region is `en`; retain both `en` and `zh-Hans` in the generated language list.
+- **A word inside a sentence and a button title are different strings.** `sun.sunrise` is an
+  inline sun-event word and uses lowercase English; the segmented-control title beside the
+  clock trigger is capitalized. Hence `slot.kind.sunrise` / `slot.kind.sunset` are separate.
+  Chinese uses the same form in both places; do not merge them.
+- **Compute CLI column widths from display width, not constants.** `配置` occupies four columns,
+  `config` six, `日落前30分` ten, and `30 min before sunset` twenty. A fixed width of 14 presses
+  the English arrow against the text. `column(_:min:)` takes the maximum among the current
+  strings, and `padded(to:)` pads using `displayWidth`.
+- **Multi-argument strings must use `%n$` indices.** Changing word order without indices selects
+  the wrong arguments, producing garbage or a crash. `l10ncheck` catches it, but knowing first
+  is quicker than waiting for a failure.
 
-### 登录项、定位与签名
+### Login items, location, and signing
 
-- **`SMAppService.mainApp.status` 在从没注册过时返回的是 `.notFound`，不是 `.notRegistered`**
-  （实测：全新 ad-hoc 签名的 bundle）。照字面把它当成「登录项指向的 app 已不在原位」会一上来
-  就报一句假警告 —— 它和 `.notRegistered` 一样只表示「没开」，照样能注册成功。界面上只有
-  `.requiresApproval`（用户自己在系统设置里关过）才值得说一句。
-- **注册的是当前这个 bundle 的路径**。`build.sh` 每次都 `rm -rf` 重建 `build/HourGlow.app`，
-  重建之后原来的登录项就指向了一个不存在的 bundle。所以开着自启时设置页会把 bundle 路径
-  显示出来提醒一句；自用请把 app 拷进 `/Applications` 再开。
-- **`--locate` 要等系统回调，必须放在 `applicationDidFinishLaunching` 里自己转 run loop**，
-  `willFinishLaunching` 太早。
-- `CLLocationManagerDelegate` 的方法要声明成 `nonisolated`，再在里面 `MainActor.assumeIsolated` ——
-  协议本身没有隔离，`@MainActor` 的类直接实现会被警告「不能满足非隔离的要求」。
-  回调确实都在主线程（manager 是在主线程建的）。
-- **缺 `NSLocationWhenInUseUsageDescription` 的话系统直接拒绝**，连授权对话框都不弹。
-  这一条写在 `build.sh` 生成的 Info.plist 里。
-- **ad-hoc 的默认 designated requirement 是 `cdhash`，不能用来升级菜单栏 app**。每次重编都会
-  变身份；macOS 26 的 `group.com.apple.controlcenter/trackedApplications` 还可能把新产物误关联
-  到旧的 blocked 记录，表现为「允许在菜单栏中显示」已开却启动即退。已被污染的 `app.hourglow`
-  记录连系统的 Reset Control Center 都清不掉，所以正式 bundle ID 一次性迁移到
-  `dev.bobbyhuang.hourglow`。`build.sh` 同时显式写入 `designated => identifier
-  "dev.bobbyhuang.hourglow"`，以后重编和升级都沿用同一身份；`Tests/verify-app-signature.sh`
-  与 CI/Release 同时防回归。
+- **`SMAppService.mainApp.status` returns `.notFound`, not `.notRegistered`, when never registered**
+  (verified with a fresh ad-hoc-signed bundle). Reading that literally as a missing login-item
+  app path produces a false warning immediately. Like `.notRegistered`, it just means off,
+  and registration still succeeds. Only `.requiresApproval` (disabled by the user in System
+  Settings) deserves a notice in the UI.
+- **Registration records this bundle's current path.** `build.sh` rebuilds `build/HourGlow.app`
+  with `rm -rf` every time, leaving the old login item pointing at a nonexistent bundle.
+  Settings shows the bundle path as a reminder when launch at login is enabled; copy the app
+  into `/Applications` before enabling it for daily use.
+- **`--locate` must wait for the system callback by running its own run loop inside
+  `applicationDidFinishLaunching`.** `willFinishLaunching` is too early.
+- Declare `CLLocationManagerDelegate` methods `nonisolated`, then use
+  `MainActor.assumeIsolated` inside them. The protocol is not isolated, so direct implementation
+  by an `@MainActor` class warns about failing a nonisolated requirement. Callbacks really do
+  run on the main thread because the manager was created there.
+- **Without `NSLocationWhenInUseUsageDescription`, the system denies location immediately**,
+  without even presenting permission UI. `build.sh` includes it in the generated Info.plist.
+- **The default ad-hoc designated requirement is `cdhash`, unsuitable for menu bar app upgrades.**
+  Every rebuild changes identity. macOS 26's `group.com.apple.controlcenter/trackedApplications`
+  can then associate the new build with an old blocked record: “Allow in Menu Bar” is enabled,
+  yet the app exits on launch. Even the system's Reset Control Center could not clear the
+  contaminated `app.hourglow` record, so the official bundle ID migrated once to
+  `dev.bobbyhuang.hourglow`. `build.sh` explicitly sets
+  `designated => identifier "dev.bobbyhuang.hourglow"` so rebuilds/upgrades retain that identity.
+  `Tests/verify-app-signature.sh` and CI/Release protect against regression.
 
-### 新手指引
+### Onboarding
 
-- **`MenuBarExtra` 的 label 会在 `applicationWillFinishLaunching` 之前就把 `AppModel` 造出来**。
-  实测：一个在 `willFinishLaunching` 里就 `exit(0)` 的探针，跑完之后 `HOURGLOW_HOME` 目录里
-  已经躺着 `schedule.json` 了 —— 那是 `AppModel.init → Store.load()` 写的。所以「这次是不是
-  全新安装」不能在 delegate 里问，`AppModel.init` 的第一行才是最早的时机。两处都调
-  `Onboarding.captureFirstRun`，第一次调用说了算。
-- **指引不能自动弹给老用户**。`seenVersion` 为空只说明「没看过」，不说明「新装」—— 自动更新到
-  新版之后突然弹一扇窗解释「什么是时间轴」是打扰。判据得是配置文件存不存在。
-- **关窗就得算看过**，跳过、走完、点红灯一视同仁。少写一种，它下次启动还会来，
-  比没有这个指引更烦人。
+- **`MenuBarExtra`'s label constructs `AppModel` before `applicationWillFinishLaunching`.**
+  A probe that called `exit(0)` in `willFinishLaunching` still left `schedule.json` in
+  `HOURGLOW_HOME`, written by `AppModel.init → Store.load()`. The delegate is therefore too
+  late to decide whether this is a fresh install; the first line of `AppModel.init` is the
+  earliest opportunity. Both sites call `Onboarding.captureFirstRun`; the first call wins.
+- **Never automatically show the guide to existing users.** Missing `seenVersion` means
+  unseen, not newly installed. Explaining the timeline in a surprise window after an update
+  is disruptive. Use configuration-file existence as the criterion.
+- **Closing must count as seen**, whether skipping, finishing, or clicking the red close button.
+  Omit one path and it returns next launch, more annoying than having no guide.
 
-### 更新器
+### Updater
 
-- **403 不一定是限流**。额度剩余为 0、429、Retry-After 或明确的限流响应正文才进入等待。
-  读取 `x-ratelimit-reset` / `Retry-After`，提示本地日期、时间与时区；缺失或异常时不编造
-  重置时间，至少等一分钟。期限存在 UserDefaults，手动、自动检查与重启都遵守它；普通
-  403 单独解释请求被拒。错误在设置页占整行并允许换行，不能把恢复时间截掉。
-- **`Bundle.main` 的路径会停在启动时的位置**。运行中移动 app 或它的父目录，旧路径下找不到
-  helper，不能误报「不是从 app 启动」。更新器用 `proc_pidpath` 取得当前可执行文件的位置，
-  校验 bundle ID 与 executable 后统一用于检查、复制 helper 与安装目标；助手缺失另报原因。
-  `verify-updater-location.py` 用真实子进程覆盖移动、改名、旧路径出现副本与助手权限变化。
-- **不能让正在运行的主进程覆盖自己**。下载与验签由 app 做，真正的 move 交给一个先复制到缓存
-  目录的 helper；helper 等旧 PID 消失之后才动 bundle，且始终先把旧 app 挪成备份，
-  新 app 到位和 `open` 都成功后才删备份。
-- **只校验下载哈希不够**。GitHub asset digest 能挡传输损坏，但发布元数据和文件在同一信任域；
-  所以解压后仍用 `codesign --verify --deep --strict` 校验整个 bundle，并要求稳定的
-  `designated => identifier "dev.bobbyhuang.hourglow"`。
-- **嵌套 helper 要先签名**。外层 app 的签名会把 `Contents/Helpers` 当 nested code；
-  `build.sh` 必须先签 `HourGlowUpdater`，再签 `HourGlow.app`，否则深度验签不成立。
-- **要边读取边等待 `ditto` / `codesign`**。先 `waitUntilExit` 再读 pipe，会在子进程输出写满
-  管道缓冲时父子互等，死在那儿。
-- 自动更新沿用 app 当前路径。父目录不可写（只读卷、某些标准用户的 `/Applications`）时不尝试提权，
-  设置页直接给出失败原因，用户仍可打开 GitHub 发布页手动安装。
+- **403 does not always mean rate limiting.** Enter the waiting state only for zero remaining
+  quota, 429, Retry-After, or an explicit rate-limit response body. Read `x-ratelimit-reset` /
+  `Retry-After` and show local date, time, and time zone. If absent or invalid, do not invent
+  a reset time; wait at least one minute. Store the deadline in UserDefaults and honor it for
+  manual/automatic checks and after restart. Explain ordinary 403 separately as a denied
+  request. Settings errors get a full, wrapping row so the recovery time is not truncated.
+- **`Bundle.main` keeps the launch-time path.** If the app or its parent directory moves while
+  running, a missing helper at the old path must not become a false “not launched from app”
+  error. The updater gets the current executable path with `proc_pidpath`, verifies the bundle
+  ID and executable, and uses that location consistently for checks, helper copying, and the
+  installation target. A missing helper has its own error. `verify-updater-location.py` uses
+  real subprocesses to cover moves, renames, copies at old paths, and helper permission changes.
+- **The running main process must not overwrite itself.** The app downloads and verifies; a
+  helper copied to the cache performs the move after the old PID disappears. Always move the
+  old app to a backup first, deleting it only after the new app is in place and `open` succeeds.
+- **The download hash alone is insufficient.** GitHub's asset digest detects transport damage,
+  but release metadata and files share a trust domain. Also verify the unpacked bundle with
+  `codesign --verify --deep --strict`, requiring the stable
+  `designated => identifier "dev.bobbyhuang.hourglow"`.
+- **Sign the nested helper first.** The outer app signature treats `Contents/Helpers` as nested
+  code. `build.sh` must sign `HourGlowUpdater` before `HourGlow.app`, or deep verification fails.
+- **Read output while waiting for `ditto` / `codesign`.** Calling `waitUntilExit` before draining
+  the pipe deadlocks parent and child when the pipe buffer fills.
+- Automatic updates use the app's current path. If the parent directory is unwritable (read-only
+  volume or `/Applications` for some standard users), do not attempt privilege escalation.
+  Settings explains the failure; users can still open the GitHub release page to install manually.
 
-### CI 与发版
+### CI and releases
 
-- **runner 必须是 `macos-26`**。`LSMinimumSystemVersion` 是 26.0，SDK 低了根本编不过；
-  `macos-latest` 现在正好指向它，但写死版本号更稳，免得哪天 `latest` 漂走。
-- **runner 上常并存多个 Xcode，默认那个不一定最新**，所以两个 workflow 都先
-  `ls -d /Applications/Xcode_*.app | sort -V | tail -1` 再 `xcode-select -s`。
-- **`.app` 只能用 `ditto -c -k --keepParent` 压**。`zip` 不保留符号链接与扩展属性，解压出来的
-  bundle 签名是坏的。反过来，裸二进制的 CLI 用 `zip -qj` 就够 —— `ditto --sequesterRsrc`
-  会额外塞一份 `__MACOSX/`。压完再解一次跑 `codesign --verify --deep --strict`，
-  确认压包这一步没把签名弄坏。
-- **CI 里不能跑要读系统文件的 CLI 子命令**：runner 上没有 aerial 素材库、也没有 `Index.plist`，
-  `catalog` / `now` / `status` / `apply` 在那里没有意义。冒烟只跑 `list` / `solar` / `simulate`，
-  并且用 `HOURGLOW_HOME` 指到 `$RUNNER_TEMP`。
-- **GitHub runner 的时区是 UTC，而 UTC 在 `zone.tab` 里查不到坐标**。没手填经纬度时，`Location`
-  的时区反查落空，`solar` / `list` 里的 solar 段就会（正确地）报「没有坐标可用」并退出 1 ——
-  CI 第一次跑就栽在这。冒烟步骤因此把 `TZ` 指成 `Asia/Shanghai`。这不是 bug：
-  UTC 本来就不对应任何地面位置。
-- **ad-hoc 签名 + 未公证 = 用户首次打开会被拦**。README 与发布说明都写了两条出路：
-  `xattr -dr com.apple.quarantine`，或系统设置 › 隐私与安全性 › 仍要打开。真要免掉这一步，
-  得有付费开发者账号做 `notarytool` 公证。
+- **Use the `macos-26` runner.** `LSMinimumSystemVersion` is 26.0 and older SDKs cannot compile it.
+  `macos-latest` currently points there, but pinning avoids future drift.
+- **Runners often contain multiple Xcode versions, and the default need not be newest.** Both
+  workflows first run `ls -d /Applications/Xcode_*.app | sort -V | tail -1`, then `xcode-select -s`.
+- **Package `.app` only with `ditto -c -k --keepParent`.** `zip` loses symlinks and extended
+  attributes, breaking the unpacked signature. Conversely, `zip -qj` is enough for the bare
+  CLI binary; `ditto --sequesterRsrc` adds unwanted `__MACOSX/` contents. Unpack the result and
+  run `codesign --verify --deep --strict` to ensure packaging preserved the signature.
+- **CI cannot run CLI subcommands that read system wallpaper files.** Runners have neither
+  the aerial library nor `Index.plist`, so `catalog` / `now` / `status` / `apply` are meaningless
+  there. Smoke only `list` / `solar` / `simulate`, with `HOURGLOW_HOME` under `$RUNNER_TEMP`.
+- **GitHub runners use UTC, which has no coordinates in `zone.tab`.** Without explicit
+  coordinates, `Location` time-zone lookup fails, so `solar` and solar slots in `list` correctly
+  report unavailable coordinates and exit 1. This broke the first CI run. Smoke steps therefore
+  set `TZ=Asia/Shanghai`. It is not a bug: UTC does not identify a geographic location.
+- **Ad-hoc signing + no notarization = blocked first launch.** README and release notes offer
+  two routes: `xattr -dr com.apple.quarantine`, or System Settings › Privacy & Security ›
+  Open Anyway. Eliminating that step requires a paid developer account and `notarytool` notarization.
 
-### 日出日落的验证
+### Sunrise/sunset verification
 
-- **ephem 的 `next_rising(horizon='-0:50')` 会在给定 horizon 之外再扣一次日面半径**，
-  等于把 16 角分算了两遍，结果偏约 75 秒。`verify-solar.py` 因此改成直接二分求
-  「太阳几何中心高度 = -50 角分」，定义上无歧义。
-- `api.sunrise-sunset.org` 的结果与 NOAA 定义差约 65 秒，不适合当秒级参考；且它会 403 掉
-  urllib 的默认 User-Agent。现在验证已完全离线。
+- **ephem's `next_rising(horizon='-0:50')` subtracts the solar radius again beyond the supplied
+  horizon**, counting 16 arcminutes twice and shifting the result by about 75 seconds.
+  `verify-solar.py` therefore bisects directly for “geometric solar-center altitude = -50
+  arcminutes,” with an unambiguous definition.
+- `api.sunrise-sunset.org` differs from the NOAA definition by about 65 seconds, unsuitable as
+  a seconds-level reference, and returns 403 for urllib's default User-Agent. Verification is
+  now entirely offline.
 
-## 写作语言
+## Writing language
 
-代码注释与文档一律中文。注释解释「为什么这么做」与踩过的坑，不复述代码。
+Write code comments and developer documentation in English. Comments explain why and record
+pitfalls; they do not restate the code. Write new commit messages in English, in the imperative
+mood; existing history is not rewritten.
 
-面向用户的字符串（UI 文案、CLI 输出、错误消息）**不写在代码里**，全部是 `Sources/L10n/` 里的
-一条 key；新文案先写进 `Catalogs/zh-Hans.swift`，那份是原文。详见上面的「语言与本地化」。
+User-visible strings (UI copy, CLI output, error messages) **do not belong inline in code**:
+use keys in `Sources/L10n/`. Write new text first in `Catalogs/en.swift`, the source catalog,
+then translate it. See “Language and localization” above.
 
-**例外是面向外部读者的文件，它们用英文**：`CONTRIBUTING.md`、`SECURITY.md`，
-以及 `README.md`。README 是双语的 —— `README.md`（英文，仓库首页那份）与 `README.zh-CN.md`
-（中文），两份内容对等、互相在顶部链接，**改其中一份就必须同步改另一份**，不允许只更新一边。
+`CONTRIBUTING.md`, `SECURITY.md`, and `README.md` are English. README remains bilingual:
+`README.md` (English, the repository landing page) and `README.zh-CN.md` (Chinese) contain
+matching information and link to one another at the top. **Update both in the same change**;
+never update only one. Keep Chinese product translations and meaningful Chinese examples/data.
 
+### 2026-09-05 release-boundary regressions
 
-### 2026-09-05 发版边界回归
-
-- **坏配置不是首次安装**。`AppModel` 初次读取失败时使用空时间轴并留在从属重试状态，
-  不抢排程锁、不拿 Tahoe 预设换壁纸、也不允许设置动作覆盖原文件；配置修复后由监听与
-  30 秒接管重试恢复。`appstartupcheck` 编入真实 AppModel 验证整条链，恢复时用暂停配置。
-- **配置校验要同时守住解码与保存**。经纬度必须有限且在合法范围内，固定时刻不能超出
-  23:59，slot ID 不能重复；保存前先校验，失败不触碰原文件。旧配置 `id: null` 与省略 ID
-  一样会生成 UUID，必须回写，不然每次加载都变身份。
-- **外部整数不能直接取负或相乘**。太阳偏移的 `Int.min` 用 `magnitude` 转字符串展示，
-  中英文占位符都用 `%@`，避免溢出和 `%d` 的 32 位截断；图集分辨率评分乘法检测溢出。
-  扫描时只收普通文件，名为 `night.jpg` 的目录不是图片。
-- **本地一天不是永远 24 小时**。CLI `simulate` 按 Calendar 的 day interval 扫描，
-  夏令时开始/结束日分别覆盖 23/25 小时。`verify-cli-boundaries.py` 从真实 CLI 验证。
-- 更新 helper 回归除成功替换外还覆盖等待活着的父进程、第二次 move 失败后恢复旧 app。
+- **A damaged configuration is not a fresh install.** When initial loading fails, `AppModel`
+  uses an empty timeline and remains in follower-retry mode: no scheduling lock, no wallpaper
+  replacement with Tahoe presets, and no settings action overwriting the original file.
+  Watching and 30-second takeover retries recover after repair. `appstartupcheck` compiles
+  the real AppModel to verify the full chain, using a paused config during recovery.
+- **Validate configuration both on decode and before save.** Coordinates must be finite and in
+  range, clock times cannot exceed 23:59, and slot IDs must be unique. Validate before saving
+  and leave the original file untouched on failure. Legacy `id: null`, like an omitted ID,
+  generates a UUID that must be written back or identity changes on every load.
+- **Do not directly negate or multiply external integers.** Display solar-offset `Int.min`
+  using `magnitude`; both English and Chinese placeholders use `%@` to avoid overflow and
+  `%d`'s 32-bit truncation. Resolution-score multiplication checks for overflow. Scanning
+  accepts only regular files; a directory named `night.jpg` is not an image.
+- **A local day is not always 24 hours.** CLI `simulate` scans Calendar's day interval, covering
+  23/25 hours at daylight-saving start/end. `verify-cli-boundaries.py` verifies through the
+  real CLI.
+- Update-helper regressions cover waiting for a live parent and restoring the old app after
+  the second move fails, as well as successful replacement.
 
 ## Performance and idle power (2026-09-05)
 

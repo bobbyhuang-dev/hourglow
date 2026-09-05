@@ -1,12 +1,12 @@
 import Foundation
 
-/// 引擎的单实例锁。
+/// Single-instance lock for the engine.
 ///
-/// 两个引擎同时跑会互相打架 —— 一个让位给「手动改动」，而那个「手动改动」
-/// 其实是另一个自己写的。菜单栏 app 与 `hourglow-cli run` 启动时都先来抢这把锁：
-/// 抢到的负责排程，没抢到的退回从属模式（只编辑配置，由对方的 ConfigWatcher 跟上）。
+/// Concurrent engines conflict: one defers to a "manual change" actually written by the other.
+/// The menu-bar app and hourglow-cli run both acquire this lock at startup. The winner schedules;
+/// the other enters follower mode, only editing configuration for the owner's ConfigWatcher to pick up.
 ///
-/// 锁随进程退出自动释放（包括被 kill），所以不需要清理残留的锁文件。
+/// Process exit releases the lock automatically, including when killed; stale lock files need no cleanup.
 final class EngineLock {
 
     static var fileURL: URL {
@@ -19,7 +19,7 @@ final class EngineLock {
 
     deinit { release() }
 
-    /// 抢到锁返回实例；已被别的进程持有时返回 nil。
+    /// Returns the acquired lock, or nil if another process holds it.
     static func acquire() -> EngineLock? {
         try? FileManager.default.createDirectory(at: Store.directoryURL,
                                                  withIntermediateDirectories: true)
@@ -32,7 +32,7 @@ final class EngineLock {
         return EngineLock(descriptor: descriptor)
     }
 
-    /// 有没有别的进程正在排程。抢得到锁就说明没有。
+    /// Whether another process is scheduling. Successfully acquiring the lock means none is.
     static var isHeldByAnotherProcess: Bool {
         guard let probe = acquire() else { return true }
         probe.release()

@@ -1,14 +1,14 @@
 import SwiftUI
 
-/// 今日天光条：状态区下面那条 24 小时的横带。
+/// Today's daylight bar: the 24-hour strip below the status area.
 ///
-/// 时间轴那张列表只是一行行的「几点换哪张」，看不出这些时刻在一天里落在哪儿、
-/// 白天黑夜各占多长。这条横带把同一份数据画成一天：底色按今天的天光渐变
-/// （夜 → 晨光 → 白昼 → 晚霞 → 黄昏 → 夜），每个时段在它的触发时刻立一根标记，
-/// 当前生效的那一段在底边描一根强调色，「现在」是一根竖着的游标。
+/// The timeline lists when each wallpaper changes, but not where those times fall in the day
+/// or how long day and night last. This strip renders the same data as a day: its background
+/// follows today's sky (night → dawn glow → daylight → sunset glow → dusk → night),
+/// with a marker at each slot's trigger, an accent underline for the active span, and a "now" cursor.
 ///
-/// 它是状态图形，不可点：点了该去哪儿说不清（一根标记 3 pt 宽，游标与标记又常常挤在一起），
-/// 列表本身就在下面。颜色来自 `Sky`，和应用图标、指引顶栏是同一族。
+/// This is a noninteractive status graphic: a 3 pt marker beside the cursor is an ambiguous click
+/// target, and the list is right below. Colors come from `Sky`, shared with the app icon and guide header.
 struct DayBar: View {
     @Environment(AppModel.self) private var model
 
@@ -27,7 +27,7 @@ struct DayBar: View {
                 activeSpan(in: &layer, bar: bar, day: day)
                 markers(in: &layer, bar: bar, day: day)
             }
-            // 游标画在裁切之外：顶上的圆点要探出横带一点，不然与时段标记分不开。
+            // Draw outside the clip so the cursor's top dot protrudes and stays distinct from slot markers.
             nowCursor(in: &context, bar: bar, day: day)
             ticks(in: &context, bar: bar)
         }
@@ -37,10 +37,10 @@ struct DayBar: View {
         .accessibilityLabel(accessibilityText)
     }
 
-    /// 横带上方留给游标顶端那颗圆点探出来的空间。
+    /// Space above the strip for the cursor's top dot.
     private static let topInset: CGFloat = 4
 
-    // MARK: - 一天
+    // MARK: - Day
 
     private struct Day {
         let start: Date
@@ -52,7 +52,7 @@ struct DayBar: View {
         }
     }
 
-    /// 按日历取今天，夏令时切换的那天是 23 或 25 小时，不写死 86400。
+    /// Use calendar boundaries: daylight-saving transitions make a day 23 or 25 hours, not always 86400 seconds.
     private static func today() -> Day {
         let now = AppModel.now()
         let calendar = Calendar.current
@@ -61,21 +61,21 @@ struct DayBar: View {
         return Day(start: interval.start, length: interval.duration)
     }
 
-    // MARK: - 底色
+    // MARK: - Background
 
-    /// 没有坐标、或今天根本没有日出日落（极昼极夜）时铺一条中性灰：
-    /// 不编造一个「大概的白天」，那和时间轴上的提示条说的话对不上。
+    /// Use neutral gray without coordinates or sunrise/sunset (polar day or night).
+    /// Inventing an approximate daytime would contradict the timeline notice.
     private func sky(_ day: Day) -> Gradient {
         guard let events = model.solarEventsToday else {
             return Gradient(colors: [Color.primary.opacity(0.10)])
         }
-        // 晨昏算不出来（高纬夏天）时用日出日落各退 45 分钟当渐变的起止。
-        // 只是画法上的兜底，求值那边（`TimeMap`）有自己的一套，别混为一谈。
+        // If twilight cannot be calculated (high-latitude summer), extend sunrise/sunset by 45 minutes.
+        // This is only a drawing fallback; `TimeMap` has separate evaluation rules.
         let fallback: TimeInterval = 45 * 60
         let dawn = events.nauticalDawn ?? events.sunrise.addingTimeInterval(-fallback)
         let dusk = events.civilDusk ?? events.sunset.addingTimeInterval(fallback)
-        // 晨光与晚霞的橙色从日出日落往白天里铺一个多小时；铺得短了就是一道窄条纹，
-        // 和横带上的时段标记混在一起。
+        // Spread the warm sunrise/sunset orange over more than an hour into daytime.
+        // A shorter transition looks like a narrow stripe and blends into the slot markers.
         let warm: TimeInterval = 100 * 60
         let lead: TimeInterval = 30 * 60
 
@@ -94,7 +94,7 @@ struct DayBar: View {
             .init(color: Sky.night, location: at(dusk.addingTimeInterval(lead))),
             .init(color: Sky.night, location: 1),
         ]
-        // 断点必须单调，赤道附近晨昏很短时相邻两点可能重合甚至倒过来。
+        // Stops must be monotonic: short twilight near the equator can make neighbors coincide or reverse.
         var last: CGFloat = 0
         for index in stops.indices {
             stops[index].location = max(stops[index].location, last)
@@ -103,10 +103,10 @@ struct DayBar: View {
         return Gradient(stops: stops)
     }
 
-    // MARK: - 标记
+    // MARK: - Markers
 
-    /// 当前生效的那一段：从它开始生效到下一次切换，在横带底边描一根强调色。
-    /// 与列表里行首那根 `Panel.nowBar` 是同一种颜色语言 —— 状态，不是选中。
+    /// Underline the active span in the accent color, from its start to the next change.
+    /// Like the list's leading `Panel.nowBar`, this color indicates status, not selection.
     private func activeSpan(in context: inout GraphicsContext, bar: CGRect, day: Day) {
         guard let resolution = model.resolution, !model.schedule.paused else { return }
         let from = day.x(resolution.since, in: bar) ?? bar.minX
@@ -116,8 +116,8 @@ struct DayBar: View {
         context.fill(Path(line), with: .color(.accentColor))
     }
 
-    /// 每个时段在它今天的触发时刻立一根白色短线，带一点暗影，亮底暗底都看得见。
-    /// 算不出时刻的（缺坐标的 solar 段）不画，停用的半透明。
+    /// Mark each slot's trigger today with a short white line and shadow, visible on light or dark backgrounds.
+    /// Omit unresolved times (solar slots without coordinates); disabled slots are translucent.
     private func markers(in context: inout GraphicsContext, bar: CGRect, day: Day) {
         for entry in model.entries {
             guard let time = entry.time, let x = day.x(time, in: bar) else { continue }
@@ -133,7 +133,7 @@ struct DayBar: View {
         }
     }
 
-    /// 「现在」：一根细竖线贯穿横带，顶上一个小圆点探出去。
+    /// "Now": a thin vertical line through the strip, with a small dot protruding above it.
     private func nowCursor(in context: inout GraphicsContext, bar: CGRect, day: Day) {
         guard let x = day.x(AppModel.now(), in: bar) else { return }
         var line = Path()
@@ -146,7 +146,7 @@ struct DayBar: View {
         context.fill(Path(ellipseIn: dot), with: .color(.accentColor))
     }
 
-    /// 刻度：0 / 6 / 12 / 18 / 24。纯数字，不进文案表。
+    /// Ticks: 0 / 6 / 12 / 18 / 24. Bare numbers need no localization entries.
     private func ticks(in context: inout GraphicsContext, bar: CGRect) {
         let baseline = bar.maxY + 3 + Panel.dayBarLabelHeight / 2
         for hour in stride(from: 0, through: 24, by: 6) {

@@ -1,19 +1,19 @@
 import Foundation
 import ServiceManagement
 
-/// 开机自启：把 `.app` 自己注册成登录项。
+/// Launch at login: registers the app itself as a login item.
 ///
-/// 用 `SMAppService.mainApp`，不再往 `~/Library/LaunchAgents` 里塞 plist ——
-/// 系统设置的「登录项」里能看见它、能关掉它，用户的关闭意愿也会被系统记住
-/// （被用户关掉后 `status` 是 `.requiresApproval`，此时再 `register()` 也不会真的生效，
-/// 只能引导他去系统设置里打开）。
+/// Uses `SMAppService.mainApp` instead of installing a plist in `~/Library/LaunchAgents`.
+/// Users can see and disable it in System Settings > Login Items, and the system remembers that choice.
+/// Once disabled, status becomes `.requiresApproval`; another `register()` does not enable it.
+/// The user must be directed to System Settings to approve it.
 ///
-/// **注册的是当前这个 bundle 的路径**。`build.sh` 每次都 `rm -rf` 重建 `build/HourGlow.app`，
-/// 重建之后原来的登录项就指向了一个不存在的 bundle（`status` 变成 `.notFound`）。
-/// 所以自用请把 app 拷进 `/Applications` 再开自启，别对着 `build/` 里那份开。
+/// **Registration records this bundle's current path.** `build.sh` removes and recreates `build/HourGlow.app`,
+/// leaving the old login item pointing to a nonexistent bundle (`status` becomes `.notFound`).
+/// Copy the app to `/Applications` before enabling launch at login; do not register the build directory copy.
 enum LaunchAtLogin {
 
-    /// 裸二进制（`hourglow-cli`、`panelshot`）没有可注册的 bundle，这些场合整栏都不该出现。
+    /// Bare binaries (`hourglow-cli`, `panelshot`) have no registrable bundle; hide this entire section for them.
     static var isAvailable: Bool {
         Bundle.main.bundleURL.pathExtension == "app"
     }
@@ -26,7 +26,7 @@ enum LaunchAtLogin {
         status == .enabled
     }
 
-    /// 用户在系统设置里手动关过 —— 此时 `register()` 不会报错也不会生效，只能引导过去。
+    /// Disabled by the user in System Settings: register() silently has no effect, so direct the user there.
     static var requiresApproval: Bool {
         status == .requiresApproval
     }
@@ -43,7 +43,7 @@ enum LaunchAtLogin {
         SMAppService.openSystemSettingsLoginItems()
     }
 
-    /// 给 UI 和 CLI 共用的一句话状态。
+    /// A one-line status shared by the UI and CLI.
     static func describe(_ status: SMAppService.Status = LaunchAtLogin.status) -> String {
         switch status {
         case .enabled:          return L10n.t("launchAtLogin.enabled")

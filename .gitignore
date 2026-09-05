@@ -1,12 +1,12 @@
-# 构建产物 —— build.sh 的东西全部落在 build/
+# Build outputs — build.sh writes everything under build/
 build/
 dist/
 
-# 发布压包（release.yml 在 runner 上生成，本地手工试压时也会有）
+# Release archives (created by release.yml on runners or during local packaging checks)
 HourGlow-*.zip
 hourglow-cli-*.zip
 
-# 本项目不使用 Xcode 工程；这些是有人误开一个时的产物
+# No Xcode project is used; ignore artifacts from accidentally creating one
 .build/
 .swiftpm/
 DerivedData/
@@ -14,7 +14,7 @@ xcuserdata/
 *.xcuserstate
 *.dSYM/
 
-# Tests/verify-solar.py 的 ephem 装在虚拟环境里
+# Virtual environment for the ephem dependency used by Tests/verify-solar.py
 .venv/
 __pycache__/
 *.pyc
@@ -25,7 +25,7 @@ __pycache__/
 .Spotlight-V100
 .Trashes
 
-# 编辑器与工具的本地状态
+# Local editor and tool state
 .vscode/
 .idea/
 *.swp

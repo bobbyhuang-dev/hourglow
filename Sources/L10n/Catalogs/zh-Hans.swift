@@ -1,6 +1,6 @@
-// 原文语言。新文案先写在这里，再补进别的语言表；`build/l10ncheck` 按它对完整性。
+// Simplified Chinese translation of the English source catalog.
 //
-// 键按界面分区命名，与视图文件一一对得上。改文案只改这里，不要回到视图里写字面量。
+// Keys follow the interface sections. Edit strings in catalogs, never as view literals.
 
 extension StringCatalog {
     static let zhHans = StringCatalog(
@@ -9,7 +9,7 @@ extension StringCatalog {
         placeNames: .chinese,
         strings: [
 
-        // MARK: 通用
+        // MARK: Shared
 
         "common.none": "无",
         "common.unknown": "未知",
@@ -18,14 +18,14 @@ extension StringCatalog {
         "common.openSettings": "打开设置…",
         "list.separator": "、",
 
-        // MARK: 时刻
+        // MARK: Clock
 
         "clock.remaining.minutes": "%d 分钟后",
         "clock.remaining.hours": "%d 小时后",
         "clock.remaining.hoursMinutes": "%1$d 小时 %2$d 分后",
         "clock.tomorrow": "明天 %@",
 
-        // MARK: 触发条件（Model/Schedule.swift）
+        // MARK: Triggers (Model/Schedule.swift)
 
         "sun.sunrise": "日出",
         "sun.sunset": "日落",
@@ -37,7 +37,7 @@ extension StringCatalog {
         "trigger.solar.before": "%1$@前%2$@分",
         "trigger.phase": "%1$@ %2$d/%3$d",
 
-        // MARK: aerial 分类
+        // MARK: Aerial categories
 
         "category.landscapes": "风景",
         "category.cities": "城市",
@@ -45,7 +45,7 @@ extension StringCatalog {
         "category.space": "太空",
         "category.mac": "Mac",
 
-        // MARK: 时间轴
+        // MARK: Timeline
 
         "timeline.place.help": "选择计算日出日落的地区",
         "timeline.caption.actual": "目前壁纸",
@@ -66,7 +66,7 @@ extension StringCatalog {
         "timeline.importing": "导入中…",
         "timeline.import": "导入…",
 
-        // MARK: ⋯ 菜单
+        // MARK: ⋯ menu
 
         "menu.settings": "设置…",
         "menu.place": "选择地区…",
@@ -76,7 +76,7 @@ extension StringCatalog {
         "menu.revealConfig": "在访达中显示配置…",
         "menu.quit": "退出 HourGlow",
 
-        // MARK: 时段页
+        // MARK: Slot editor
 
         "slot.title": "时段",
         "slot.title.new": "新时段",
@@ -112,7 +112,7 @@ extension StringCatalog {
         "slot.add": "添加",
         "slot.apply": "应用",
 
-        // MARK: 选壁纸
+        // MARK: Wallpaper picker
 
         "picker.title": "选择壁纸",
         "picker.search": "搜索",
@@ -125,7 +125,7 @@ extension StringCatalog {
         "picker.open.prompt": "选择",
         "picker.open.message": "选一张图片作为这个时段的壁纸",
 
-        // MARK: 设置页
+        // MARK: Settings
 
         "settings.title": "设置",
         "settings.section.language": "语言",
@@ -161,7 +161,7 @@ extension StringCatalog {
         "settings.guide.note": "五步：入口在哪儿、位置、常驻、时间轴",
         "settings.guide.open": "打开",
 
-        // MARK: 地区页
+        // MARK: Place
 
         "place.title": "选择地区",
         "place.sun.noCoordinate": "没有坐标，日出日落的时段会被跳过",
@@ -174,14 +174,13 @@ extension StringCatalog {
         "place.useCurrent": "使用当前位置",
         "place.followTimeZone": "跟随系统时区",
         "place.section.results": "搜索结果",
-        "place.section.china": "中国",
-        "place.section.world": "海外",
+        "place.section.nearby": "附近",
         "place.notFound": "找不到这个地方",
         "place.latitude": "纬度",
         "place.longitude": "经度",
         "place.use": "使用",
 
-        // MARK: AppModel 的提示条与对话框
+        // MARK: AppModel notices and dialogs
 
         "model.unknownWallpaper": "未知壁纸",
         "model.slotDeletedElsewhere": "这个时段已在别处删除",
@@ -208,7 +207,7 @@ extension StringCatalog {
         "model.promote.configFailed": "后台引擎已退出，但配置读取失败，稍后重试",
         "model.promote.tookOver": "后台引擎已退出，菜单栏 app 已接管调度",
 
-        // MARK: 导入
+        // MARK: Import
 
         "import.busy": "已有一套壁纸正在导入",
         "import.done": "已导入 %d 张",
@@ -229,7 +228,7 @@ extension StringCatalog {
         "import.error.noFolder": "找不到这个文件夹",
         "import.error.wrongKind": "请选一个图片文件夹，或一组图片",
 
-        // MARK: 新手指引
+        // MARK: Onboarding
 
         "guide.window.title": "HourGlow 新手指引",
         "guide.step": "第 %1$d 步 / 共 %2$d 步",
@@ -293,7 +292,7 @@ extension StringCatalog {
         "guide.done.again.title": "想再看一遍这套指引",
         "guide.done.again.body": "面板底部的 ⋯ 菜单 › 新手指引。",
 
-        // MARK: 引擎日志
+        // MARK: Engine logs
 
         "engine.reason.launch": "启动",
         "engine.reason.timer": "到点",
@@ -314,7 +313,7 @@ extension StringCatalog {
         "engine.log.next": "；下次 %1$@ → %2$@",
         "engine.log.configUnreadable": "配置解析失败，沿用内存里的旧配置",
 
-        // MARK: 系统层
+        // MARK: System integration
 
         "launchAtLogin.enabled": "已开启",
         "launchAtLogin.off": "未开启",
@@ -331,7 +330,7 @@ extension StringCatalog {
         "wallpaper.error.imageMissing": "图片不存在: %@",
         "wallpaper.error.notDictionary": "顶层不是字典",
 
-        // MARK: 更新器
+        // MARK: Updater
 
         "update.error.invalidVersion": "发布版本号无效：%@",
         "update.error.missingAsset": "发布页缺少 %@",
@@ -360,7 +359,7 @@ extension StringCatalog {
         "updater.installed": "已安装 %@",
         "updater.failed": "安装失败：%@",
 
-        // MARK: app 二进制上的排障入口（--login-item / --locate / --guide）
+        // MARK: App-bundle diagnostics (--login-item / --locate / --guide)
 
         "guide.status.seen": "看过第 %d 版",
         "guide.status.unseen": "没看过",
@@ -377,7 +376,7 @@ extension StringCatalog {
         "probe.guide.usage": "用法: --guide [status|reset|show]",
         "probe.guide.status": "新手指引  %@",
 
-        // MARK: 命令行
+        // MARK: CLI
 
         "cli.error": "error: %@",
         "cli.unknownCommand": "未知命令 %@，试试 hourglow-cli help",

@@ -1,9 +1,9 @@
-# 打 tag 就发版：v1.0.0 → 构建、跑一遍验证、压包、建 GitHub Release。
+# Publish on tags: v1.0.0 → build, verify, archive, and create a GitHub Release.
 #
 #   git tag -a v1.0.0 -m "HourGlow 1.0.0" && git push origin v1.0.0
 #
-# 产物是 ad-hoc 签名的（没有开发者账号，也就没有公证），下载后首次打开要过一次
-# 「隔离属性」那一关 —— 发布说明里写清楚了怎么过。
+# Artifacts are ad-hoc signed (no developer account, so no notarization). The first launch after download
+# requires clearing the quarantine hurdle; the release notes explain how.
 name: Release
 
 on:
@@ -12,15 +12,15 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: '要发布的 tag，例如 v1.0.0（必须已经存在）'
+        description: 'Existing tag to release, e.g. v1.0.0'
         required: true
 
 permissions:
-  contents: write        # 建 Release 要写权限
+  contents: write        # Required to create a release.
 
 jobs:
   release:
-    name: 构建并发布
+    name: Build and release
     runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
@@ -28,7 +28,7 @@ jobs:
           ref: ${{ github.event.inputs.tag || github.ref }}
           fetch-depth: 0
 
-      - name: 解出版本号
+      - name: Extract version
         id: version
         run: |
           tag="${{ github.event.inputs.tag || github.ref_name }}"
@@ -36,23 +36,23 @@ jobs:
           echo "tag=$tag"         >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: 选 Xcode
+      - name: Select Xcode
         run: |
           latest=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -n 1 || true)
           if [ -n "$latest" ]; then sudo xcode-select -s "$latest"; fi
           swift --version
 
-      - name: 构建
+      - name: Build
         env:
           HOURGLOW_VERSION: ${{ steps.version.outputs.version }}
           HOURGLOW_BUILD: ${{ github.run_number }}
         run: ./build.sh
 
-      - name: App 签名身份
+      - name: Verify app signing identity
         run: bash Tests/verify-app-signature.sh build/HourGlow.app
 
-      # 发版前先过一遍与 CI 相同的验证，别把编得过但算错的东西发出去。
-      - name: 靶子
+      # Run the same checks as CI before publishing: a successful build does not guarantee correct calculations.
+      - name: Run verification targets
         env:
           HOURGLOW_HOME: ${{ runner.temp }}/hourglow-home
         run: |
@@ -71,26 +71,26 @@ jobs:
         with:
           python-version: '3.13'
 
-      - name: 日出日落对拍星历
+      - name: Compare sunrise and sunset against an ephemeris
         run: |
           python3 -m pip install --upgrade pip
           python3 -m pip install ephem
           python3 Tests/verify-solar.py
           python3 Tests/verify-cli-boundaries.py
 
-      # 用 ditto 而不是 zip：只有它能原样保留 bundle 的符号链接与扩展属性，
-      # 用 zip 打出来的 .app 解压后签名会坏。
-      - name: 压包
+      # Use ditto rather than zip to preserve bundle symlinks and extended attributes.
+      # Archiving the .app with zip breaks its signature after extraction.
+      - name: Create archives
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent build/HourGlow.app "dist/HourGlow-$VERSION.zip"
-          # CLI 是个裸二进制，用 zip 就够；ditto 的 --sequesterRsrc 会额外塞一份 __MACOSX。
+          # The CLI is a standalone binary, so zip suffices; ditto's --sequesterRsrc would add an unnecessary __MACOSX directory.
           (cd build && zip -qj "$GITHUB_WORKSPACE/dist/hourglow-cli-$VERSION.zip" hourglow-cli)
           cd dist && shasum -a 256 ./*.zip > SHA256SUMS.txt && cat SHA256SUMS.txt
 
-      - name: 校验压出来的 app 还能通过签名检查
+      - name: Verify archived app signature
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -100,44 +100,37 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             "$RUNNER_TEMP/verify/HourGlow.app/Contents/Info.plist"
 
-      - name: 写发布说明
+      - name: Write release notes
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
           cat > "$RUNNER_TEMP/notes.md" <<NOTES
           A macOS menu bar wallpaper scheduler that follows the daylight.
-          跟着天光走的 macOS 壁纸调度器。
 
-          ## Install / 安装
+          ## Install
 
           1. Download **HourGlow-$VERSION.zip**, unzip it, drag \`HourGlow.app\` into \`/Applications\`.
-             下载 **HourGlow-$VERSION.zip**，解压，把 \`HourGlow.app\` 拖进「应用程序」。
           2. The app is ad-hoc signed, not notarized, so the first launch is blocked. Either run
-             应用是 ad-hoc 签名、未经公证，首次打开会被拦下。执行：
 
              \`\`\`bash
              xattr -dr com.apple.quarantine /Applications/HourGlow.app
              \`\`\`
 
              or open it once, then go to **System Settings › Privacy & Security › Open Anyway**.
-             或者先双击一次，再去**系统设置 › 隐私与安全性 › 仍要打开**。
           3. It lives in the menu bar — no Dock icon, no window.
-             它常驻菜单栏，没有 Dock 图标，也没有主窗口。
 
           HourGlow checks GitHub Releases for future updates once a day. You can turn automatic
           updates off or run a manual check from its settings page.
-          HourGlow 每天从 GitHub Releases 检查后续更新；可以在设置页关闭自动更新或手动检查。
 
-          Requires macOS 26 (Tahoe) or later. 需要 macOS 26 (Tahoe) 及以上。
+          Requires macOS 26 (Tahoe) or later.
 
           **hourglow-cli-$VERSION.zip** is the optional command line tool (troubleshooting + headless daemon).
-          **hourglow-cli-$VERSION.zip** 是可选的命令行工具（排障与无头常驻）。
 
-          Checksums are in \`SHA256SUMS.txt\`. 校验和见 \`SHA256SUMS.txt\`。
+          Checksums are in \`SHA256SUMS.txt\`.
           NOTES
           cat "$RUNNER_TEMP/notes.md"
 
-      - name: 建 Release
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.version.outputs.tag }}

@@ -5,7 +5,7 @@ import Foundation
 struct Coordinate: Codable, Equatable, Hashable {
     var latitude: Double
     var longitude: Double
-    /// 选地点时记下的城市名。旧配置没有这一项，解码为 nil。
+    /// City name recorded when choosing a location. Older configurations decode this as nil.
     var name: String? = nil
 
     var isValid: Bool {
@@ -43,24 +43,24 @@ enum SolarEvent: String, Codable {
     case sunrise, sunset
 }
 
-/// 一天四段天光。导入一组壁纸时按文件名归入其中一段，再按张数均分。
+/// Four daylight phases. Imported wallpapers are grouped by filename, then evenly spaced by count.
 enum DayPhase: String, Codable, CaseIterable {
     case sunrise, day, sunset, night
 
     var name: String { L10n.t("phase.\(rawValue)") }
 }
 
-/// 一个时段的触发条件。
+/// The condition that activates a slot.
 enum Trigger: Equatable {
-    /// 固定时刻，本地时区。
+    /// A fixed time in the local time zone.
     case clock(hour: Int, minute: Int)
-    /// 相对日出/日落，`offsetMinutes` 可负（提前）。
+    /// Relative to sunrise or sunset; negative `offsetMinutes` means earlier.
     case solar(event: SolarEvent, offsetMinutes: Int)
-    /// 天光分段：把当天的一段太阳窗口按 `count` 等分，取第 `index` 张（从 0 起）。
-    /// 存的是「第几张 / 共几张」，不是写死的钟点，所以张数和季节都会自己跟上。
+    /// Divides the day's solar window into `count` equal parts and selects image `index` (zero-based).
+    /// Stores an image index and count, not a fixed clock time, so image counts and seasons stay aligned.
     case solarPhase(phase: DayPhase, index: Int, count: Int)
 
-    /// 求值需要坐标的触发器。
+    /// Whether evaluating this trigger requires coordinates.
     var dependsOnSun: Bool {
         switch self {
         case .clock: return false
@@ -91,14 +91,14 @@ extension Trigger: Codable {
             if count <= 0 || index < 0 || index >= count {
                 throw DecodingError.dataCorruptedError(
                     forKey: .index, in: c,
-                    debugDescription: "solarPhase 的 index/count 不合法: \(index)/\(count)")
+                    debugDescription: "Invalid solarPhase index/count: \(index)/\(count)")
             }
             self = .solarPhase(phase: try c.decode(DayPhase.self, forKey: .phase),
                                index: index,
                                count: count)
         case let other:
             throw DecodingError.dataCorruptedError(
-                forKey: .type, in: c, debugDescription: "未知的 trigger 类型: \(other)")
+                forKey: .type, in: c, debugDescription: "Unknown trigger type: \(other)")
         }
     }
 
@@ -130,7 +130,7 @@ extension Trigger: CustomStringConvertible {
         case .solar(let e, let off):
             let name = L10n.t("sun.\(e.rawValue)")
             if off == 0 { return name }
-            // Int.min 不能取负；先转十进制文字也避免 %d 把 64 位偏移截成 32 位。
+            // Int.min cannot be negated; decimal strings also avoid %d truncating 64-bit offsets to 32 bits.
             return off > 0 ? L10n.t("trigger.solar.after", name, String(off.magnitude))
                            : L10n.t("trigger.solar.before", name, String(off.magnitude))
         case .solarPhase(let phase, let index, let count):
@@ -156,7 +156,7 @@ extension Wallpaper: Codable {
         case "image":  self = .image(path: try c.decode(String.self, forKey: .path))
         case let other:
             throw DecodingError.dataCorruptedError(
-                forKey: .type, in: c, debugDescription: "未知的 wallpaper 类型: \(other)")
+                forKey: .type, in: c, debugDescription: "Unknown wallpaper type: \(other)")
         }
     }
 
@@ -202,7 +202,7 @@ struct Slot: Codable, Identifiable, Equatable {
 struct Schedule: Codable {
     var slots: [Slot] = []
     var paused: Bool = false
-    /// 手填坐标。为空时回退到时区推断（见 `ApproxLocation`）。
+    /// Manually supplied coordinates. Falls back to time-zone inference when absent (see `ApproxLocation`).
     var location: Coordinate? = nil
 
     private enum Key: String, CodingKey { case slots, paused, location }
@@ -221,7 +221,7 @@ struct Schedule: Codable {
         try validate()
     }
 
-    /// 手改 JSON 与 UI/CLI 保存共用边界，避免非法值落盘后才被求值器静默跳过。
+    /// Shared boundary for hand-edited JSON and UI/CLI saves, rejecting invalid values before evaluation silently skips them.
     func validate() throws {
         if let location, !location.isValid { throw ScheduleError.invalidCoordinate }
         guard Set(slots.map(\.id)).count == slots.count else { throw ScheduleError.duplicateID }
@@ -240,7 +240,7 @@ struct Schedule: Codable {
         }
     }
 
-    /// 实际用于计算的坐标：手填优先，否则按系统时区推断。
+    /// Coordinates used for calculations: explicit coordinates first, otherwise inferred from the system time zone.
     var effectiveCoordinate: Coordinate? {
         location ?? ApproxLocation.fromTimeZone()
     }
@@ -259,7 +259,7 @@ enum ScheduleError: LocalizedError {
     }
 }
 
-// MARK: - Tahoe 预设
+// MARK: - Tahoe preset
 
 enum Tahoe {
     static let morning = "B2FC91ED-6891-4DEB-85A1-268B2B4160B6"

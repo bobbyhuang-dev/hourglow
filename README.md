@@ -298,8 +298,9 @@ covered the scheduling engine, the menu bar UI, launch at login and precise loca
 
 Implementation notes live in [CLAUDE.md](CLAUDE.md): the layering, the verified facts about
 the macOS wallpaper store, and the mistakes already made once so they don't get made again.
-That file is in Chinese, as are the source comments. The user-visible strings are not — they
-all live in `Sources/L10n/`.
+That file and the source comments are in English. User-visible strings all live in
+`Sources/L10n/`: write new text in `Catalogs/en.swift` first, then translate it. English is
+also the unmatched-language default, a separate role from the source catalog.
 
 ### Not planned
 
@@ -318,8 +319,8 @@ Deliberately out of scope, so you know what you're getting:
 
 Bug reports, feature requests and pull requests are welcome — see
 [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, how to verify a change, and the
-conventions this codebase follows (notably: comments and documentation are written in Chinese,
-while every user-visible string lives in `Sources/L10n/`).
+conventions this codebase follows: English comments and developer documentation, a matched
+English/Chinese README pair, and user-visible strings kept in `Sources/L10n/`.
 
 Translating HourGlow into another language is the smallest useful contribution there is: copy
 one file, fill in a dictionary, add one line.

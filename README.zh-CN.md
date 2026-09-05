@@ -251,9 +251,9 @@ python3 Tests/verify-cli-boundaries.py # 非法输入与夏令时 23/25 小时�
 1.0 完成了调度引擎、菜单栏界面、开机自启与精确定位。
 
 实现笔记在 [CLAUDE.md](CLAUDE.md)：分层、实机验证过的 macOS 壁纸存储格式，
-以及已经踩过一次、不该再踩第二次的坑。
-
-面向用户的文案不写在视图里，全部集中在 `Sources/L10n/`。
+以及已经踩过一次、不该再踩第二次的坑。那份文件与源码注释均使用英文。
+面向用户的文案全部集中在 `Sources/L10n/`：新文案先写进 `Catalogs/en.swift`，再翻译。
+英文也用于没有匹配语言时的默认界面语言；这与原文目录是两个不同的职责。
 
 ### 不打算做的
 
@@ -269,7 +269,8 @@ python3 Tests/verify-cli-boundaries.py # 非法输入与夏令时 23/25 小时�
 ## 参与
 
 欢迎提 issue 和 PR —— 怎么构建、怎么验证一处改动、这份代码遵循哪些约定，
-见 [CONTRIBUTING.md](CONTRIBUTING.md)（那份文件是英文的，给外部读者看）。
+见 [CONTRIBUTING.md](CONTRIBUTING.md)：注释与开发文档使用英文，README 保持中英对照，
+面向用户的文案集中在 `Sources/L10n/`。
 
 把 HourGlow 翻成另一门语言是最小的一种参与：抄一个文件、填一张字典、加一行。
 步骤见 [Adding a language](CONTRIBUTING.md#adding-a-language)。

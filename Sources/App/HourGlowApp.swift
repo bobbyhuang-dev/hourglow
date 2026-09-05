@@ -1,10 +1,10 @@
 import AppKit
 import SwiftUI
 
-/// 菜单栏 app 的入口。
+/// Entry point for the menu bar app.
 ///
-/// `LSUIElement`（见打包脚本写的 Info.plist）让它没有 Dock 图标、没有主窗口，
-/// 全部界面就是 `MenuBarExtra` 那一块 360 × 470 的面板。
+/// `LSUIElement` (in the packaging script's Info.plist) removes the Dock icon and main window;
+/// the entire interface is the 360 × 470 `MenuBarExtra` panel.
 @main
 struct HourGlowApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -16,12 +16,12 @@ struct HourGlowApp: App {
         } label: {
             MenuBarIcon()
         }
-        // .window 才是「一块自定义面板」；默认的 .menu 只能放菜单项。
+        // .window supports a custom panel; the default .menu only supports menu items.
         .menuBarExtraStyle(.window)
     }
 }
 
-/// 菜单栏上的那个图标。暂停时换成半满的沙漏，一眼能看出调度停了。
+/// Menu bar icon. A half-filled hourglass makes paused scheduling immediately recognizable.
 private struct MenuBarIcon: View {
     private let model = AppModel.shared
 
@@ -30,11 +30,11 @@ private struct MenuBarIcon: View {
     }
 }
 
-/// 引擎要在面板第一次打开之前就跑起来 —— 菜单栏 app 的常态是从不打开面板。
+/// Start the engine before the panel first opens: menu bar apps often run without ever opening it.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillFinishLaunching(_ notification: Notification) {
-        // 这一句要抢在任何人碰 `Store.load()` 之前（`AppModel.init` 里也有一句兜底，
-        // 谁先跑到都对）：配置文件在不在，是「这次是不是全新安装」的唯一依据。
+        // Must precede any `Store.load()` call (`AppModel.init` also guards this; either may run first):
+        // the configuration file's existence is the only evidence of whether this is a fresh install.
         Onboarding.captureFirstRun(
             configExists: FileManager.default.fileExists(atPath: Store.fileURL.path))
         LoginItemProbe.handleIfNeeded()
@@ -42,26 +42,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // 定位那条要等系统回调，得让主 run loop 转起来，所以不能在 willFinish 里做。
+        // Location needs system callbacks and an active main run loop, so it cannot run in willFinish.
         LocateProbe.handleIfNeeded()
         AppModel.shared.start()
-        // 引擎先跑起来，指引再出现：全新安装的第一分钟里壁纸就该已经对了，
-        // 指引解释的是「刚才发生了什么、以后在哪儿改」。
+        // Start the engine before showing onboarding: wallpaper should be correct in the first minute.
+        // The guide explains what just happened and where to change it later.
         if Onboarding.shouldPresentOnLaunch {
             OnboardingWindow.shared.present()
         }
     }
 }
 
-/// 开机自启的排障入口：
+/// Launch-at-login troubleshooting entry point:
 ///
 /// ```
 /// build/HourGlow.app/Contents/MacOS/HourGlow --login-item [status|on|off]
 /// ```
 ///
-/// 它没有长在 `hourglow-cli` 上，是因为 `SMAppService.mainApp` 注册的是**调用者自己的
-/// bundle** —— CLI 是个裸二进制，没有 bundle 可注册，从那边问到的永远是 `.notFound`。
-/// 打印完直接退出，菜单栏上不会留下图标。
+/// Not part of `hourglow-cli`, because `SMAppService.mainApp` registers **the caller's own
+/// bundle**. The CLI is a bare binary with no bundle to register, so it always sees `.notFound`.
+/// Exits immediately after printing, without leaving a menu bar icon.
 enum LoginItemProbe {
     static func handleIfNeeded() {
         let arguments = CommandLine.arguments
@@ -88,16 +88,16 @@ enum LoginItemProbe {
     }
 }
 
-/// 定位的排障入口：
+/// Location troubleshooting entry point:
 ///
 /// ```
 /// build/HourGlow.app/Contents/MacOS/HourGlow --locate
 /// ```
 ///
-/// 和开机自启同理，权限是按 bundle 授予的，`hourglow-cli` 那个裸二进制问不出结果。
-/// 第一次跑会弹系统的定位授权对话框（理由取自 Info.plist 里的
-/// `NSLocationWhenInUseUsageDescription`）。拿到结果只打印，不写进配置 ——
-/// 写配置是设置页里那个按钮的事，排障不该顺手改用户的东西。
+/// Like launch at login, permissions are granted per bundle; the bare `hourglow-cli` cannot query them.
+/// The first run shows the system location permission dialog, using the reason from Info.plist's
+/// `NSLocationWhenInUseUsageDescription`. Results are printed, never saved to the configuration:
+/// saving is the settings button's job, and diagnostics must not modify user data as a side effect.
 enum LocateProbe {
     @MainActor
     static func handleIfNeeded() {
@@ -115,7 +115,7 @@ enum LocateProbe {
             }
             done = true
         }
-        // 授权对话框要等人点，最多陪它两分钟；`PreciseLocation` 自己也有超时。
+        // Allow two minutes for the user to answer the permission dialog; `PreciseLocation` also has its own timeout.
         let deadline = Date().addingTimeInterval(120)
         while !done, Date() < deadline {
             RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.2))
@@ -124,17 +124,17 @@ enum LocateProbe {
     }
 }
 
-/// 新手指引的排障入口：
+/// Onboarding troubleshooting entry point:
 ///
 /// ```
 /// build/HourGlow.app/Contents/MacOS/HourGlow --guide [status|reset|show]
 /// ```
 ///
-/// `status` / `reset` 打印完就退出，`show` 不退出 —— 它只是把这一次启动标成「无论
-/// 如何都弹」，好让改完版式直接看效果，不必先把 `schedule.json` 挪走假装全新安装。
+/// `status` / `reset` print and exit; `show` continues launching with forced presentation,
+/// letting layout changes be previewed without moving `schedule.json` to fake a fresh install.
 ///
-/// 「看过了」存在 `UserDefaults` 里，`HOURGLOW_HOME` 带不走它，所以要一个干净的
-/// 首次启动得两条一起用：
+/// Viewed status lives in `UserDefaults`, unaffected by `HOURGLOW_HOME`, so a clean first
+/// launch requires both commands:
 ///
 /// ```
 /// HOURGLOW_HOME=/tmp/hg-guide build/HourGlow.app/Contents/MacOS/HourGlow --guide reset
@@ -150,7 +150,7 @@ enum GuideProbe {
         switch action {
         case "show":
             Onboarding.forcedByFlag = true
-            return          // 继续正常启动，指引会在 didFinishLaunching 里弹出来
+            return          // Continue normal launch; didFinishLaunching will present the guide.
         case "reset":
             Onboarding.reset()
         case "status":

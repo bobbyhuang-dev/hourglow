@@ -1,19 +1,19 @@
 import AppKit
 
-// 生成 `Resources/HourGlow.icns`。产物已经提交进仓库，`build.sh` 只负责拷进 bundle ——
-// 这个工具平时不跑，改图标时才跑一次：
+// Generate Resources/HourGlow.icns. The output is checked in; build.sh only copies it into the bundle.
+// Run this tool only when changing the icon:
 //
 //   swiftc -O Tools/makeicon.swift -o /tmp/makeicon && /tmp/makeicon Resources
 //
-// 沙漏用 SF Symbol，和菜单栏上那个是同一个字形；底是一条从晨光到夜色的竖向渐变，
-// 正是这个 app 干的事。圆角与留白照 macOS 的图标网格：内容占画布的 82%，圆角半径
-// 是内容边长的 0.2237（Apple 那个「连续圆角」的近似值，这个尺寸下看不出差别）。
+// The hourglass uses the same SF Symbol as the menu bar, over a vertical gradient from morning to night,
+// reflecting the app's purpose. Corners and padding follow the macOS icon grid: content occupies 82% of
+// the canvas, with a corner radius of 0.2237 times its side (visually approximating Apple's continuous corners at this size).
 
 let output = URL(fileURLWithPath: CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : ".")
-let sizes = [16, 32, 64, 128, 256, 512, 1024]   // iconset 要的 10 张由这 7 个尺寸拼出来
+let sizes = [16, 32, 64, 128, 256, 512, 1024]   // These seven sizes supply the ten images required by an iconset.
 
-// 直接从晨光渐到夜色，中段会糊成一片土褐 —— 真实的暮色天空也不是那样过渡的，
-// 中间插一档偏粉的「维纳斯带」，三档下来才像一次天光变化。
+// A direct morning-to-night gradient turns muddy brown in the middle, unlike a real twilight sky.
+// Add a pinkish Belt of Venus stop so the three-color gradient resembles the changing daylight.
 let morning = NSColor(srgbRed: 0.98, green: 0.74, blue: 0.40, alpha: 1)
 let dusk    = NSColor(srgbRed: 0.79, green: 0.48, blue: 0.55, alpha: 1)
 let night   = NSColor(srgbRed: 0.16, green: 0.21, blue: 0.47, alpha: 1)
@@ -34,7 +34,7 @@ func render(_ size: Int) -> NSBitmapImageRep {
     NSGradient(colors: [morning, dusk, night],
                atLocations: [0, 0.42, 1], colorSpace: .sRGB)?.draw(in: squircle, angle: -90)
 
-    // 沙漏。留白按内容框算，图标越小符号相对越大，不然 16 pt 下只剩一根线。
+    // Hourglass: scale relative to the content box, larger in small icons so it does not collapse to a line at 16 pt.
     let scale: CGFloat = size <= 32 ? 0.60 : 0.52
     let config = NSImage.SymbolConfiguration(pointSize: box.width * scale, weight: .regular)
     if let symbol = NSImage(systemSymbolName: "hourglass", accessibilityDescription: nil)?
@@ -65,7 +65,7 @@ for size in sizes {
     pngs[size] = render(size).representation(using: .png, properties: [:])!
 }
 
-// iconset 的命名规则：@2x 那张就是两倍尺寸的同一张图。
+// iconset naming: the @2x image is the same artwork at twice the dimensions.
 for (point, scale) in [(16, 1), (16, 2), (32, 1), (32, 2), (128, 1), (128, 2),
                        (256, 1), (256, 2), (512, 1), (512, 2)] {
     let suffix = scale == 2 ? "@2x" : ""
@@ -80,7 +80,7 @@ task.arguments = ["-c", "icns", iconset.path,
 try! task.run()
 task.waitUntilExit()
 guard task.terminationStatus == 0 else {
-    FileHandle.standardError.write(Data("iconutil 失败\n".utf8))
+    FileHandle.standardError.write(Data("iconutil failed\n".utf8))
     exit(1)
 }
-print("已写出 \(output.appendingPathComponent("HourGlow.icns").path)")
+print("Wrote \(output.appendingPathComponent("HourGlow.icns").path)")

@@ -1,49 +1,49 @@
 import Foundation
 
-/// 一门语言的文案表。
+/// The string catalog for one language.
 ///
-/// 加一门语言 = 新建一个 `Catalogs/<code>.swift` + 在 `L10n.catalogs` 里加一行，
-/// 别的地方都不用动。完整性由 `build/l10ncheck` 守着。
+/// Add `Catalogs/<code>.swift` and one entry in `L10n.catalogs` to add a language.
+/// `build/l10ncheck` verifies completeness; no other language list needs updating.
 struct StringCatalog {
-    /// BCP-47 语言代码。`HOURGLOW_LANG`、`hourglow-cli language` 与设置页认的都是它。
+    /// BCP-47 code used by `HOURGLOW_LANG`, `hourglow-cli language`, and Settings.
     let code: String
-    /// 语言自己的名字（「简体中文」「English」）。选择器里永远按母语显示 ——
-    /// 看不懂当前界面语言的人，才最需要在列表里认出自己那一行。
+    /// The language's native name, always displayed in its own language so users
+    /// can find it even when they cannot read the current interface.
     let name: String
-    /// 城市与行政区的展示名从哪一列取，见 `System/Cities.swift`。
-    /// 翻译一门语言不必逐个翻译地名：拉丁字母的语言写 `.latin` 就够了。
+    /// Which city and region name column to display; see `System/Cities.swift`.
+    /// Languages using Latin script can use `.latin` without translating every place.
     let placeNames: PlaceNames
     let strings: [String: String]
 }
 
 enum PlaceNames: Hashable {
-    /// 中文名（深圳、广东）。
+    /// Chinese names.
     case chinese
-    /// 拉丁字母名（Shenzhen、Guangdong）。
+    /// Latin-script names (Shenzhen, Guangdong).
     case latin
 }
 
-/// 界面文案。
+/// Shared interface strings.
 ///
-/// **为什么不是 `.lproj/Localizable.strings`**：这个仓库不走 Xcode 工程，产物里有一堆
-/// 没有 bundle 的裸二进制（`hourglow-cli`、`panelshot`、七个靶子），
-/// `Bundle.main.localizedString` 在它们身上只会把 key 原样退回来，靶子也就查不出
-/// 漏翻。文案编进二进制里，三种产物拿到的是同一份，加一门语言只是加一个 Swift 文件。
+/// These catalogs are compiled in rather than loaded from `.lproj/Localizable.strings`
+/// because the project builds without Xcode and includes unbundled CLI/check binaries.
+/// `Bundle.main.localizedString` would return raw keys there, preventing the checks
+/// from catching missing translations. Every product uses the same compiled catalogs.
 enum L10n {
 
-    /// 加一门语言，改这一行。顺序不影响挑选，只影响设置页里的排列。
+    /// Add languages here. Order affects the Settings picker, not language resolution.
     static let catalogs: [StringCatalog] = [.zhHans, .en]
 
-    /// 文案的原文语言：新文案先写它，靶子按它对完整性，缺词时也退回它。
-    static let sourceCode = "zh-Hans"
+    /// Write new strings in this language first; it defines completeness and missing-key fallback.
+    static let sourceCode = "en"
 
-    /// 系统语言一门都对不上时用的语言（法语系统 → 英文，而不是中文）。
+    /// Used when no available language matches the system, independently of the source language.
     static let defaultCode = "en"
 
-    /// 语言变了。`AppModel` 收到之后让面板整棵重建。
+    /// `AppModel` rebuilds the panel tree when the language changes.
     static let didChangeNotification = Notification.Name("dev.bobbyhuang.hourglow.languageDidChange")
 
-    // MARK: - 当前语言
+    // MARK: - Current language
 
     private static let stateLock = NSLock()
     nonisolated(unsafe) private static var cached: StringCatalog?
@@ -60,9 +60,9 @@ enum L10n {
     static var code: String { catalog.code }
     static var placeNames: PlaceNames { catalog.placeNames }
 
-    // MARK: - 偏好
+    // MARK: - Preferences
 
-    /// 用户选的语言。`.system` 表示跟随系统。
+    /// `.system` follows the user's system language preferences.
     enum Preference: Hashable {
         case system
         case fixed(String)
@@ -73,11 +73,11 @@ enum L10n {
         }
     }
 
-    /// app 与 CLI 共用同一份偏好。
+    /// The app and CLI share one preference domain.
     ///
-    /// app 里 `UserDefaults.standard` 就是 bundle ID 那个域；CLI 是裸二进制，
-    /// 得显式指名。把自己的 bundle ID 当 suite 传给 `UserDefaults(suiteName:)`
-    /// 是未定义行为，所以分两条路。
+    /// The app's standard domain already uses its bundle ID; an unbundled CLI must
+    /// name that domain explicitly. Passing the current bundle ID to
+    /// `UserDefaults(suiteName:)` is undefined behavior, so keep the paths separate.
     static let defaultsSuite = "dev.bobbyhuang.hourglow"
     private static let defaultsKey = "language"
 
@@ -91,7 +91,7 @@ enum L10n {
         return .fixed(raw)
     }
 
-    /// 立即生效。写盘、清缓存、广播 —— 顺序不能反，收到广播的人会立刻来读新语言。
+    /// Save, invalidate, then notify: observers immediately read the new language.
     static func setPreference(_ preference: Preference) {
         switch preference {
         case .system: defaults.removeObject(forKey: defaultsKey)
@@ -103,18 +103,18 @@ enum L10n {
         NotificationCenter.default.post(name: didChangeNotification, object: nil)
     }
 
-    /// 重新挑一次语言。改过 `HOURGLOW_LANG` 之后要调它 —— 环境变量只在挑语言那一刻读。
+    /// Call after changing `HOURGLOW_LANG`; the environment is read only during resolution.
     static func invalidate() {
         stateLock.lock()
         cached = nil
         stateLock.unlock()
     }
 
-    // MARK: - 挑一门语言
+    // MARK: - Language resolution
 
-    /// 优先级：`HOURGLOW_LANG` > 用户选的 > 系统语言 > `defaultCode`。
+    /// Priority: `HOURGLOW_LANG` > stored preference > system languages > `defaultCode`.
     ///
-    /// 参数都能注入，`l10ncheck` 直接按表断言，不必真去改环境。
+    /// Injectable inputs let `l10ncheck` exercise resolution without changing the environment.
     static func resolve(preference: Preference,
                         environment: String? = environmentCode(),
                         system: [String] = Locale.preferredLanguages) -> StringCatalog {
@@ -134,20 +134,20 @@ enum L10n {
         catalogs.first { $0.code == defaultCode } ?? catalogs[0]
     }
 
-    /// 用 `getenv` 而不是 `ProcessInfo.environment`：后者是进程启动时的快照，
-    /// 靶子里 `setenv` 之后再问它拿到的还是旧值（`Store.directoryURL` 同理）。
+    /// Use `getenv`: `ProcessInfo.environment` is a startup snapshot and does not reflect
+    /// the checks' later `setenv` calls. `Store.directoryURL` follows the same rule.
     static func environmentCode() -> String? {
         guard let raw = getenv("HOURGLOW_LANG"),
               let value = String(validatingCString: raw), !value.isEmpty else { return nil }
         return value
     }
 
-    /// 系统语言 → 我们有的语言。纯函数，靶子按表断言。
+    /// Pure matching from system language preferences to available catalogs.
     ///
-    /// 逐条看用户的偏好顺序，每一条依次试三档：完全一致 → 语言+文字一致
-    /// （`zh-Hans-CN` → `zh-Hans`）→ 只有语言一致（`en-GB` → `en`，
-    /// `zh-Hant` → `zh-Hans`）。最后一档是有意为之：繁体读者看简体，
-    /// 总比被扔去英文近。
+    /// Try each preference in order: exact match, language + script, then language only.
+    /// Thus `zh-Hans-CN` matches `zh-Hans`, and `en-GB` matches `en`.
+    /// Letting `zh-Hant` match `zh-Hans` is intentional: Simplified Chinese is closer
+    /// to a Traditional Chinese reader's preference than falling back to English.
     static func match(preferred: [String], available: [String]) -> String? {
         let pool = available.map { (code: $0, tags: Subtags($0)) }
         for want in preferred.map(Subtags.init) {
@@ -160,8 +160,8 @@ enum L10n {
         return nil
     }
 
-    /// `zh-Hans-CN` → 语言 zh、文字 hans。四个字母的那一段才是文字，
-    /// 两个字母/三个数字的是地区（`en-GB`、`es-419`），不能混。
+    /// In `zh-Hans-CN`, `zh` is the language and `hans` the script. Four-letter subtags
+    /// denote scripts; two-letter or three-digit subtags denote regions (`en-GB`, `es-419`).
     struct Subtags: Equatable {
         var language: String
         var script: String?
@@ -174,10 +174,10 @@ enum L10n {
         }
     }
 
-    // MARK: - 查表
+    // MARK: - String lookup
 
-    /// 缺词时退回原文语言，再缺就把 key 本身还回去 —— 界面上露出一个
-    /// `slot.apply` 比露出一片空白更容易被发现。`l10ncheck` 保证正常情况下走不到这儿。
+    /// Fall back to the source language, then the key itself: a visible `slot.apply`
+    /// is easier to spot than blank text. `l10ncheck` guards against missing keys.
     static func value(forKey key: String) -> String? {
         let current = catalog
         if let hit = current.strings[key] { return hit }
@@ -193,13 +193,19 @@ enum L10n {
         String(format: t(key), arguments: arguments)
     }
 
-    /// 带数量的文案。
+    /// Count-dependent strings.
     ///
-    /// 中文没有单复数，只写 `key` 就够；英文这类语言另外补一条 `key.one`，
-    /// 数量为 1 时自动挑它。没有 `key.one` 就用 `key`，所以补不补是可选的。
+    /// Languages such as Chinese need only the base key. Languages such as English
+    /// can add `key.one` for a count of 1; the singular form is optional.
     static func t(count: Int, _ key: String, _ arguments: CVarArg...) -> String {
-        let singular = "\(key).one"
-        let chosen = (count == 1 && value(forKey: singular) != nil) ? singular : key
-        return String(format: t(chosen), arguments: arguments)
+        let current = catalog
+        // Choose the language before the plural form: a missing Chinese singular
+        // must not override an existing Chinese base string with English text.
+        let selected = current.strings[key] != nil
+            ? current
+            : catalogs.first { $0.code == sourceCode } ?? current
+        let format = (count == 1 ? selected.strings["\(key).one"] : nil)
+            ?? selected.strings[key] ?? key
+        return String(format: format, arguments: arguments)
     }
 }

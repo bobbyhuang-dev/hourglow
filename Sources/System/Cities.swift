@@ -1,15 +1,15 @@
 import Foundation
 
-/// 一个可选的地点：展示名 + 搜索用的别名 + 坐标。
+/// A selectable place: display name, search aliases, and coordinates.
 ///
-/// 展示名按当前语言挑，**搜索永远两种都认** —— 界面切成英文之后仍然打得出「深圳」，
-/// 反过来也一样。`keys` 里因此中文名、拼音、拉丁名全在。
+/// Display names follow the current language, but **search always accepts both**: entering "深圳"
+/// still works in English, and vice versa. `keys` therefore includes Chinese names, pinyin, and Latin names.
 struct City: Equatable, Identifiable, Hashable {
-    /// 名字的两种写法。离线表里都有；`zone.tab` 与地理编码只有一种，那时它是空的。
+    /// Both name forms for offline entries; empty for single-name sources such as zone.tab and geocoding.
     var names: [PlaceNames: String]
-    /// 当前语言那一种缺席时用它。
+    /// Used when a name in the current language is unavailable.
     var fallbackName: String
-    /// 中文的省 / 直辖市 / 国家名。分组与翻译都按它走；`nil` 表示这条不是离线表里的。
+    /// Chinese province, municipality, or country name, used for grouping and translation; nil for non-offline entries.
     var region: String?
     var fallbackDetail: String
     var coordinate: Coordinate
@@ -18,7 +18,7 @@ struct City: Equatable, Identifiable, Hashable {
     var name: String { names[L10n.placeNames] ?? fallbackName }
     var detail: String { region.map(Cities.regionName) ?? fallbackDetail }
 
-    /// id 用不随语言变的那个名字：换语言不该让它变成另一个城市。
+    /// Uses the language-independent name for identity: switching languages must not create a different city.
     var id: String { "\(fallbackName)|\(coordinate.latitude)|\(coordinate.longitude)" }
 
     init(names: [PlaceNames: String], fallbackName: String,
@@ -32,7 +32,7 @@ struct City: Equatable, Identifiable, Hashable {
         self.keys = keys
     }
 
-    /// 只有一种写法的来源（`zone.tab`、系统地理编码）走这条。
+    /// For sources with only one name form (zone.tab and system geocoding).
     init(name: String, detail: String, coordinate: Coordinate, keys: [String]) {
         self.init(names: [:], fallbackName: name,
                   region: nil, fallbackDetail: detail,
@@ -53,33 +53,47 @@ struct City: Equatable, Identifiable, Hashable {
         c.name = name
         return c
     }
-
-    /// 用来把地点页拆成「中国 / 海外」两段，空搜时不混成一长串。
-    /// 判据是中文的行政区名，不是展示出来的那个 —— 英文界面下 `detail` 是
-    /// 「Guangdong」，按它比对会把整个中国段判没。
-    var isChina: Bool { region.map(Cities.chineseRegions.contains) ?? false }
 }
 
-/// 离线城市表：常用中文城市（含拼音）加上 `zone.tab` 里每个时区的代表点。
+/// Offline city catalog: common cities with pinyin, plus each time zone's representative point from zone.tab.
 ///
-/// 中国全境都是 `Asia/Shanghai`，时区推断永远落在上海，深圳 / 张家界的日出会差
-/// 十几到四十分钟。所以面板要让人自己选城市，不能只靠时区。
+/// With Asia/Shanghai used throughout China, time-zone inference always chooses Shanghai; sunrise in
+/// Shenzhen or Zhangjiajie can differ by roughly 15–40 minutes. Let users choose a city rather than rely on the zone.
 enum Cities {
 
-    static func search(_ query: String) -> [City] {
+    /// Nearby results shown for an empty query. Listing all roughly 500 entries is unwieldy;
+    /// thirty covers cities in neighboring provinces or countries.
+    static let nearbyCount = 30
+
+    /// `near` affects empty queries only, sorting by spherical distance: Huiyang sees Shenzhen, Dongguan,
+    /// and Hong Kong first; Portland sees Seattle and Vancouver. The old fixed Chinese-table order
+    /// showed only Chinese cities to English users. Without coordinates, retain the original table order.
+    static func search(_ query: String, near: Coordinate? = nil) -> [City] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let pool = q.isEmpty ? featured : catalog
-        let hits = pool.filter { $0.matches(q) }
-        if q.isEmpty { return hits }
-        return hits.sorted { lhs, rhs in
+        if q.isEmpty {
+            guard let near else { return curated }
+            return Array(catalog
+                .sorted { distance($0.coordinate, near) < distance($1.coordinate, near) }
+                .prefix(nearbyCount))
+        }
+        return catalog.filter { $0.matches(q) }.sorted { lhs, rhs in
             rank(lhs, q) < rank(rhs, q)
         }
     }
 
-    /// 精确名或拼音对上时取第一个，其次是从头对上的（`深` → 深圳）。
+    /// Spherical distance in kilometers, used only for ranking; kilometer-level precision is sufficient.
+    private static func distance(_ a: Coordinate, _ b: Coordinate) -> Double {
+        let lat1 = a.latitude * .pi / 180, lat2 = b.latitude * .pi / 180
+        let dLat = lat2 - lat1
+        let dLon = (b.longitude - a.longitude) * .pi / 180
+        let h = sin(dLat / 2) * sin(dLat / 2) + cos(lat1) * cos(lat2) * sin(dLon / 2) * sin(dLon / 2)
+        return 2 * 6371 * asin(min(1, sqrt(h)))
+    }
+
+    /// Prefers the first exact name or pinyin match, then a prefix match (`深` → `深圳`).
     ///
-    /// 不拿「随便一个子串命中」兜底：`lookup("a")` 会一路命中到 Abidjan，
-    /// 用户打错一个字就被静默设到地球另一边去了。认不出就认不出，交给调用方去搜。
+    /// Never fall back to arbitrary substring matches: lookup("a") could select Abidjan,
+    /// silently moving a typo across the globe. Leave unrecognized queries for the caller to search.
     static func lookup(_ query: String) -> City? {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return nil }
@@ -88,7 +102,7 @@ enum Cities {
         if let exact = hits.first(where: { $0.keys.contains { fold($0) == folded } }) {
             return exact
         }
-        // 单个拉丁字母做前缀兜底照样会命中到 Abidjan 去；中文单字（深 → 深圳）留着。
+        // A single Latin-letter prefix can still select Abidjan; preserve single Chinese characters (`深` → `深圳`).
         guard folded.count >= 2 || !folded.allSatisfy(\.isASCII) else { return nil }
         return hits.first { $0.keys.contains { fold($0).hasPrefix(folded) } }
     }
@@ -97,14 +111,19 @@ enum Cities {
         s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
     }
 
-    static let featured: [City] = curated
-
+    /// Curated entries take priority; zone.tab only fills gaps. Deduplicate by both coordinates and names:
+    /// Hong Kong differs by 3 km between sources, so a 0.01° key alone yields two adjacent nearby results.
     static let catalog: [City] = {
-        var seen = Set<String>()
+        var seenSpots = Set<String>()
+        var seenNames = Set<String>()
         var all: [City] = []
         for city in curated + zoneTabCities() {
-            let key = String(format: "%.2f,%.2f", city.coordinate.latitude, city.coordinate.longitude)
-            if seen.insert(key).inserted { all.append(city) }
+            let spot = String(format: "%.2f,%.2f", city.coordinate.latitude, city.coordinate.longitude)
+            let names = city.keys.map(fold)
+            guard !seenSpots.contains(spot), !names.contains(where: seenNames.contains) else { continue }
+            seenSpots.insert(spot)
+            seenNames.formUnion(names)
+            all.append(city)
         }
         return all
     }()
@@ -119,24 +138,14 @@ enum Cities {
         return (3, city.name)
     }
 
-    /// 行政区 / 国家名。表里存的是中文，拉丁字母的语言查下面那张对照表。
+    /// Region or country name. Stored in Chinese; Latin-script languages use the mapping below.
     ///
-    /// 地名不放进语言表：翻一门新语言不该顺带翻译七十多个省和国家，
-    /// 而「Guangdong」对任何拉丁字母的语言都一样能用。
+    /// Place names stay outside translation catalogs: adding a language should not require translating
+    /// over seventy provinces and countries, and "Guangdong" works across Latin-script languages.
     static func regionName(_ chinese: String) -> String {
         guard L10n.placeNames == .latin else { return chinese }
         return latinRegions[chinese] ?? chinese
     }
-
-    static let chineseRegions: Set<String> = [
-        "北京", "上海", "天津", "重庆",
-        "河北", "山西", "辽宁", "吉林", "黑龙江",
-        "江苏", "浙江", "安徽", "福建", "江西", "山东",
-        "河南", "湖北", "湖南", "广东", "海南",
-        "四川", "贵州", "云南", "陕西", "甘肃", "青海",
-        "台湾", "内蒙古", "广西", "西藏", "宁夏", "新疆",
-        "香港", "澳门",
-    ]
 
     // name, pinyin, english, lat, lon, region
     private static let curated: [City] = rows.map { row in
@@ -256,7 +265,7 @@ enum Cities {
         ("雷克雅未克", "leikeyawieke", "Reykjavik", 64.147, -21.943, "冰岛"),
     ]
 
-    /// 中文行政区 / 国家名 → 拉丁字母写法。只在 `placeNames == .latin` 时用。
+    /// Chinese region/country names → Latin forms. Used only when `placeNames == .latin`.
     private static let latinRegions: [String: String] = [
         "北京": "Beijing", "上海": "Shanghai", "天津": "Tianjin", "重庆": "Chongqing",
         "河北": "Hebei", "山西": "Shanxi", "辽宁": "Liaoning", "吉林": "Jilin",
@@ -264,7 +273,7 @@ enum Cities {
         "福建": "Fujian", "江西": "Jiangxi", "山东": "Shandong", "河南": "Henan",
         "湖北": "Hubei", "湖南": "Hunan", "广东": "Guangdong", "海南": "Hainan",
         "四川": "Sichuan", "贵州": "Guizhou", "云南": "Yunnan",
-        // 陕西 / 山西 的拼音只差声调，英文里靠这个多出来的 a 分辨。
+        // "陕西" and "山西" differ only in pinyin tone; English distinguishes Shaanxi with the extra a.
         "陕西": "Shaanxi", "甘肃": "Gansu", "青海": "Qinghai", "台湾": "Taiwan",
         "内蒙古": "Inner Mongolia", "广西": "Guangxi", "西藏": "Tibet", "宁夏": "Ningxia",
         "新疆": "Xinjiang", "香港": "Hong Kong", "澳门": "Macau",
@@ -282,7 +291,7 @@ enum Cities {
         "智利": "Chile", "冰岛": "Iceland",
     ]
 
-    /// `zone.tab` 每个时区一行代表城市，补上「东京 / 伦敦」这类没单独写进中文表的点。
+    /// Reads each time zone's representative city from zone.tab, supplementing the curated table.
     static func zoneTabCities() -> [City] {
         guard let table = try? String(contentsOfFile: "/usr/share/zoneinfo/zone.tab",
                                       encoding: .utf8) else { return [] }

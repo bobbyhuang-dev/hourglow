@@ -1,11 +1,11 @@
 import Foundation
 
-/// 把 `hourglow-cli run` 注册成 LaunchAgent，让无头引擎在重启后仍然活着。
+/// Registers hourglow-cli run as a LaunchAgent so the headless engine survives restarts.
 ///
-/// M4 起菜单栏 app 有了自己的开机自启（`LaunchAtLogin`，走 `SMAppService`），
-/// 这条路仍然留着：不想开 UI、或者要在没登录界面的场合跑引擎时用它。
-/// 两条路同时开着不会打架（`EngineLock` 会让后起的那个退成从属），但也没有必要 ——
-/// 设置页因此要能看见它、能一键卸载它，`isLoaded` / `uninstall` 就是为此从 CLI 挪过来的。
+/// Since M4 the menu-bar app has its own login item (LaunchAtLogin via SMAppService).
+/// This path remains for running the engine without the UI. Enabling both is safe but unnecessary:
+/// EngineLock makes the second process a follower. Settings therefore exposes status and one-click
+/// removal; isLoaded and uninstall moved here from the CLI to support that.
 enum LaunchAgentInstaller {
 
     static let label = "app.hourglow.agent"
@@ -36,7 +36,7 @@ enum LaunchAgentInstaller {
             "Label": label,
             "ProgramArguments": [binary.path, "run"],
             "RunAtLoad": true,
-            // 只在异常退出时拉起来。这样 `hourglow-cli agent uninstall` 能真的停掉它。
+            // Restart only after abnormal exits so hourglow-cli agent uninstall can actually stop it.
             "KeepAlive": ["SuccessfulExit": false],
             "ProcessType": "Background",
             "StandardOutPath": logURL.path,
@@ -53,14 +53,14 @@ enum LaunchAgentInstaller {
             try data.write(to: plistURL, options: .atomic)
         } catch { throw Failure(message: L10n.t("agent.error.write", "\(error)")) }
 
-        _ = launchctl(["bootout", "\(domain)/\(label)"])   // 可能没加载过，失败不算错
+        _ = launchctl(["bootout", "\(domain)/\(label)"])   // May not be loaded; failure is harmless.
         let result = launchctl(["bootstrap", domain, plistURL.path])
         guard result.status == 0 else {
             throw Failure(message: L10n.t("agent.error.bootstrap", result.status, result.output))
         }
     }
 
-    /// 卸载。返回一句可有可无的说明 —— 本来就没在跑不算失败，那不是错误，是常态。
+    /// Uninstalls, returning an optional explanation. Already stopped is normal, not a failure.
     @discardableResult
     static func uninstall() -> String? {
         let result = launchctl(["bootout", "\(domain)/\(label)"])

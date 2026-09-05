@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI 边界回归：全程使用一次性配置，不启动排程、不写真实壁纸。"""
+"""CLI boundary regressions: use disposable configuration throughout, without starting scheduling or writing real wallpapers."""
 import json
 import os
 from pathlib import Path
@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix="hourglow-cli-boundaries-") as root:
         result = run("location", lat, lon)
         assert result.returncode == 1, result
         assert config.read_bytes() == original
-    print("✓ CLI 拒绝越界/非有限坐标且不改原配置")
+    print("✓ CLI rejects out-of-range/non-finite coordinates without changing the original configuration")
 
     for lang in ["en", "zh-Hans"]:
         env["HOURGLOW_LANG"] = lang
@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix="hourglow-cli-boundaries-") as root:
             "wallpaper": {"type": "image", "path": "/fixture"}}]}))
         result = run("list")
         assert result.returncode == 0 and str(2**63) in result.stdout, result
-    print("✓ 中英文 CLI 展示极端偏移均不崩溃、不截断")
+    print("✓ English and Chinese CLI output displays extreme offsets without crashing or truncating")
     env["HOURGLOW_LANG"] = "en"
 
     config.write_text(json.dumps({"slots": [
@@ -48,13 +48,13 @@ with tempfile.TemporaryDirectory(prefix="hourglow-cli-boundaries-") as root:
         assert len(transitions) == 2, result.stdout
         assert transitions[0].startswith("00:00"), result.stdout
         assert transitions[1].startswith("23:30"), result.stdout
-    print("✓ 23/24/25 小时的本地日都完整模拟，且不越过次日午夜")
+    print("✓ Local days of 23/24/25 hours are fully simulated without crossing midnight into the next day")
 
     config.write_text('{"slots":[{"trigger":{"type":"clock","hour":25},'
                       '"wallpaper":{"type":"image","path":"/fixture"}}]}')
     original = config.read_bytes()
     assert run("list").returncode == 1
     assert config.read_bytes() == original
-    print("✓ 非法时刻报错且保留原文件")
+    print("✓ Invalid times produce an error and preserve the original file")
 
-print("全部 CLI 边界测试通过")
+print("All CLI boundary tests passed")

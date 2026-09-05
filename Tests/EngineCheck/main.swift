@@ -1,8 +1,8 @@
 import Foundation
 
-// 引擎的两处判断逻辑，都不碰系统壁纸，可以离线跑：
-//   1. shouldAssert —— 什么时候无条件覆盖，什么时候让位给用户的手动选择
-//   2. wakeUpTarget —— 定时器排到哪一刻
+// Two engine decisions, neither of which touches the system wallpaper, so they can run offline:
+//   1. shouldAssert — when to overwrite unconditionally and when to defer to the user's manual choice
+//   2. wakeUpTarget — when to schedule the timer
 
 private var failures = 0
 
@@ -33,47 +33,47 @@ private func resolution(_ slot: Slot, since: Date) -> Resolution {
     Resolution(active: slot, since: since, next: nil)
 }
 
-// MARK: - 覆盖 vs 让位
+// MARK: - Overwrite vs. defer
 
-// 首次运行：还没写过任何东西，谈不上「让位」。
+// First run: nothing has been written yet, so there is nothing to defer to.
 check(scheduler(firedAt: nil, slot: nil)
         .shouldAssert(resolution(slotA, since: nine), reason: .launch),
-      "没有写入记录时无条件写入")
+      "Write unconditionally when there is no write history")
 
-// 睡过了 21:00 这个触发点，醒来必须补切 —— 哪怕用户中途换过壁纸，
-// 他的手动选择本来就只保到下一次排定的切换为止。
+// If the system slept through the 21:00 trigger, waking must catch up — even if the user changed
+// the wallpaper in between, since their manual choice only lasts until the next scheduled switch.
 check(scheduler(firedAt: nine, slot: slotA)
         .shouldAssert(resolution(slotB, since: twentyOne), reason: .wake),
-      "跨过新的触发时刻后无条件写入")
+      "Write unconditionally after crossing a new trigger time")
 
-// 同一个时段内原地重新求值（唤醒、启动、时区变更）：不强制，
-// 交给调用方比对当前壁纸是不是我们写的那张。
+// Reevaluating within the same slot (wake, launch, time zone change) does not force an overwrite.
+// Let the caller compare the current wallpaper with the one we wrote.
 check(!scheduler(firedAt: nine, slot: slotA)
         .shouldAssert(resolution(slotA, since: nine), reason: .wake),
-      "同一时段内重新求值不强制覆盖")
+      "Reevaluating within the same slot does not force an overwrite")
 check(!scheduler(firedAt: nine, slot: slotA)
         .shouldAssert(resolution(slotA, since: nine), reason: .launch),
-      "重启后落回同一时段也不强制覆盖")
+      "Restarting into the same slot does not force an overwrite either")
 
-// 用户改了时间轴，当前生效的已经换了一段 —— 这本身就是明确意图。
+// The user edited the timeline and a different slot is now active — that itself is explicit intent.
 check(scheduler(firedAt: nine, slot: slotA)
         .shouldAssert(resolution(slotB, since: nine), reason: .configChange),
-      "当前生效的时段变了就写入")
+      "Write when the currently active slot changes")
 
-// 暂停后恢复、手动 apply：明确意图，无视手动改动直接校正。
+// Resuming after a pause or applying manually expresses explicit intent: correct immediately, ignoring manual changes.
 check(scheduler(firedAt: nine, slot: slotA)
         .shouldAssert(resolution(slotA, since: nine), reason: .resume),
-      "恢复时立即校正")
+      "Correct immediately on resume")
 check(scheduler(firedAt: nine, slot: slotA)
         .shouldAssert(resolution(slotA, since: nine), reason: .manual),
-      "手动 apply 无条件写入")
+      "Manual apply writes unconditionally")
 
-// 时钟被往回拨：since 比记录的还早，不该当成跨过了新边界。
+// The clock moved backward: since predates the recorded time, so this is not a new boundary crossing.
 check(!scheduler(firedAt: twentyOne, slot: slotB)
         .shouldAssert(resolution(slotB, since: nine), reason: .clockChange),
-      "时钟回拨不会被当成新的触发边界")
+      "Moving the clock backward is not treated as a new trigger boundary")
 
-// MARK: - 定时器排期
+// MARK: - Timer scheduling
 
 private let engine = scheduler(firedAt: nil, slot: nil)
 private let now = Date(timeIntervalSince1970: 1_700_000_000)
@@ -84,25 +84,25 @@ private func seconds(_ target: Date) -> TimeInterval { target.timeIntervalSince(
 check(seconds(engine.wakeUpTarget(from: now,
                                   next: now.addingTimeInterval(1800),
                                   resolved: true)) == 1801,
-      "排到下一个触发时刻之后 1 秒（早几毫秒会求值到上一段）")
+      "Schedule 1 second after the next trigger (a few milliseconds early would resolve to the previous slot)")
 
 check(seconds(engine.wakeUpTarget(from: now, next: nil, resolved: true)) == sixHours,
-      "没有下一次切换时靠 6 小时安全网兜底")
+      "Fall back to the 6-hour safety net when there is no next switch")
 
 check(seconds(engine.wakeUpTarget(from: now,
                                   next: now.addingTimeInterval(48 * 3600),
                                   resolved: true)) == sixHours,
-      "下一次切换太远时也不超过安全网")
+      "Do not exceed the safety-net interval even when the next switch is far away")
 
 check(seconds(engine.wakeUpTarget(from: now, next: nil, resolved: false)) == 15 * 60,
-      "求不出值时 15 分钟后重试")
+      "Retry after 15 minutes when resolution fails")
 
 check(seconds(engine.wakeUpTarget(from: now,
                                   next: now.addingTimeInterval(-3600),
                                   resolved: true)) == 1,
-      "触发时刻已经过去时至少等 1 秒，不空转")
+      "Wait at least 1 second when the trigger time has already passed, avoiding a busy loop")
 
-// MARK: - 领跑 / 从属接管
+// MARK: - Leader / follower takeover
 
 do {
     let lockDirectory = FileManager.default.temporaryDirectory
@@ -116,15 +116,15 @@ do {
     }
 
     let leader = EngineLock.acquire()
-    check(leader != nil, "第一个引擎取得排程锁")
-    check(EngineLock.acquire() == nil, "领跑者存活时第二个引擎保持从属")
+    check(leader != nil, "The first engine acquires the scheduling lock")
+    check(EngineLock.acquire() == nil, "The second engine remains a follower while the leader is alive")
     leader?.release()
     let successor = EngineLock.acquire()
-    check(successor != nil, "领跑者退出后从属引擎可以接管")
+    check(successor != nil, "A follower engine can take over after the leader exits")
     successor?.release()
 }
 
-// MARK: - 配置文件监听
+// MARK: - Configuration file monitoring
 
 private func waitUntil(timeout: TimeInterval = 2, _ condition: () -> Bool) -> Bool {
     let deadline = Date().addingTimeInterval(timeout)
@@ -146,28 +146,28 @@ do {
     let watcher = ConfigWatcher(fileURL: file) { changes += 1 }
     watcher.start()
 
-    // 模拟 echo > file / 某些编辑器：inode 不变，只截断重写内容。
+    // Simulate echo > file / some editors: keep the inode and only truncate and rewrite the contents.
     let handle = try FileHandle(forWritingTo: file)
     try handle.truncate(atOffset: 0)
     try handle.write(contentsOf: Data("in-place".utf8))
     try handle.close()
-    check(waitUntil { changes == 1 }, "配置监听能接住原地重写")
+    check(waitUntil { changes == 1 }, "Configuration monitoring catches in-place rewrites")
 
-    // Store.save 的 .atomic 会用 rename 替换 inode。
+    // Store.save uses .atomic, which replaces the inode via rename.
     try Data("atomic".utf8).write(to: file, options: .atomic)
-    check(waitUntil { changes == 2 }, "配置监听能接住原子替换")
+    check(waitUntil { changes == 2 }, "Configuration monitoring catches atomic replacements")
 
-    // 已排进防抖队列的事件也必须被 stop 取消。
+    // stop must also cancel events already queued for debouncing.
     try Data("after-stop".utf8).write(to: file, options: .atomic)
     watcher.stop()
     RunLoop.current.run(until: Date().addingTimeInterval(0.4))
-    check(changes == 2, "配置监听停止后不会补发延迟回调")
+    check(changes == 2, "Configuration monitoring does not deliver delayed callbacks after stopping")
 } catch {
-    check(false, "配置监听集成测试可以完成：\(error)")
+    check(false, "The configuration monitoring integration test can complete: \(error)")
 }
 
 if failures > 0 {
-    FileHandle.standardError.write(Data("\n\(failures) 项测试失败\n".utf8))
+    FileHandle.standardError.write(Data("\n\(failures) tests failed\n".utf8))
     exit(1)
 }
-print("\n全部引擎测试通过")
+print("\nAll engine tests passed")

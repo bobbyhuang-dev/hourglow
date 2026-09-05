@@ -1,83 +1,83 @@
 import Foundation
 import AppKit
 
-/// 调度引擎：在正确的时刻把正确的壁纸写进系统。
+/// Scheduling engine: writes the right wallpaper to the system at the right time.
 ///
-/// ## 不轮询
+/// ## No polling
 ///
-/// 定时器直接排到下一个触发时刻，中间什么都不做。真实世界里会打乱这个安排的事件
-/// 有四类，各自订阅，不靠每分钟醒来一次去发现：
+/// Schedules the timer directly for the next trigger and does nothing in between. Four kinds of
+/// real-world events can disrupt that schedule; subscribe to each instead of waking every minute:
 ///
-/// - 睡眠唤醒 —— `NSWorkspace.didWakeNotification`。睡过头的定时器醒来后会立刻补跑，
-///   两条路都能触发补切，互为冗余。
-/// - 系统时钟被改（对时、手动调整）—— `NSSystemClockDidChange`
-/// - 时区变更、夏令时切换 —— `NSSystemTimeZoneDidChange`，收到后要
-///   `NSTimeZone.resetSystemTimeZone()`，否则 `TimeZone.current` 拿到的还是旧值
-/// - 跨日 —— `NSCalendarDayChanged`，日出日落每天都不一样
+/// - Wake from sleep: NSWorkspace.didWakeNotification. An overdue timer also fires on wake,
+///   providing two redundant paths to catch up.
+/// - System clock changes (synchronization or manual adjustment): NSSystemClockDidChange.
+/// - Time-zone or daylight-saving changes: NSSystemTimeZoneDidChange. Call
+///   NSTimeZone.resetSystemTimeZone() on receipt or TimeZone.current retains the old value.
+/// - Day rollover: NSCalendarDayChanged, since sunrise and sunset change daily.
 ///
-/// 另外还有一层安全网：定时器最长只睡 `maxSleep`。丢一个通知不至于让引擎永久失灵。
+/// A safety net limits timer sleep to maxSleep so a missed notification cannot disable the engine indefinitely.
 ///
-/// ## 用户手动改了壁纸怎么办
+/// ## Respecting manual wallpaper changes
 ///
-/// `MVP` 里列的三种语义，最后落在 a 与 c 的组合上 —— 单取哪一种都不对：
+/// Of the three semantics in MVP, the chosen behavior combines a and c; neither works alone:
 ///
-/// - 纯 a（下次触发照常覆盖）：合盖睡一小时，醒来还在同一个时段内，
-///   我们却会拿同一张壁纸把用户十分钟前的手动选择盖掉。这纯属添乱。
-/// - 纯 c（当前壁纸不是我们写的那张就永不覆盖）：用户手动换过一次之后，
-///   自动切换就此彻底失效，除非他手动换回我们写的那张。
-///   这跟 TODO 里「不需要用户额外点任何东西」的初衷正好相反。
+/// - Pure a (overwrite on the next evaluation): close the lid for an hour and wake in the same slot,
+///   and we would overwrite a manual choice made ten minutes earlier with the same scheduled image.
+/// - Pure c (never overwrite unless the current wallpaper is ours): one manual change disables
+///   automatic switching indefinitely unless the user manually restores our last wallpaper.
+///   That contradicts the TODO goal of requiring no extra user actions.
 ///
-/// 所以按「是否跨过了新的触发边界」分开处理：
+/// Instead, distinguish whether a new trigger boundary has been crossed:
 ///
-/// - **跨过了**（到点了、睡过了某个触发时刻、暂停后恢复）：照常写。
-///   手动选择的有效期到下一个排定的切换为止 —— 跟空调的「临时保持」一个意思。
-/// - **没跨过**（启动、唤醒、时区变更等原地重新求值）：只有当前壁纸确实是我们
-///   上次写的那张时才写；否则说明用户中途换过，让位给他。
+/// - **Crossed** (trigger reached, slept past a trigger, or resumed after pausing): write normally.
+///   Manual choices last until the next scheduled transition, like a thermostat's temporary hold.
+/// - **Not crossed** (launch, wake, time-zone change, or other reevaluation within the same slot):
+///   write only if the current wallpaper is still our last write; otherwise defer to the user's choice.
 ///
-/// 判据是 `EngineState.lastFiredAt` 与本次 `Resolution.since` 的先后。
+/// Compare EngineState.lastFiredAt with the current Resolution.since to decide.
 final class Scheduler {
 
-    /// 本次求值是被什么触发的。只影响日志与「是否强制写入」。
+    /// What triggered this evaluation. Affects only logging and whether to force a write.
     enum Reason: String {
         case launch, timer, wake, clockChange, timeZoneChange, dayChange
         case configChange, pause, resume, manual
 
         var label: String { L10n.t("engine.reason.\(rawValue)") }
 
-        /// 这些触发源代表用户的明确意图，无条件覆盖。
+        /// These reasons express explicit user intent and overwrite unconditionally.
         var isAssertive: Bool { self == .resume || self == .manual }
     }
 
-    /// 一次求值的结果。
+    /// Result of one evaluation.
     enum Outcome {
-        /// 写入成功。
+        /// Successfully written.
         case applied(Slot)
-        /// 目标与当前一致，跳过写入（不闪屏）。
+        /// Target already matches; skipped the write to avoid flicker.
         case unchanged(Slot)
-        /// 用户手动换过壁纸，且没有跨过新的触发边界 —— 让位。
+        /// User changed the wallpaper and no new trigger boundary was crossed; defer to that choice.
         case deferredToManual(Slot, actual: Wallpaper?)
-        /// 全局暂停中。
+        /// Globally paused.
         case paused
-        /// 求不出值：没有启用的时段，或 solar 触发缺坐标 / 遇上极昼极夜。
+        /// No enabled slots, or solar triggers lack coordinates or encounter polar day/night.
         case unresolvable
         case failed(Error)
     }
 
-    // MARK: - 可观察状态
+    // MARK: - Observable state
 
-    /// 日志回调。CLI 打到 stdout，M3 的 UI 会接到面板上。
+    /// Log callback: the CLI writes to stdout; the M3 UI displays it in the panel.
     var onLog: ((String) -> Void)?
-    /// 每次求值后回调，方便 UI 刷新。
+    /// Called after each evaluation so the UI can refresh.
     var onEvaluate: ((Outcome, Resolution?) -> Void)?
 
     private(set) var schedule: Schedule
     private(set) var state: EngineState
     private(set) var lastResolution: Resolution?
     private(set) var lastOutcome: Outcome?
-    /// 定时器排在什么时候。nil 表示没有排（暂停中或引擎没起）。
+    /// Scheduled timer instant; nil when unscheduled (paused or not running).
     private(set) var wakeUpAt: Date?
 
-    // MARK: - 内部
+    // MARK: - Internals
 
     private var timer: Timer?
     private var watcher: ConfigWatcher?
@@ -85,11 +85,11 @@ final class Scheduler {
     private var systemObservers: [NSObjectProtocol] = []
     private var isRunning = false
 
-    /// 安全网：再没别的事发生，也至少这么久重新求值一次。
+    /// Safety net: reevaluate at least this often even if nothing else happens.
     private let maxSleep: TimeInterval = 6 * 3600
-    /// 求不出值时的重试间隔。
+    /// Retry interval when the schedule cannot be resolved.
     private let retryInterval: TimeInterval = 15 * 60
-    /// 定时器落在触发时刻之后一点点。早那么几毫秒会求值到上一段，白跑一趟。
+    /// Fire slightly after the trigger; a few milliseconds early would resolve the previous slot and waste a wakeup.
     private let fireGuard: TimeInterval = 1
 
     init(schedule: Schedule, state: EngineState = .load()) {
@@ -97,13 +97,13 @@ final class Scheduler {
         self.state = state
     }
 
-    // MARK: - 生命周期
+    // MARK: - Lifecycle
 
-    /// 注册所有观察者、启动配置监听，并立即求值一次。
+    /// Registers observers, starts configuration watching, and evaluates immediately.
     func start(schedule initialSchedule: Schedule? = nil) {
         guard !isRunning else { return }
-        // 从属者接管时，构造 Scheduler 之后配置可能已被别的进程改过；必须以抢锁成功
-        // 那一刻重新读到的版本启动，不能先写回旧快照。
+        // When a follower takes over, another process may have changed configuration since construction.
+        // Start from the version reread after acquiring the lock, never by writing back the stale snapshot.
         if let initialSchedule { schedule = initialSchedule }
         isRunning = true
         observeSystemEvents()
@@ -126,9 +126,9 @@ final class Scheduler {
         systemObservers.removeAll()
     }
 
-    // MARK: - 求值
+    // MARK: - Evaluation
 
-    /// 求值一次，写入（或不写入），然后把定时器排到下一个触发点。
+    /// Evaluates, writes or skips, then schedules the timer for the next trigger.
     @discardableResult
     func evaluate(reason: Reason, now: Date = Date()) -> Outcome {
         let outcome = decide(reason: reason, now: now)
@@ -140,8 +140,8 @@ final class Scheduler {
     }
 
     private func decide(reason: Reason, now: Date) -> Outcome {
-        // state.json 才是权威。CLI 的 `resume` / `apply` 是独立进程，
-        // 它们写过之后内存里这份就旧了，每次求值前重新读一遍。
+        // state.json is authoritative. CLI resume/apply run in separate processes and can stale
+        // the in-memory copy, so reload before every evaluation.
         state = .load()
 
         if schedule.paused && !reason.isAssertive {
@@ -164,8 +164,8 @@ final class Scheduler {
 
         do {
             let changed = try WallpaperWriter.apply(resolution.active.wallpaper)
-            // 图片配置可能写成 `~/…`，系统只会读回绝对路径。状态也存规范化后的值，
-            // 避免下次启动把同一张图误判成用户手动更换。
+            // Image paths may use ~/…, but the system returns absolute paths. Persist normalized state
+            // so the next launch does not mistake the same image for a manual change.
             state.lastWritten = WallpaperWriter.normalized(resolution.active.wallpaper)
             state.lastSlotID = resolution.active.id
             state.lastFiredAt = resolution.since
@@ -177,26 +177,26 @@ final class Scheduler {
         }
     }
 
-    /// 是否无条件覆盖当前壁纸。见类型注释里对手动改动的讨论。
-    /// 非 private：`Tests/EngineCheck` 直接对它跑决策矩阵。
+    /// Whether to overwrite unconditionally; see the type documentation on manual changes.
+    /// Not private because Tests/EngineCheck exercises the decision matrix directly.
     func shouldAssert(_ resolution: Resolution, reason: Reason) -> Bool {
         if reason.isAssertive { return true }
-        // 没有写入记录 —— 首次运行，谈不上让位。
+        // No write history: first run, with no prior choice to defer to.
         guard let lastFiredAt = state.lastFiredAt else { return true }
-        // 跨过了一个新的触发时刻。
+        // A new trigger boundary was crossed.
         if resolution.since > lastFiredAt { return true }
-        // 时段被增删改，当前生效的已经不是上次那一个。
+        // Slots were added, removed, or edited, and the active slot differs from the previous one.
         if state.lastSlotID != resolution.active.id { return true }
         return false
     }
 
-    // MARK: - 定时
+    // MARK: - Timing
 
-    /// 定时器该排在什么时候。纯函数，`Tests/EngineCheck` 直接验它。
+    /// Computes the timer target. A pure function checked directly by Tests/EngineCheck.
     ///
-    /// - `next` 是下一个触发时刻；`resolved` 表示这次求出值了没有。
-    /// - 三条上界取最小：下一个触发点、`maxSleep` 安全网、求不出值时的重试间隔。
-    /// - 下界是 now+1 秒：定时器排在过去或当下会立刻再跑一轮，空转。
+    /// - next is the next trigger; resolved indicates whether this evaluation found an active slot.
+    /// - Choose the earliest upper bound: next trigger, maxSleep safety net, or unresolved retry interval.
+    /// - The lower bound is now + 1 second; a timer at or before now would immediately spin another evaluation.
     func wakeUpTarget(from now: Date, next: Date?, resolved: Bool) -> Date {
         var target = now.addingTimeInterval(maxSleep)
         if let next {
@@ -219,8 +219,8 @@ final class Scheduler {
         let timer = Timer(fire: fireDate, interval: 0, repeats: false) { [weak self] _ in
             self?.evaluate(reason: .timer)
         }
-        // .common 而不是 .default：M3 的菜单栏面板打开时是另一个 run loop mode，
-        // 用 .default 的话面板一开定时器就不走了。
+        // Use .common, not .default: the M3 menu-bar panel uses another run-loop mode when open,
+        // so a .default timer would stop while the panel is visible.
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
     }
@@ -230,7 +230,7 @@ final class Scheduler {
         timer = nil
     }
 
-    // MARK: - 系统事件
+    // MARK: - System events
 
     private func observeSystemEvents() {
         let workspace = NSWorkspace.shared.notificationCenter
@@ -249,7 +249,7 @@ final class Scheduler {
         systemObservers.append(
             center.addObserver(forName: .NSSystemTimeZoneDidChange,
                                object: nil, queue: .main) { [weak self] _ in
-                // 不重置的话 TimeZone.current 还是旧时区，日出日落会算错一整天。
+                // Without a reset, TimeZone.current retains the old zone and miscalculates the day's solar events.
                 NSTimeZone.resetSystemTimeZone()
                 self?.evaluate(reason: .timeZoneChange)
             })
@@ -274,9 +274,9 @@ final class Scheduler {
         self.watcher = watcher
     }
 
-    // MARK: - 外部操作
+    // MARK: - External operations
 
-    /// 全局暂停。定时器停掉，壁纸停在当前这张。
+    /// Pauses globally, stopping the timer and leaving the current wallpaper in place.
     func pause() throws {
         guard !schedule.paused else { return }
         var updated = schedule
@@ -285,7 +285,7 @@ final class Scheduler {
         evaluate(reason: .pause)
     }
 
-    /// 恢复。立即校正到当前应生效的那张，无视用户中途的手动改动。
+    /// Resumes and immediately applies the active wallpaper, overriding intervening manual changes.
     func resume() throws {
         guard schedule.paused else { return }
         var updated = schedule
@@ -294,27 +294,27 @@ final class Scheduler {
         evaluate(reason: .resume)
     }
 
-    /// 强制把当前应生效的壁纸写下去。
+    /// Forces the currently scheduled wallpaper to be applied.
     @discardableResult
     func applyNow() -> Outcome {
         evaluate(reason: .manual)
     }
 
-    /// 换了一份配置（M3 的 UI 会走这条路）。
+    /// Replaces the configuration (used by the M3 UI).
     func update(schedule newValue: Schedule) throws {
         try persistSchedule(newValue)
         evaluate(reason: .configChange)
     }
 
     private func persistSchedule(_ newValue: Schedule) throws {
-        // 先落盘再提交内存状态；保存失败时继续运行旧配置，不能出现内存/磁盘分叉。
+        // Persist before updating memory; on failure keep the old configuration so memory and disk cannot diverge.
         try Store.save(newValue)
         schedule = newValue
-        // 自己写的这一笔别再绕回来触发一次求值。
+        // Do not let our own write trigger a second evaluation through the watcher.
         watcher?.acknowledgeSelfWrite()
     }
 
-    // MARK: - 日志
+    // MARK: - Logging
 
     private func log(_ outcome: Outcome, reason: Reason) {
         let name = { (slot: Slot) in
@@ -354,7 +354,7 @@ final class Scheduler {
         let f = DateFormatter(); f.dateFormat = "MM-dd HH:mm"; return f
     }()
 
-    /// 只有一个时段时，「下次」就是明天的同一段。光打 HH:mm 会让人以为它在过去。
+    /// With one slot, "next" means the same slot tomorrow; HH:mm alone would look like a past time.
     private static func stamp(_ date: Date) -> String {
         let calendar = Calendar.current
         if calendar.isDateInToday(date) { return clockFormat.string(from: date) }
@@ -362,7 +362,7 @@ final class Scheduler {
         return dayClockFormat.string(from: date)
     }
 
-    /// 壁纸的人类可读名。目录读一次就缓存，日志每行都要用。
+    /// Human-readable wallpaper names. Load and cache the catalog once, since every log line uses it.
     private static let assetNames: [String: String] = {
         let catalog = (try? AerialCatalog.load()) ?? []
         return Dictionary(catalog.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a })

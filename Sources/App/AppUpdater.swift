@@ -2,7 +2,7 @@ import CryptoKit
 import Darwin
 import Foundation
 
-/// GitHub Release 里一份可以安装的正式版。
+/// An installable stable version from a GitHub Release.
 struct AppRelease: Equatable, Sendable {
     let version: String
     let notes: String
@@ -12,8 +12,8 @@ struct AppRelease: Equatable, Sendable {
     let sha256: String
 }
 
-/// 设置页展示的更新状态。下载完成后 app 会立刻退出并交给 helper 替换，
-/// 所以不需要一份容易过期的「等待安装」状态。
+/// Update state shown in settings. After download, the app immediately exits for the helper
+/// to replace it, so no potentially stale "waiting to install" state is needed.
 enum AppUpdateState: Equatable {
     case idle
     case checking
@@ -30,11 +30,11 @@ enum AppUpdateState: Equatable {
     }
 }
 
-/// 内建更新器：只认项目自己的 GitHub Release，并且在交给安装 helper 之前依次验证
-/// GitHub 给出的 SHA-256、bundle ID、版本号和完整代码签名。
+/// Built-in updater: accepts only this project's GitHub Releases, then verifies GitHub's
+/// SHA-256, bundle ID, version, and full code signature before handing off to the installer helper.
 ///
-/// 没引入 Sparkle：项目本来就是 `swiftc` 直编、零第三方依赖；GitHub Release 已经给每个
-/// asset 提供 SHA-256 digest，余下的下载、解压、验签系统框架都能完成。
+/// No Sparkle dependency: the project builds directly with `swiftc` and has no third-party dependencies.
+/// GitHub Releases supply asset SHA-256 digests; system frameworks handle download, extraction, and signature checks.
 enum AppUpdater {
     static let bundleIdentifier = "dev.bobbyhuang.hourglow"
     static let releasesPage = URL(string: "https://github.com/bobbyhuang-dev/hourglow/releases/latest")!
@@ -61,10 +61,10 @@ enum AppUpdater {
         }
     }
 
-    /// Bundle.main 会缓存启动时的路径。运行中移动 app 或它的父目录后，必须从内核取得
-    /// 可执行文件的当前位置；检查、复制 helper 与安装目标都用同一份解析结果。
+    /// Bundle.main caches the launch path. If the app or a parent directory moves while running,
+    /// ask the kernel for the executable's current location; checks, helper copying, and installation share this result.
     static func installation() throws -> (app: URL, helper: URL) {
-        // PROC_PIDPATHINFO_MAXSIZE 是 Swift 无法导入的表达式宏，按 sys/proc_info.h 展开。
+        // Swift cannot import the expression macro PROC_PIDPATHINFO_MAXSIZE; expand it as defined in sys/proc_info.h.
         var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         guard proc_pidpath(getpid(), &path, UInt32(path.count)) > 0 else {
             throw UpdateError.appUnavailable
@@ -92,7 +92,7 @@ enum AppUpdater {
     static var automaticUpdatesEnabled: Bool {
         get {
             let defaults = UserDefaults.standard
-            // 第一次出现这个设置时默认开启；用户关掉以后 object 不再是 nil。
+            // Enabled when this setting first appears; once the user disables it, object is no longer nil.
             return defaults.object(forKey: automaticKey) == nil
                 ? true : defaults.bool(forKey: automaticKey)
         }
@@ -111,7 +111,7 @@ enum AppUpdater {
         UserDefaults.standard.set(Date(), forKey: lastCheckKey)
     }
 
-    // 保留服务器要求的等待期限；重启或连点检查按钮也不能绕过它。
+    // Persist the server's required wait period so restarts and repeated checks cannot bypass it.
     static func pendingRateLimit(now: Date = Date(),
                                  defaults: UserDefaults = .standard) -> RateLimit? {
         guard let data = defaults.data(forKey: rateLimitKey),
@@ -128,8 +128,8 @@ enum AppUpdater {
         }
     }
 
-    /// 查询最新正式版。`/releases/latest` 本身就排除了草稿与预发布版，这里仍再守一遍，
-    /// 避免服务端语义变化后把测试包推给普通用户。
+    /// Query the latest stable release. `/releases/latest` already excludes drafts and prereleases;
+    /// check again to avoid offering test builds if the server's semantics change.
     static func latestRelease(currentVersion: String) async throws -> AppRelease? {
         if let limit = pendingRateLimit() { throw UpdateError.rateLimited(limit) }
         var request = URLRequest(url: latestReleaseAPI,
@@ -150,7 +150,7 @@ enum AppUpdater {
         return try release(from: data, currentVersion: currentVersion)
     }
 
-    /// 下载、校验并解包到缓存目录。返回的 app 会由安装 helper 移到当前 bundle 的原位。
+    /// Download, verify, and unpack into the cache. The installer helper moves the returned app into the current bundle's location.
     static func stage(_ release: AppRelease) async throws -> URL {
         var request = URLRequest(url: release.downloadURL,
                                  cachePolicy: .reloadIgnoringLocalCacheData,
@@ -164,8 +164,8 @@ enum AppUpdater {
         }.value
     }
 
-    /// 启动 bundle 里的独立 helper。它先等当前 PID 退出，再替换 bundle 并重新打开；
-    /// 这里一旦返回，调用方就应该马上 terminate。
+    /// Launch the bundle's standalone helper. It waits for this PID to exit, replaces the bundle,
+    /// and reopens it; the caller should terminate immediately after this returns.
     static func launchInstaller(stagedApp: URL) throws {
         let location = try installation()
         try requireWritableParent(of: location.app)
@@ -176,7 +176,7 @@ enum AppUpdater {
         try FileManager.default.setAttributes([.posixPermissions: 0o755],
                                               ofItemAtPath: copiedHelper.path)
 
-        // stage() 的结构是 <run>/unpacked/HourGlow.app；整个 <run> 都可以由 helper 收走。
+        // stage() produces <run>/unpacked/HourGlow.app; the helper can clean up the entire <run>.
         let stageRoot = stagedApp.deletingLastPathComponent().deletingLastPathComponent()
         let process = Process()
         process.executableURL = copiedHelper
@@ -197,7 +197,7 @@ enum AppUpdater {
         }
     }
 
-    /// 下载前先挡住只读位置；否则发现一个新版本以后会每天白下同一份包，最后才知道装不了。
+    /// Reject read-only locations before downloading, rather than downloading the same un-installable update every day.
     static func requireInstallableLocation() throws {
         try requireWritableParent(of: installation().app)
     }
@@ -209,7 +209,7 @@ enum AppUpdater {
         }
     }
 
-    // MARK: - 可离线验证的纯函数
+    // MARK: - Pure functions for offline verification
 
     static func release(from data: Data, currentVersion: String) throws -> AppRelease? {
         let payload = try JSONDecoder().decode(GitHubRelease.self, from: data)
@@ -248,7 +248,7 @@ enum AppUpdater {
         SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    // MARK: - 下载与验签
+    // MARK: - Download and signature verification
 
     static func requireSuccess(_ response: URLResponse, data: Data? = nil,
                                now: Date = Date()) throws {
@@ -264,7 +264,7 @@ enum AppUpdater {
                 let reset = exhausted ? futureDate(
                     http.value(forHTTPHeaderField: "x-ratelimit-reset"), now: now) : nil
                 let retry = retryDate(retryHeader, now: now)
-                // 两个头同时出现时遵守更晚的期限；非主额度限流不能借用无关的 reset 头。
+                // Honor the later deadline when both headers exist; secondary limits must not use an unrelated reset header.
                 let deadline = [reset, retry].compactMap { $0 }.max()
                 let notice: RateLimit.Notice = deadline == nil ? .unknown
                     : (deadline == reset ? .reset : .retry)
@@ -306,7 +306,7 @@ enum AppUpdater {
             if notice == .unknown { return L10n.t("update.error.rateLimit.unknown") }
             let formatter = DateFormatter()
             formatter.locale = Locale(identifier: L10n.code)
-            // 带日期和时区，跨午夜也不会让用户把明天的恢复时刻当成今天。
+            // Include date and time zone so a retry after midnight is not mistaken for a time today.
             formatter.setLocalizedDateFormatFromTemplate("MMMdHHmmssz")
             let time = formatter.string(from: retryAt)
             return notice == .reset ? L10n.t("update.error.rateLimit.reset", time)
@@ -387,8 +387,8 @@ enum AppUpdater {
         process.standardOutput = pipe
         process.standardError = pipe
         try process.run()
-        // 必须边等边把管道排空。先 waitUntilExit 再读时，子进程一旦写满管道缓冲区，
-        // 就会等父进程读取；父进程又在等它退出，更新会永久卡住。
+        // Drain the pipe while waiting. Calling waitUntilExit first can deadlock when the child
+        // fills the pipe and waits for the parent to read while the parent waits for the child to exit.
         let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         process.waitUntilExit()
         return (process.terminationStatus, output.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -482,8 +482,8 @@ enum AppUpdater {
     }
 }
 
-/// 足够覆盖 GitHub tag 的 SemVer 比较：忽略 build metadata，正式版高于同号预发布版，
-/// 预发布标识符遵守「数字低于文字」的顺序。
+/// SemVer comparison sufficient for GitHub tags: ignore build metadata, rank stable above
+/// matching prereleases, and order numeric prerelease identifiers below textual ones.
 struct AppVersion: Comparable, CustomStringConvertible, Sendable {
     private let numbers: [Int]
     private let prerelease: [Identifier]
@@ -511,8 +511,8 @@ struct AppVersion: Comparable, CustomStringConvertible, Sendable {
         rendered = value
     }
 
-    /// 保留 tag 自己的写法：发版流水线若收到 `v1.2`，asset 与 Info.plist 也都是 `1.2`，
-    /// 不能为了比较时补零而去找一个不存在的 `HourGlow-1.2.0.zip`。
+    /// Preserve the tag's spelling: a `v1.2` release produces an asset and Info.plist version of `1.2`.
+    /// Zero-padding for comparison must not cause a lookup for a nonexistent `HourGlow-1.2.0.zip`.
     var description: String { rendered }
 
     static func == (lhs: AppVersion, rhs: AppVersion) -> Bool {

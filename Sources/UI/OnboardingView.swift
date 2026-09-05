@@ -1,32 +1,32 @@
 import AppKit
 import SwiftUI
 
-/// 新手指引：五步，一步一件事，每一步都能当场做完再走。
+/// Onboarding: five steps, each with one task users can complete before moving on.
 ///
-/// **为什么它是一扇独立的窗，而不是面板里的第六页**：HourGlow 是 `LSUIElement`，
-/// 首次启动后屏幕上什么都不会出现 —— 唯一的入口是菜单栏上一个 16 pt 的沙漏，
-/// 而 `MenuBarExtra` 没有「替用户点开」的 API。指引要是长在面板里，就只有已经
-/// 找到入口的人才看得见，正好把最需要它的人挡在外面。所以第一步的头一件事就是
-/// 告诉用户入口在哪儿，这件事必须发生在面板之外。
+/// **Why a standalone window, not a sixth panel page:** HourGlow is an `LSUIElement`, so nothing
+/// appears onscreen at first launch except a 16 pt hourglass in the menu bar. `MenuBarExtra` has
+/// no API to open it on the user's behalf. A guide inside the panel would only reach users who
+/// already found that entry point, excluding those who need it most. The first step must show
+/// users where to open the app, and that explanation has to appear outside the panel.
 ///
-/// 除此之外仍守面板那套：版式固定（度量全在 `PanelKit` 的 `Guide` 里）、贴原生、
-/// 一次只讲一件事。
+/// Otherwise follow the panel's conventions: fixed layout (metrics in `PanelKit.Guide`),
+/// native styling, and one topic at a time.
 ///
-/// 每一步的文案在 `App/Onboarding.swift`，不在这里 —— 说什么是内容，靶子要能查。
+/// Step copy lives in `App/Onboarding.swift`, not here: content must remain independently checkable.
 struct OnboardingView: View {
     @Environment(AppModel.self) private var model
 
-    /// 关掉这扇窗。跳过与「开始使用」都走这里，标记「看过了」由窗口那边统一做。
+    /// Close this window for either Skip or Get Started; the window centrally records that it has been seen.
     var finish: () -> Void
 
     @State private var flow: OnboardingFlow
-    /// 推进还是后退，决定转场从哪一侧进来。和面板同一套语言。
+    /// Forward/backward navigation chooses the transition edge, matching the panel.
     @State private var forward = true
     @State private var query = ""
     @State private var finder = CitySearch()
 
-    /// `initialStep` 只有 `panelshot` 会用：五步各画一张对照图，
-    /// 否则永远只能拍到第一步。正常打开都是从头讲起。
+    /// Only `panelshot` uses `initialStep` to capture all five steps rather than just the first.
+    /// Normal presentation always starts at the beginning.
     init(initialStep: OnboardingStep = .welcome, finish: @escaping () -> Void) {
         self.finish = finish
         var flow = OnboardingFlow()
@@ -43,14 +43,14 @@ struct OnboardingView: View {
         }
         .frame(width: Guide.width, height: Guide.height)
         .background(Color(nsColor: .windowBackgroundColor))
-        // 开机自启的状态要问系统，不能每次重绘都问；进来一次、翻一页问一次就够。
+        // Ask the system for login startup state on entry and page changes, not on every redraw.
         .onAppear { model.refreshSettings() }
         .onChange(of: flow.index) { model.refreshSettings() }
     }
 
-    // MARK: - 顶部插图
+    // MARK: - Header illustration
 
-    /// 五步共用同一片天光渐变，只换上面那张图 —— 翻页时背景不闪，像同一扇窗在往前走。
+    /// Share one sky gradient across all five steps, changing only the illustration so the background does not flash.
     private var hero: some View {
         ZStack {
             Guide.sky
@@ -75,7 +75,7 @@ struct OnboardingView: View {
         }
     }
 
-    /// 第四步那条胶片：用户自己时间轴的前五段。
+    /// Step four's filmstrip: the first five slots from the user's own timeline.
     private var filmstrip: [FilmstripArt.Frame] {
         let active = model.resolution?.active.id
         return model.entries.prefix(5).map { entry in
@@ -86,11 +86,11 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - 正文
+    // MARK: - Body
 
     private var content: some View {
-        // ZStack 而不是直接摆：左右推进的那一瞬两页同时在场，
-        // 摞在一起才不会把这一栏的高度顶成两倍。
+        // Stack pages in a ZStack: both are present during a horizontal transition,
+        // and laying them out separately would double this area's height.
         ZStack {
             page
                 .id(flow.step)
@@ -135,7 +135,7 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - 第一步：它住在哪儿
+    // MARK: - Step one: Where the app lives
 
     private var welcomeDetail: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -151,7 +151,7 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - 第二步：位置（唯一要点「允许」的权限）
+    // MARK: - Step two: Location (the only permission requiring Allow)
 
     private var placeDetail: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -175,7 +175,7 @@ struct OnboardingView: View {
                     }
                 }
 
-                // 权限要说在按钮旁边：点下去会发生什么、系统会问什么、该按哪个。
+                // Explain permission beside the button: what happens, what macOS asks, and which response to choose.
                 Text(L10n.t("guide.place.permission"))
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
@@ -242,10 +242,10 @@ struct OnboardingView: View {
         .onChange(of: query) { _, _ in finder.update(query: query) }
     }
 
-    /// 只在真的搜了之后才出结果，而且最多四条。
+    /// Show results only after a real query, limited to four.
     ///
-    /// 空搜时 `Cities.search` 会给一份常用城市，地点页那种满屏列表放得下，这里放不下 ——
-    /// 一屏就这么高，默认列表会把「搜」这个动作本身挤到屏幕外。挑不到就去面板里慢慢挑。
+    /// An empty `Cities.search` query returns common cities. They fit the full location page, not here:
+    /// a default list would push searching itself offscreen. Further browsing belongs in the panel.
     @ViewBuilder
     private var cityResults: some View {
         let typed = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -290,7 +290,7 @@ struct OnboardingView: View {
             && abs(current.longitude - city.coordinate.longitude) < 0.02
     }
 
-    // MARK: - 第三步：常驻
+    // MARK: - Step three: Staying resident
 
     private var residentDetail: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -324,8 +324,8 @@ struct OnboardingView: View {
                         }
                     }
 
-                    // 登录项记的是 bundle 的路径。在「下载」里开了自启，
-                    // 之后一拖进「应用程序」，那条登录项就指向一个不存在的 app。
+                    // Login items store the bundle path. Enabling startup in Downloads and then moving
+                    // the app to Applications leaves the login item pointing to a nonexistent app.
                     if !model.runsFromApplicationsFolder {
                         Divider()
                         Text(L10n.t("guide.resident.folder", model.enclosingFolderName))
@@ -347,7 +347,7 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - 第四步：时间轴
+    // MARK: - Step four: Timeline
 
     private var timelineDetail: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -362,7 +362,7 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - 第五步：清单
+    // MARK: - Step five: Checklist
 
     private var doneDetail: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -415,7 +415,7 @@ struct OnboardingView: View {
         }
     }
 
-    // MARK: - 底部
+    // MARK: - Footer
 
     private var footer: some View {
         ZStack {
@@ -451,7 +451,7 @@ struct OnboardingView: View {
         .frame(height: Guide.footerHeight)
     }
 
-    /// 进度点。五颗，走到哪儿哪颗实心 —— 让人知道还剩几步，跳过的决定才有依据。
+    /// Five progress dots, with the current step filled, show how much remains so users can decide whether to skip.
     private var dots: some View {
         HStack(spacing: 5) {
             ForEach(0..<flow.count, id: \.self) { index in
@@ -463,9 +463,9 @@ struct OnboardingView: View {
         .animation(Panel.animation, value: flow.index)
     }
 
-    // MARK: - 零件
+    // MARK: - Components
 
-    /// 正文里的一条：图标 + 一句话 + 一行补充。整套指引都靠这些条讲。
+    /// A body item: icon, one sentence, and supporting detail. These carry the guide's explanations.
     private func bullet(_ symbol: String, _ title: String, _ detail: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: symbol)
@@ -485,7 +485,7 @@ struct OnboardingView: View {
         }
     }
 
-    /// 能当场动手的那一块，和设置页的分组卡片一个样子。
+    /// An interactive area styled like the settings page's grouped cards.
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 9) {
             content()
@@ -503,26 +503,26 @@ struct OnboardingView: View {
     }
 }
 
-// MARK: - 插图
+// MARK: - Illustrations
 
 extension Guide {
-    /// 夜 → 晨光。和应用图标同一条渐变，指引与图标看上去是同一件东西。
+    /// Night → dawn glow, sharing the app icon's gradient so the guide and icon feel related.
     static var sky: LinearGradient {
         LinearGradient(colors: [Sky.night, Sky.dusk, Sky.glow],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 }
 
-/// 一台假的 Mac：屏幕顶上有菜单栏，沙漏在右边被圈出来。
+/// A stylized Mac: menu bar at the top, with the hourglass circled on the right.
 ///
-/// 第一步要说的就是「入口在那儿」，而这句话用画的比用写的快得多。
-/// 第三步复用同一张图，只在沙漏上多一枚对勾 —— 讲的是「登录之后它自己回来」，
-/// 换一张陌生的图反而要重新读一遍。
+/// Step one explains where to open the app; a picture communicates that much faster than prose.
+/// Step three reuses the image with a checkmark on the hourglass to show it returns after login,
+/// avoiding the need to interpret an unfamiliar illustration.
 private struct MenuBarArt: View {
     var badge: String?
 
-    /// 这台假 Mac 的度量。菜单栏那一条在这儿比真机夸张得多 —— 图要讲的就是它，
-    /// 按真实比例画出来只剩两三个像素高，沙漏根本认不出来。
+    /// Stylized Mac dimensions. Exaggerate the menu bar because it is the subject of the illustration:
+    /// realistic proportions would leave only two or three pixels of height and an unrecognizable hourglass.
     private static let screen = CGSize(width: 344, height: 88)
     private static let barHeight: CGFloat = 30
 
@@ -531,7 +531,7 @@ private struct MenuBarArt: View {
             .fill(LinearGradient(colors: [Color(red: 0.09, green: 0.11, blue: 0.23),
                                           Color(red: 0.31, green: 0.22, blue: 0.28)],
                                  startPoint: .top, endPoint: .bottom))
-            // 屏幕里也得有张壁纸 —— 空着一块深色矩形看着像图没加载出来。
+            // Include wallpaper in the screen; an empty dark rectangle looks like a failed image load.
             .overlay(alignment: .bottom) { wallpaper }
             .overlay(alignment: .top) { menuBar }
             .overlay {
@@ -541,9 +541,9 @@ private struct MenuBarArt: View {
             .frame(width: Self.screen.width, height: Self.screen.height)
     }
 
-    /// 屏幕里那张示意用的壁纸：只留一层从中间往下慢慢亮起来的地光。
-    /// 原先中间还画了一颗带光晕的太阳，去掉了 —— 这一步讲的是「入口在菜单栏」，
-    /// 屏幕正中多一团发亮的东西，只会把视线从右上角那颗沙漏那儿拽走。
+    /// Schematic wallpaper: a faint glow brightening from the center toward the bottom.
+    /// The former glowing sun in the center was removed: this step points to the menu bar,
+    /// and a bright central object draws attention away from the hourglass at the top right.
     private var wallpaper: some View {
         LinearGradient(colors: [.clear, .white.opacity(0.13)],
                        startPoint: .center, endPoint: .bottom)
@@ -571,7 +571,7 @@ private struct MenuBarArt: View {
                                           style: .continuous))
     }
 
-    /// 圈出来的那一颗。虚线圈是「看这里」最通用的记号，不必再配一句话。
+    /// Circle the hourglass: a dashed ring is a familiar "look here" cue that needs no extra words.
     private var hourglass: some View {
         Image(systemName: "hourglass")
             .font(.system(size: 12.5, weight: .semibold))
@@ -597,15 +597,15 @@ private struct MenuBarArt: View {
     }
 }
 
-/// 今天的太阳走到哪儿了：地平线、一道弧、弧上一颗按当前时刻落位的太阳。
+/// Today's sun position: a horizon, an arc, and a sun placed along it using the current time.
 ///
-/// 位置是真算出来的，不是摆好看的 —— 第二步在讲「日出日落按你的位置算」，
-/// 一张对得上今天的图比一句承诺有说服力。没坐标时太阳压在地平线上并且发灰。
+/// Calculate the position rather than decorating arbitrarily: step two explains location-based solar times,
+/// and an accurate picture is more convincing than a promise. Without coordinates, gray the sun at the horizon.
 private struct SunArcArt: View {
     var sunrise: Date?
     var sunset: Date?
 
-    /// 0 = 日出，1 = 日落。没坐标时给 nil。
+    /// 0 = sunrise, 1 = sunset; nil without coordinates.
     private var progress: Double? {
         guard let sunrise, let sunset else { return nil }
         let total = sunset.timeIntervalSince(sunrise)
@@ -662,10 +662,10 @@ private struct SunArcArt: View {
     }
 }
 
-/// 用户自己那条时间轴的胶片条：几张缩略图 + 今天的实际时刻，当前那一格描一圈。
+/// Filmstrip of the user's timeline: thumbnails with today's actual times and an outline around the active frame.
 ///
-/// 第四步讲「面板中间那张表就是一天」，摆一张假的示意图不如直接把他自己的那几张
-/// 排出来 —— 等他真打开面板，看到的就是同一批图。
+/// Step four explains that the panel's central list represents a day. Show the user's own images
+/// rather than a mock example, so they recognize the same set when they open the panel.
 private struct FilmstripArt: View {
     struct Frame: Identifiable {
         let id: UUID
@@ -704,7 +704,7 @@ private struct FilmstripArt: View {
     }
 }
 
-/// 收尾：沙漏 + 一枚对勾。
+/// Finish: an hourglass with a checkmark.
 private struct DoneArt: View {
     var body: some View {
         Image(systemName: "hourglass")

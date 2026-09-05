@@ -13,7 +13,7 @@ struct AerialAsset: Identifiable, Equatable {
         FileManager.default.fileExists(atPath: videoURL.path)
     }
 
-    /// 已下载视频的体积，单位 MB。未下载时为 nil。
+    /// Downloaded video size in MB, or nil if not downloaded.
     var sizeMB: Int? {
         guard let values = try? videoURL.resourceValues(forKeys: [.fileSizeKey]),
               let bytes = values.fileSize else { return nil }
@@ -21,7 +21,7 @@ struct AerialAsset: Identifiable, Equatable {
     }
 }
 
-/// 系统 aerial 素材库的只读视图。
+/// A read-only view of the system aerial asset catalog.
 enum AerialCatalog {
 
     static var rootURL: URL {
@@ -73,7 +73,7 @@ enum AerialCatalog {
         .sorted { ($0.order, $0.name) < ($1.order, $1.name) }
     }
 
-    /// 便于把 assetID 显示成人类可读的名字。
+    /// Looks up a human-readable name for an assetID.
     static func name(for assetID: String) -> String? {
         try? load().first { $0.id == assetID }?.name
     }

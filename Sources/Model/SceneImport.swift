@@ -6,31 +6,31 @@ struct SceneImportError: LocalizedError {
     var errorDescription: String? { message }
 }
 
-/// 把一文件夹图片编成「天光分段」时段。
+/// Converts a folder of images into daylight-phase slots.
 ///
-/// 认 24 Hour Wallpaper 那套命名：
+/// Recognizes 24 Hour Wallpaper naming:
 ///   `sunrise_1.heic` / `01_sunrise_1.heic` / `morning_2.jpg` / `evening-3.png`
-/// 以及它的 `.sundialScene/images/5120x2880/` 目录。同一张图有多个分辨率时取最大的。
-/// 文件名带 sunrise / morning / day / sunset / evening / night 的按关键词进对应段；
-/// 文件名认不出时再看它在导入目录里的上级文件夹名（`sunrise/1.jpg` 这种按段分子目录的图集）；
-/// 全都认不出才按文件名排序均分成四段（12 张就是 3/3/3/3）。
-/// 各段张数可以不同：4 张日出和 6 张白昼占各自的太阳窗口，互不影响。
-/// 张数写进每个 slot 的 `solarPhase.count`，求值时按当天窗口等分。
+/// and its `.sundialScene/images/5120x2880/` layout, choosing the largest resolution of each image.
+/// Filenames containing sunrise / morning / day / sunset / evening / night select the corresponding phase.
+/// Unrecognized filenames fall back to ancestor folder names within the import root, as in `sunrise/1.jpg`.
+/// Only when nothing is recognized are files sorted by name and split into four equal groups (12 becomes 3/3/3/3).
+/// Phase counts may differ: four sunrise images and six daytime images occupy their own independent solar windows.
+/// Each slot stores `solarPhase.count`; evaluation divides the day's window evenly.
 enum SceneImport {
 
     static let imageExts: Set<String> = [
         "heic", "heif", "jpg", "jpeg", "png", "tif", "tiff", "webp"
     ]
 
-    /// 导入结果。
+    /// Import result.
     ///
-    /// `skipped` 是「别的文件认得出时段、它自己认不出」的那些图。把它们硬塞进白昼会
-    /// 把夜景排到中午，所以不收；但也不能默默丢掉 —— 调用方要把张数说出来，
-    /// 否则用户看到的是一个「成功」对话框加一个少了几张的时间轴。
+    /// `skipped` contains images with unrecognized phases when other files were recognized.
+    /// Forcing them into daytime could schedule night scenes at noon. The caller must report
+    /// their count rather than silently show success with images missing from the timeline.
     struct Outcome {
         var schedule: Schedule
         var skipped: [URL]
-        /// 这次新写好的素材目录。配置成功落盘后才能据此清理旧素材。
+        /// Newly written asset directory. Old assets may be cleaned up only after the configuration is saved.
         var destination: URL
         fileprivate var protectedSources: Set<String>
     }
@@ -45,7 +45,7 @@ enum SceneImport {
         try apply(urls: [source], to: schedule, name: name)
     }
 
-    /// 文件夹、`.sundialScene`、或直接选中的一组图片都可以。
+    /// Accepts folders, `.sundialScene` bundles, or a directly selected set of images.
     static func apply(urls: [URL],
                       to schedule: Schedule,
                       name: String? = nil) throws -> Outcome {
@@ -65,8 +65,8 @@ enum SceneImport {
         let (grouped, skipped) = group(files, root: commonRoot(of: urls))
         let slug = slugify(name ?? defaultName(for: urls))
         let baseDestination = scenesDirectory.appendingPathComponent(slug, isDirectory: true)
-        // 永远不覆盖已有目录。旧时间轴可能仍引用它；只有新配置成功落盘后，调用方
-        // 才能 finalize 并清理。相同名字再次导入时先写到带后缀的新目录。
+        // Never overwrite an existing directory: the old timeline may still reference it.
+        // Reimports use a suffixed directory; finalize may clean up only after the new configuration is saved.
         let dest = try reserveDestination(basedOn: baseDestination)
         let fm = FileManager.default
 
@@ -98,22 +98,22 @@ enum SceneImport {
                            destination: dest,
                            protectedSources: sources)
         } catch {
-            // 复制到一半失败时只删这次新建的目录；既有目录和旧时间轴仍然完整。
+            // On a partial copy failure, remove only this new directory, preserving existing assets and timeline.
             try? fm.removeItem(at: dest)
             throw error
         }
     }
 
-    /// 配置已经成功落盘：现在旧时间轴不再会被恢复，可以清掉无人引用的旧素材。
+    /// The configuration is saved and the old timeline will not be restored; unreferenced assets can now be removed.
     static func finalize(_ outcome: Outcome) {
-        // 重新读磁盘而不是盲信 outcome：两个进程可能同时导入，后提交者已经成为权威。
-        // 清理只以此刻真正落盘的时间轴为准，先完成的任务不能删掉后完成者的新素材。
+        // Reload from disk rather than trust outcome: another process may have committed a later import.
+        // Clean up against the persisted timeline so an earlier task cannot delete the later task's new assets.
         guard let current = try? Store.load() else { return }
         pruneScenes(keeping: referencedSceneItems(in: current),
                     sources: outcome.protectedSources)
     }
 
-    /// 配置保存失败：撤掉本次新素材，旧时间轴及其素材保持原样。
+    /// Configuration save failed: remove this import's new assets, leaving the old timeline and assets intact.
     static func discard(_ outcome: Outcome) {
         let destination = canonicalPath(outcome.destination)
         let parent = canonicalPath(scenesDirectory)
@@ -123,7 +123,7 @@ enum SceneImport {
         try? FileManager.default.removeItem(at: outcome.destination)
     }
 
-    /// 找一个从未存在过的目标目录，避免配置提交前破坏旧时间轴引用的同名素材。
+    /// Reserves a fresh directory so assets referenced by the old timeline survive until the configuration commits.
     private static func reserveDestination(basedOn base: URL) throws -> URL {
         let fm = FileManager.default
         try fm.createDirectory(at: base.deletingLastPathComponent(),
@@ -132,9 +132,9 @@ enum SceneImport {
         let stem = base.lastPathComponent
         var candidate = base
         while true {
-            // `fileExists` 后再 `createDirectory` 有竞态：两个导入会同时认领同一个目录，
-            // 其中一个失败清理时还可能把另一个已经复制的文件一起删掉。mkdir 的 EEXIST
-            // 检查与创建是一个原子操作，正好用来认领目录。
+            // fileExists followed by createDirectory races: two imports could claim the same directory,
+            // and one import's failure cleanup could delete files copied by the other. mkdir checks
+            // EEXIST and creates atomically, making it suitable for reserving the directory.
             if mkdir(candidate.path, 0o755) == 0 { return candidate }
             guard errno == EEXIST else {
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
@@ -144,10 +144,10 @@ enum SceneImport {
         }
     }
 
-    /// 优先按时段关键词归类（先看文件名，再看导入目录里的上级文件夹）；都认不出时才均分成四段。
+    /// Groups by phase keywords in filenames, then ancestor folders; splits into four only if none are recognized.
     ///
-    /// `root` 是这次导入的根，只往上找到它为止 —— 否则把一整个 `~/Pictures/Sunset trip/`
-    /// 拖进来，里面每张图都会被当成日落。
+    /// `root` bounds the ancestor search. Otherwise importing all of `~/Pictures/Sunset trip/`
+    /// would incorrectly classify every image as sunset.
     static func group(_ files: [URL], root: URL? = nil) -> (buckets: [DayPhase: [URL]],
                                                             skipped: [URL]) {
         var buckets: [DayPhase: [URL]] = [:]
@@ -178,13 +178,13 @@ enum SceneImport {
             }
             return (buckets, [])
         }
-        // 有的认得出、有的认不出：认不出的不硬塞进白昼，免得把一张夜景排到中午。
-        // 它们会作为 skipped 报给调用方。
+        // If only some phases are recognized, do not force the rest into daytime and schedule night scenes at noon.
+        // Return them to the caller as skipped.
         return (buckets, leftover)
     }
 
-    /// 文件名认不出时，再看它在导入目录里的上级文件夹名。
-    /// 就近的一层先算：`sunset/closeups/3.jpg` 该进日落，不该被更外层的名字盖掉。
+    /// Falls back from unrecognized filenames to ancestor folder names within the import root.
+    /// The nearest match wins: `sunset/closeups/3.jpg` belongs to sunset, not a more distant ancestor's phase.
     static func phase(for url: URL, root: URL?) -> DayPhase? {
         if let phase = phase(from: url.lastPathComponent) { return phase }
         guard let root else { return nil }
@@ -196,9 +196,9 @@ enum SceneImport {
         return nil
     }
 
-    /// 从文件名拆出时段。先看 sunrise/sunset，再看 morning/evening，最后才是 day/night，
-    /// 避免 `sunday` 这种词误伤；用 token 而不是子串，所以 `01_sunrise_1.heic` 和
-    /// `sunrise_1.heic` 都能对上。
+    /// Extracts the phase from a filename, checking sunrise/sunset, then morning/evening, then day/night.
+    /// Matches tokens rather than substrings to avoid false positives such as `sunday`;
+    /// both `01_sunrise_1.heic` and `sunrise_1.heic` match.
     static func phase(from filename: String) -> DayPhase? {
         let stem = URL(fileURLWithPath: filename).deletingPathExtension().lastPathComponent
         let tokens = tokenize(stem)
@@ -237,7 +237,7 @@ enum SceneImport {
         return pickPreferredResolution(files)
     }
 
-    // MARK: - 内部
+    // MARK: - Internals
 
     private static func collectImages(in root: URL) throws -> [URL] {
         let fm = FileManager.default
@@ -260,10 +260,10 @@ enum SceneImport {
         return files
     }
 
-    /// 24 Hour Wallpaper 把同一张图按分辨率放在 `5120x2880/`、`2560x1440/` 下。
-    /// 归并的键是「去掉分辨率那一层之后的整条路径」，不是光秃秃的文件名 ——
-    /// 后者分不清「同一张图的两个分辨率」和「`sunrise/1.jpg` 与 `night/1.jpg`」，
-    /// 按段分子目录、文件名从 1 编号的图集会被吃掉大半。
+    /// 24 Hour Wallpaper stores resolutions of the same image under `5120x2880/`, `2560x1440/`, etc.
+    /// Merge by the full path with the resolution component removed, not by filename alone.
+    /// A bare filename cannot distinguish two resolutions from `sunrise/1.jpg` and `night/1.jpg`,
+    /// discarding much of any collection that numbers images from 1 within each phase folder.
     private static func pickPreferredResolution(_ files: [URL]) -> [URL] {
         var best: [String: (url: URL, score: Int)] = [:]
         for file in files {
@@ -282,7 +282,7 @@ enum SceneImport {
             .lowercased()
     }
 
-    /// `5120x2880` 这样的一层。只认「数字 x 数字」，否则 `extra` 这种名字会被误当成分辨率层。
+    /// A component such as `5120x2880`. Requires digits x digits so names such as `extra` are not treated as resolutions.
     private static func isResolutionComponent(_ name: String) -> Bool {
         let parts = name.lowercased().split(separator: "x")
         guard parts.count == 2,
@@ -298,7 +298,7 @@ enum SceneImport {
             if isResolutionComponent(name) {
                 let parts = name.lowercased().split(separator: "x")
                 if let width = Int(parts[0]), let height = Int(parts[1]) {
-                    // 目录名来自外部图集，两个各自合法的 Int 相乘仍可能溢出。
+                    // Directory names come from external collections; two valid Int values can still overflow when multiplied.
                     let area = width.multipliedReportingOverflow(by: height)
                     return area.overflow ? Int.max : area.partialValue
                 }
@@ -312,7 +312,7 @@ enum SceneImport {
         return size
     }
 
-    /// 这次导入的根：单个文件夹就是它自己，单个文件是它所在的目录，多选取共同的上级。
+    /// Import root: the folder itself, a single file's parent, or the common ancestor of multiple selections.
     private static func commonRoot(of urls: [URL]) -> URL? {
         var isDir: ObjCBool = false
         let fm = FileManager.default
@@ -334,7 +334,7 @@ enum SceneImport {
         return URL(fileURLWithPath: NSString.path(withComponents: shared))
     }
 
-    /// `root` 与文件之间的那几层目录名（不含文件名本身）。文件不在 root 底下时为空。
+    /// Directory components between `root` and the file, excluding the filename. Empty if the file is outside root.
     private static func enclosingComponents(of url: URL, below root: URL) -> [String] {
         let file = url.standardizedFileURL.pathComponents
         let base = root.standardizedFileURL.pathComponents
@@ -342,8 +342,8 @@ enum SceneImport {
         return Array(file.dropFirst(base.count).dropLast())
     }
 
-    /// 配置里仍被引用的 `Scenes/` 直属项。通常是一整个场景目录；也兼容手写配置
-    /// 直接引用 `Scenes/foo.jpg` 的情况。
+    /// Direct children of `Scenes/` still referenced by the configuration: usually whole scene directories,
+    /// but also individual files such as `Scenes/foo.jpg` in hand-written configurations.
     private static func referencedSceneItems(in schedule: Schedule) -> Set<String> {
         let root = canonicalPath(scenesDirectory)
         let prefix = root + "/"
@@ -360,8 +360,8 @@ enum SceneImport {
         return result
     }
 
-    /// 换一套壁纸后，上一套的素材没有任何时段引用了 —— 时间轴是整体替换的。
-    /// 只扫我们自己的 `Scenes/`，并且躲开这次导入的源目录。
+    /// Replacing the entire timeline leaves the previous collection's assets unreferenced.
+    /// Scan only our own `Scenes/` directory and avoid this import's source directories.
     private static func pruneScenes(keeping keep: Set<String>, sources: Set<String>) {
         let fm = FileManager.default
         guard let children = try? fm.contentsOfDirectory(at: scenesDirectory,
@@ -371,15 +371,15 @@ enum SceneImport {
         for child in children {
             let path = canonicalPath(child)
             if keep.contains(path) { continue }
-            // 直接从 `Scenes/` 里的某一套导入时，那一套就是源，别把脚下的地板拆了。
+            // When importing a collection directly from `Scenes/`, preserve that collection as the source.
             let isSource = sources.contains { $0 == path || $0.hasPrefix(path + "/") }
             if isSource { continue }
             try? fm.removeItem(at: child)
         }
     }
 
-    /// 同一个目录的两个 URL 可能长得不一样（`/private/tmp` 与 `/tmp`、`..`、软链）。
-    /// 凡是要判断「是不是同一个东西」都先过这里。
+    /// URLs for the same directory can differ (`/private/tmp` vs `/tmp`, `..`, or symlinks).
+    /// Normalize here before comparing identity.
     private static func canonicalPath(_ url: URL) -> String {
         url.resolvingSymlinksInPath().standardizedFileURL.path
     }
@@ -417,7 +417,7 @@ enum SceneImport {
 
     private static func sceneName(from source: URL) -> String {
         var url = source.standardizedFileURL
-        // `foo.sundialScene/images/5120x2880` → 用场景名。
+        // `foo.sundialScene/images/5120x2880` → use the scene name.
         for _ in 0..<4 {
             let name = url.lastPathComponent
             if name.lowercased().hasSuffix(".sundialscene") {

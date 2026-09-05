@@ -1,29 +1,29 @@
 import Foundation
 
-/// 日出日落计算。
+/// Sunrise and sunset calculations.
 ///
-/// NOAA 太阳位置算法，含均时差与黄赤交角修正，纯本地计算，不联网。
+/// NOAA solar position algorithm with equation-of-time and obliquity corrections, computed entirely offline.
 ///
-/// 太阳赤纬在一天之内会变化，所以这里不是用当天 0 点的参数一把算完，
-/// 而是先估算真太阳时正午，再分别在日出、日落的估计时刻上重新求解，各迭代两轮。
+/// Solar declination changes throughout the day. Rather than solve once using midnight's parameters,
+/// estimate solar noon, then refine sunrise and sunset at their estimated instants with two iterations each.
 ///
-/// 实测（`Tests/verify-solar.py`，以 ephem 星历为参考，10 个案例含南北半球、
-/// 夏令时切换日、换日线、极昼）：迭代两轮后最大偏差 4 秒；完全不迭代是 21 秒。
-/// 两者都够用，迭代只是让它更稳。
+/// Measured by Tests/verify-solar.py against ephem across ten cases covering both hemispheres,
+/// DST transitions, the date line, and polar day: maximum error is 4 seconds after two iterations,
+/// versus 21 seconds without refinement. Both suffice; iteration improves robustness.
 enum Solar {
 
-    /// 官方日出日落：太阳几何中心到地平线 −50′（16′ 日面半径 + 34′ 大气折射）。
+    /// Official sunrise/sunset: solar center at −50′ (16′ solar radius + 34′ atmospheric refraction).
     static let officialZenith = 90.833
-    /// 民用晨昏：太阳中心 −6°。
+    /// Civil twilight: solar center at −6°.
     static let civilZenith = 96.0
-    /// 航海晨昏：太阳中心 −12°。
+    /// Nautical twilight: solar center at −12°.
     static let nauticalZenith = 102.0
 
-    /// 一天里天光分段要用的四个时刻。
+    /// The four daily instants needed for daylight phases.
     ///
-    /// 航海晨光 / 民用黄昏在高纬可能不存在（太阳掉不到那么深），此时为 nil。
-    /// 不要在这里回退到日出 / 日落 —— 那会让「晨光到日出」这段长度变成 0，
-    /// 天光分段就把一整段壁纸挤进几十秒里放完（`TimeMap` 里有对应的名义时长兜底）。
+    /// Nautical dawn or civil dusk may be absent at high latitudes if the sun never falls that low; then nil.
+    /// Do not substitute sunrise/sunset here: a zero-length dawn-to-sunrise span would squeeze a whole
+    /// phase's wallpapers into seconds. TimeMap supplies a nominal-duration fallback instead.
     struct Events {
         var nauticalDawn: Date?
         var sunrise: Date
@@ -31,7 +31,7 @@ enum Solar {
         var civilDusk: Date?
     }
 
-    /// 指定日期、指定坐标的日出与日落。极昼或极夜返回 nil。
+    /// Sunrise and sunset for the given date and coordinates. Returns nil during polar day or night.
     static func times(on day: Date,
                       at coord: Coordinate,
                       calendar: Calendar = .current) -> (sunrise: Date, sunset: Date)? {
@@ -48,14 +48,14 @@ enum Solar {
 
         let zoneOffset = Double(calendar.timeZone.secondsFromGMT(for: midnight)) / 60
 
-        /// 用 `instant` 处的均时差反推当天的真太阳时正午。
+        /// Derives the day's solar noon using the equation of time at instant.
         func solarNoon(estimatedAt instant: Date) -> Date {
             let minutes = 720 - 4 * coord.longitude
                         - parameters(at: instant).equationOfTime + zoneOffset
             return midnight.addingTimeInterval(minutes * 60)
         }
 
-        /// 日出时角，单位度。太阳达不到该天顶距时（极昼极夜 / 不够深的晨昏）为 nil。
+        /// Sunrise hour angle in degrees; nil if the zenith is unreachable (polar day/night or absent twilight).
         func hourAngle(estimatedAt instant: Date, zenith: Double) -> Double? {
             let declination = parameters(at: instant).declination
             let phi = coord.latitude * .pi / 180
@@ -68,7 +68,7 @@ enum Solar {
         var noon = midnight.addingTimeInterval(12 * 3600)
         for _ in 0..<2 { noon = solarNoon(estimatedAt: noon) }
 
-        /// `direction` 为 -1 求升起、+1 求落下。
+        /// direction is −1 for rising and +1 for setting.
         func refine(direction: Double, zenith: Double) -> Date? {
             guard let initialAngle = hourAngle(estimatedAt: noon, zenith: zenith) else { return nil }
             var event = noon.addingTimeInterval(direction * 4 * initialAngle * 60)
@@ -101,18 +101,18 @@ enum Solar {
         return event == .sunrise ? t.sunrise : t.sunset
     }
 
-    // MARK: - 太阳位置
+    // MARK: - Solar position
 
     private struct Parameters {
-        /// 赤纬，弧度。
+        /// Declination in radians.
         let declination: Double
-        /// 均时差，分钟。
+        /// Equation of time in minutes.
         let equationOfTime: Double
     }
 
     private static func parameters(at instant: Date) -> Parameters {
         let julianDay = instant.timeIntervalSince1970 / 86_400 + 2_440_587.5
-        let t = (julianDay - 2_451_545.0) / 36_525.0        // 儒略世纪
+        let t = (julianDay - 2_451_545.0) / 36_525.0        // Julian centuries
 
         let meanLongitude = mod360(280.46646 + t * (36_000.76983 + t * 0.0003032))
         let meanAnomaly = 357.52911 + t * (35_999.05029 - 0.0001537 * t)
@@ -123,7 +123,7 @@ enum Solar {
                    + sin(2 * M) * (0.019993 - 0.000101 * t)
                    + sin(3 * M) * 0.000289
 
-        // 视黄经：真黄经扣掉章动与光行差
+        // Apparent longitude: true longitude corrected for nutation and aberration.
         let omega = 125.04 - 1934.136 * t
         let apparentLongitude = meanLongitude + center
                               - 0.00569 - 0.00478 * sin(omega * .pi / 180)

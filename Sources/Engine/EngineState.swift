@@ -1,18 +1,18 @@
 import Foundation
 
-/// 引擎的运行时状态，与用户配置分开存。
+/// Engine runtime state, persisted separately from user configuration.
 ///
-/// 存在的唯一理由是回答一个问题：**现在屏幕上这张，是我们写的，还是用户自己换的？**
-/// 有了它才能实现「让位给手动选择」（见 `Scheduler` 的注释）。
+/// Exists to answer one question: **did we write the current wallpaper, or did the user change it?**
+/// This enables deferring to manual choices (see Scheduler's documentation).
 struct EngineState: Codable, Equatable {
-    /// 我们最后一次成功写入系统的那张。
+    /// The wallpaper we last successfully wrote to the system.
     var lastWritten: Wallpaper?
-    /// 它属于哪个时段。时段被删改后用来判断是否需要重新落地。
+    /// Its slot, used to decide whether to reapply after slots are edited or deleted.
     var lastSlotID: UUID?
-    /// 该时段的**触发时刻**（`Resolution.since`），不是写入时刻。
-    /// 判断「是否跨过了新的触发边界」全靠比较它。
+    /// The slot's **trigger time** (Resolution.since), not the write time.
+    /// Comparing this determines whether a new trigger boundary has been crossed.
     var lastFiredAt: Date?
-    /// 实际写入时刻，纯诊断用。
+    /// Actual write time, for diagnostics only.
     var lastAppliedAt: Date?
 
     private enum Key: String, CodingKey { case lastWritten, lastSlotID, lastFiredAt, lastAppliedAt }
@@ -42,7 +42,7 @@ extension EngineState {
         Store.directoryURL.appendingPathComponent("state.json")
     }
 
-    /// 读不出来就当空状态 —— 状态文件是可再生的缓存，不该让引擎起不来。
+    /// Unreadable state becomes empty: this regenerable cache must not prevent engine startup.
     static func load() -> EngineState {
         guard let data = try? Data(contentsOf: fileURL),
               let state = try? JSONDecoder().decode(EngineState.self, from: data)

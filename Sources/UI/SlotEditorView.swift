@@ -1,20 +1,20 @@
 import SwiftUI
 
-/// 单个时段的编辑页：触发条件 + 壁纸 + 启用 + 删除。
+/// Editor for one slot: trigger, wallpaper, enabled state, and deletion.
 ///
-/// **改动不即时生效**：页面上的每一次改动只落在 `AppModel` 的草稿里，界面立刻跟手，
-/// 但 `schedule.json` 与壁纸都不动 —— 要点底部的「应用」才写下去。
-/// 草稿放在 model 里而不是这里的 `@State`：选壁纸是另一页，这个视图会被卸下来重建。
+/// **Changes are not immediate:** edits update an `AppModel` draft so the interface responds at once,
+/// but neither `schedule.json` nor the wallpaper changes until Apply is clicked in the footer.
+/// The model owns the draft, not local `@State`, because navigating to the picker destroys and recreates this view.
 struct SlotPage: View {
     @Environment(AppModel.self) private var model
     let slotID: UUID
     var open: (Page) -> Void
 
-    /// 删除要点两下：面板里弹确认框太重，就地把按钮换成「再点一次」。
+    /// Delete takes two clicks: replace the button in place with a confirmation rather than opening a heavy dialog.
     @State private var confirmingDelete = false
     @State private var contentHeight: CGFloat = 320
-    /// 这一段本来的天光参数。切成固定时刻之后「天光」那一档就不该消失 ——
-    /// 消失了就再也切不回来，草稿还没应用也回不去。
+    /// The slot's original daylight parameters. Keep the daylight option after switching to a fixed time,
+    /// or users cannot switch back even before applying the draft.
     @State private var originalPhase: (phase: DayPhase, index: Int, count: Int)?
 
     var body: some View {
@@ -33,6 +33,7 @@ struct SlotPage: View {
                     }
                     .padding(Panel.inset)
                     .measureHeight(into: $contentHeight)
+                    .background(VerticalOnlyScroll())
                 }
                 .frame(height: min(contentHeight, Panel.height - Panel.footerHeight))
                 Divider()
@@ -43,8 +44,8 @@ struct SlotPage: View {
                 Spacer()
             }
         }
-        // 页面每次出现都认领一次草稿。从选壁纸页返回时也会走到这里，
-        // 但 `beginEditing` 认得同一个 id，不会把半路的改动冲掉。
+        // Claim the draft on every appearance, including returning from the picker.
+        // `beginEditing` recognizes the same id and preserves unfinished edits.
         .onAppear {
             model.beginEditing(slotID)
             if case .solarPhase(let phase, let index, let count) = model.editing(slotID)?.trigger {
@@ -53,7 +54,7 @@ struct SlotPage: View {
         }
     }
 
-    // MARK: - 触发
+    // MARK: - Trigger
 
     private func trigger(_ slot: Slot) -> some View {
         PanelSection(title: L10n.t("slot.section.trigger")) {
@@ -62,8 +63,8 @@ struct SlotPage: View {
                     Text(L10n.t("slot.kind.phase")).tag(TriggerKind.phase)
                 }
                 Text(L10n.t("slot.kind.clock")).tag(TriggerKind.clock)
-                // 与「固定时刻」并排的是按钮标题，不是句子里的一个词 ——
-                // 英文里前者要大写、后者不要，中文两处同形。
+                // These are button titles alongside the fixed-time option, not words inside a sentence.
+                // English capitalizes the former but not the latter; Chinese uses the same form for both.
                 Text(L10n.t("slot.kind.sunrise")).tag(TriggerKind.sunrise)
                 Text(L10n.t("slot.kind.sunset")).tag(TriggerKind.sunset)
             }
@@ -75,7 +76,7 @@ struct SlotPage: View {
                 HStack {
                     Text(L10n.t("slot.everyDay")).font(Panel.Font.control)
                     Spacer()
-                    // 底色与留白在 `TimeField` 里，这里只负责摆位置。
+                    // `TimeField` owns background and padding; this view only positions it.
                     TimeField(date: clockBinding(slot))
                 }
             case .solarPhase(let phase, let index, let count):
@@ -91,12 +92,12 @@ struct SlotPage: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             case .solar(let event, let offset):
-                // 与固定时刻那一栏同构：一行里左边是控件、右边是算出来的时刻。
-                // 弹出菜单只有一百四十来点宽，单独占一行右边全是空的；而「今天是 18:16」
-                // 本来就是这个控件的注脚，摆在同一行既填满了宽度又省下一行高度。
+                // Match the fixed-time row: control on the left, calculated time on the right.
+                // The popup is only about 140 pt wide, leaving wasted space if placed on its own row.
+                // Today's time is its annotation anyway; keeping them together saves a row of height.
                 HStack(spacing: 8) {
-                    // 偏移是从一串预设里挑，不是一分钟一分钟地步进：步进器要按十几下才能
-                    // 从「正好」走到「一小时后」，而这个值本来就没人会调到 37 分。
+                    // Choose from preset offsets rather than stepping minute by minute: reaching an hour
+                    // after the event takes too many clicks, and users rarely need exactly 37 minutes.
                     Picker("", selection: offsetBinding(slot)) {
                         ForEach(offsetChoices(including: offset), id: \.self) { value in
                             Text(offsetLabel(event: event, offset: value)).tag(value)
@@ -104,8 +105,8 @@ struct SlotPage: View {
                     }
                     .pickerStyle(.menu)
                     .labelsHidden()
-                    // 宽度交给控件自己：`NSPopUpButton` 按最宽的那一项定宽（给它
-                    // `frame(width:)` 也不认），所以换档时它不会跟着字数忽宽忽窄。
+                    // Let `NSPopUpButton` size to its widest item (it ignores `frame(width:)`),
+                    // keeping its width stable when the selection changes.
                     .fixedSize()
 
                     Spacer(minLength: 4)
@@ -119,12 +120,12 @@ struct SlotPage: View {
         }
     }
 
-    /// 预设的偏移档位：一小时以内按 15 分一档，再往外拉开到半小时、一小时。
+    /// Preset offsets: 15-minute steps within an hour, then wider half-hour and hour intervals.
     private static let offsetLadder = [-120, -90, -60, -45, -30, -15, 0,
                                        15, 30, 45, 60, 90, 120]
 
-    /// 手改过 `schedule.json` 的值可能不在档位上（旧版的步进器也能走出 5 的倍数）。
-    /// 那就把它插进去，不然菜单选不中当前值，会显示成空白。
+    /// Manual `schedule.json` edits may fall between presets; the old stepper also allowed multiples of 5.
+    /// Insert the current value so the menu can select it instead of appearing blank.
     private func offsetChoices(including current: Int) -> [Int] {
         var values = Self.offsetLadder
         if !values.contains(current) {
@@ -141,7 +142,7 @@ struct SlotPage: View {
                           : L10n.t("slot.offset.before", name, String(offset.magnitude))
     }
 
-    /// 偏移是相对量，光看「日落前 30 分」不知道今天几点。把算出来的时刻摆在同一行的右端。
+    /// "30 minutes before sunset" is relative; show today's calculated clock time at the row's trailing edge.
     private func todayLine(_ slot: Slot) -> String {
         guard let coordinate = model.schedule.effectiveCoordinate else {
             return L10n.t("slot.today.noCoordinate")
@@ -154,7 +155,7 @@ struct SlotPage: View {
         return L10n.t("slot.today", Clock.string(date))
     }
 
-    // MARK: - 壁纸
+    // MARK: - Wallpaper
 
     private func wallpaper(_ slot: Slot) -> some View {
         PanelSection(title: L10n.t("slot.section.wallpaper")) {
@@ -200,7 +201,7 @@ struct SlotPage: View {
         }
     }
 
-    // MARK: - 启用 / 删除
+    // MARK: - Enable / Delete
 
     private func enabled(_ slot: Slot) -> some View {
         PanelSection(title: L10n.t("slot.section.state")) {
@@ -220,11 +221,11 @@ struct SlotPage: View {
         }
     }
 
-    /// 新时段还没进过配置，「删除」没有对象可删，那一栏整个不出现 ——
-    /// 放弃它走底部的「取消」。
+    /// A new slot is not in the configuration yet, so there is nothing to delete; omit this section.
+    /// Use Cancel in the footer to abandon it.
     ///
-    /// 版式是一整行、与上面的分区卡片同款：一行裸红字悬在卡片下面像是没排完。
-    /// 确认态换成红底，「再点一次」这件事光靠字重看不出来。
+    /// Use a full-width row matching the section cards; bare red text below them looks unfinished.
+    /// A red background marks confirmation, since font weight alone does not communicate "click again."
     @ViewBuilder
     private var delete: some View {
         if !model.draftIsNew {
@@ -233,7 +234,7 @@ struct SlotPage: View {
                     if model.delete(slotID) { open(.timeline) }
                 } else {
                     confirmingDelete = true
-                    // 误触之后不该一直红着等下一次点击。
+                    // Do not leave an accidental click armed in red indefinitely.
                     DispatchQueue.main.asyncAfter(deadline: .now() + 3) { confirmingDelete = false }
                 }
             } label: {
@@ -251,12 +252,12 @@ struct SlotPage: View {
         }
     }
 
-    // MARK: - 底部：应用 / 撤销
+    // MARK: - Footer: Apply / Discard
 
-    /// 删除是即时的（本来就要点两下确认），其余改动全都攒在这里等一次「应用」。
+    /// Deletion is immediate after its two-click confirmation; all other edits wait here for Apply.
     private var footer: some View {
         HStack(spacing: 8) {
-            // 有没应用的改动时前面多一颗橙点：只换字色在一行灰字里不够显眼。
+            // Add an orange dot for unapplied changes; a text-color change alone is too subtle among gray labels.
             if model.draftIsDirty {
                 Circle().fill(Color.orange).frame(width: 6, height: 6)
             }
@@ -278,10 +279,10 @@ struct SlotPage: View {
             }
 
             Button(L10n.t(model.draftIsNew ? "slot.add" : "slot.apply")) {
-                // 落盘之后草稿就不「新」了，先记下来再应用。
+                // Saving makes the draft no longer new, so capture that state before applying.
                 let wasNew = model.draftIsNew
                 guard model.applyDraft() else { return }
-                // 新时段加完直接回时间轴，能看见它排在哪一格。
+                // Return to the timeline after adding a slot so its position is visible.
                 if wasNew { open(.timeline) }
             }
             .buttonStyle(.borderedProminent)
@@ -299,7 +300,7 @@ struct SlotPage: View {
         return L10n.t(model.draftIsDirty ? "slot.status.dirty" : "slot.status.clean")
     }
 
-    // MARK: - 绑定
+    // MARK: - Bindings
 
     private enum TriggerKind: Hashable { case clock, sunrise, sunset, phase }
 
@@ -314,21 +315,21 @@ struct SlotPage: View {
             model.editDraft { updated in
                 switch kind {
                 case .clock:
-                    // 从日出/日落切过来时，用它今天算出来的那个时刻当起点，
-                    // 比统一给个 08:00 更接近用户本来的意图。
+                    // When switching from sunrise/sunset, start from today's calculated trigger time.
+                    // This preserves intent better than assigning 08:00 to every slot.
                     let date = slot.trigger.fireDate(on: Date(),
                                                      coordinate: model.schedule.effectiveCoordinate,
                                                      calendar: .current) ?? Date()
                     let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
                     updated.trigger = .clock(hour: parts.hour ?? 8, minute: parts.minute ?? 0)
                 case .sunrise, .sunset:
-                    // 在日出与日落之间来回切时保留已经调好的偏移。
+                    // Preserve the chosen offset when switching between sunrise and sunset.
                     let offset: Int = { if case .solar(_, let value) = slot.trigger { return value } else { return 0 } }()
                     updated.trigger = .solar(event: kind == .sunrise ? .sunrise : .sunset,
                                              offsetMinutes: offset)
                 case .phase:
-                    // 回到天光：天光段的参数（第几张 / 共几张）是导入时定的，
-                    // 用户在这一页改不出来，所以只能还原成进来时的那一组。
+                    // Restore daylight parameters (image index / total count) from entry into this page.
+                    // They are established on import and cannot be edited here.
                     if let originalPhase {
                         updated.trigger = .solarPhase(phase: originalPhase.phase,
                                                       index: originalPhase.index,
@@ -346,8 +347,8 @@ struct SlotPage: View {
                                          of: Date()) ?? Date()
         } set: { date in
             let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
-            // 拖时间选择器一秒钟能变几十次 —— 但这些只改内存里的草稿，不落盘，
-            // 原来的 0.35 秒去抖也就没有必要了。
+            // Dragging the time picker can emit dozens of changes per second, but they only update
+            // the in-memory draft, not disk; the old 0.35-second debounce is no longer needed.
             model.editDraft { $0.trigger = .clock(hour: parts.hour ?? 0, minute: parts.minute ?? 0) }
         }
     }

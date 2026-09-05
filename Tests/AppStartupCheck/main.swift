@@ -1,6 +1,6 @@
 import Foundation
 
-// 编入真实 AppModel，验证启动与恢复链路；恢复的配置保持暂停，绝不写系统壁纸。
+// Compile in the real AppModel to verify startup and recovery; the recovered configuration stays paused and never writes system wallpaper.
 let sandbox = URL(fileURLWithPath: NSTemporaryDirectory())
     .appendingPathComponent("hourglow-startupcheck-\(UUID().uuidString)")
 setenv("HOURGLOW_HOME", sandbox.path, 1)
@@ -12,15 +12,15 @@ try damaged.write(to: Store.fileURL)
 MainActor.assumeIsolated {
     let model = AppModel.shared
     precondition(model.schedule.slots.isEmpty && model.resolution == nil && model.isFollower,
-                 "损坏配置启动不能回退 Tahoe 或取得排程锁")
+                 "Starting with damaged configuration must not fall back to Tahoe or acquire the scheduling lock")
     precondition(!model.setManualLocation(Coordinate(latitude: 22.543, longitude: 114.058)),
-                 "修复前设置动作不能覆盖原文件")
+                 "Settings actions must not overwrite the original file before repair")
     precondition((try? Data(contentsOf: Store.fileURL)) == damaged,
-                 "损坏原文件必须保留")
+                 "The damaged original file must be preserved")
     model.start()
     precondition(!FileManager.default.fileExists(atPath: sandbox.appendingPathComponent("state.json").path),
-                 "启动失败不能写入引擎状态")
-    print("✓ 损坏配置启动不使用预设、不排程、不允许设置动作覆盖原文件")
+                 "Failed startup must not write engine state")
+    print("✓ Startup with damaged configuration uses no preset, does not schedule, and prevents settings actions from overwriting the original file")
 
     let repaired = Schedule(slots: [Slot(trigger: .clock(hour: 9, minute: 0),
                                        wallpaper: .image(path: "/fixture"))], paused: true)
@@ -31,10 +31,10 @@ MainActor.assumeIsolated {
     }
     precondition(!model.isFollower && model.schedule.paused
                  && model.schedule.slots == repaired.slots,
-                 "修复配置后自动接管最新的暂停时间轴")
+                 "Automatically take over the latest paused timeline after configuration repair")
     precondition(!FileManager.default.fileExists(atPath: sandbox.appendingPathComponent("state.json").path),
-                 "暂停配置恢复不能写壁纸")
-    print("✓ 修复后监听并自动接管最新配置，保留暂停状态")
+                 "Recovering paused configuration must not write wallpaper")
+    print("✓ Monitor and automatically take over the latest configuration after repair, preserving the paused state")
 
     // The test keeps the schedule paused and observes display-clock reads, so no
     // wallpaper writes or changes to the user's defaults are needed.
@@ -73,4 +73,4 @@ MainActor.assumeIsolated {
                  "Display refresh never applies wallpaper while paused")
     print("✓ Closing stops refresh; reopening catches up without changing wallpaper")
 }
-print("全部启动恢复测试通过")
+print("All startup recovery tests passed")

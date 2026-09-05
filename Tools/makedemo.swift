@@ -2,36 +2,36 @@ import AppKit
 import ImageIO
 import UniformTypeIdentifiers
 
-// 画 README 顶上的演示 GIF，以及官网 / GitHub Social Preview 用的 1200 × 630 分享卡片。
-// 两张图都是「一台 Mac 的一天」：Tahoe 壁纸随时刻换、菜单栏里的沙漏开着面板、
-// 面板里的时间轴标着现在跑到哪一段。面板是 panelshot 抓的真图，不是画的。
+// Draw the README demo GIF and a 1200 × 630 sharing card for the website and GitHub Social Preview.
+// Both show a day on a Mac: Tahoe wallpaper changes with the time, the menu bar hourglass has its panel open,
+// and the panel timeline shows the current phase. Panels are real panelshot captures, not illustrations.
 //
-// 平时不用直接调它，`Tools/makedemo.sh` 负责先出面板截图再调这里：
+// Normally invoked by Tools/makedemo.sh, which captures the panels first:
 //
 //   swiftc -O Tools/makedemo.swift -o build/makedemo
 //   build/makedemo gif  --shots DIR --walls DIR --icon Resources/HourGlow.icns --day 2026-09-04 --out docs/demo.gif
 //   build/makedemo card --shots DIR --walls DIR --icon Resources/HourGlow.icns --day 2026-09-04 --out og.png
 //
-// `--shots` 里是 `<phase>-<HHMM>.png`（morning-0620.png），`--walls` 里是 `tahoe-<phase>.jpg`；
-// phase 固定是 morning / day / evening / night，与 Tahoe 四段预设一一对应。
+// --shots contains <phase>-<HHMM>.png (morning-0620.png); --walls contains tahoe-<phase>.jpg.
+// Phases are morning / day / evening / night, matching the four-phase Tahoe preset.
 //
-// 为什么用 ImageIO 编 GIF 而不是 ffmpeg / gifsicle：仓库其余部分零依赖，这里也不想为一张图
-// 引入一套工具链；ImageIO 会按帧生成调色板并抖动，实测天空的渐变没有明显色带。
-// 为什么不是 ImageRenderer：与 panelshot 同一个理由 —— 这里干脆全部用 AppKit 离屏画。
+// Why ImageIO rather than ffmpeg / gifsicle: the rest of the repo has no dependencies, and one image
+// does not warrant another toolchain. ImageIO generates per-frame palettes with dithering; sky gradients show no obvious banding.
+// Why not ImageRenderer: for the same reason as panelshot, everything here is drawn offscreen with AppKit.
 
-// MARK: - 参数
+// MARK: - Arguments
 
 enum Phase: String, CaseIterable {
     case morning, day, evening, night
 
-    /// Tahoe 的 Evening / Night 是暗色壁纸，makedemo.sh 把这两段的面板按深色外观抓。
-    /// 面板四周那一圈描边得跟着换：浅色面板靠一圈暗线与桌面分开，深色面板靠一圈亮线。
+    /// Tahoe Evening / Night wallpapers are dark, so makedemo.sh captures those panels in dark appearance.
+    /// The border follows suit: a dark outline separates light panels from the desktop, and a light outline separates dark panels.
     var dark: Bool { self == .evening || self == .night }
 }
 
 struct Shot {
     let phase: Phase
-    /// "0620" → 06:20。
+    /// "0620" → 06:20.
     let clock: String
     let image: NSImage
 
@@ -52,23 +52,23 @@ func parse() -> Options {
     var options = Options()
     var arguments = CommandLine.arguments.dropFirst().makeIterator()
     guard let mode = arguments.next(), mode == "gif" || mode == "card" else {
-        print("用法: makedemo gif|card --shots DIR --walls DIR --icon FILE --day YYYY-MM-DD --out FILE")
+        print("Usage: makedemo gif|card --shots DIR --walls DIR --icon FILE --day YYYY-MM-DD --out FILE")
         exit(2)
     }
     options.mode = mode
     while let argument = arguments.next() {
-        guard let value = arguments.next() else { print("\(argument) 缺参数"); exit(2) }
+        guard let value = arguments.next() else { print("Missing value for \(argument)"); exit(2) }
         switch argument {
         case "--shots": options.shots = value
         case "--walls": options.walls = value
         case "--icon":  options.icon = value
         case "--day":   options.day = value
         case "--out":   options.out = value
-        default: print("不认识的参数 \(argument)"); exit(2)
+        default: print("Unknown argument \(argument)"); exit(2)
         }
     }
     guard !options.shots.isEmpty, !options.walls.isEmpty, !options.icon.isEmpty, !options.out.isEmpty else {
-        print("--shots / --walls / --icon / --out 都要给"); exit(2)
+        print("--shots / --walls / --icon / --out are all required"); exit(2)
     }
     return options
 }
@@ -81,12 +81,12 @@ func loadShots(_ directory: String) -> [Phase: [Shot]] {
         let parts = stem.split(separator: "-")
         guard parts.count == 2, let phase = Phase(rawValue: String(parts[0])), parts[1].count == 4,
               let image = NSImage(contentsOfFile: (directory as NSString).appendingPathComponent(name))
-        else { print("跳过认不出的文件 \(name)"); continue }
+        else { print("Skipping unrecognized file \(name)"); continue }
         result[phase, default: []].append(Shot(phase: phase, clock: String(parts[1]), image: image))
     }
     for phase in Phase.allCases {
         guard let shots = result[phase], !shots.isEmpty else {
-            print("\(directory) 里没有 \(phase.rawValue)-HHMM.png"); exit(1)
+            print("No \(phase.rawValue)-HHMM.png files in \(directory)"); exit(1)
         }
         result[phase] = shots.sorted { $0.minutes < $1.minutes }
     }
@@ -97,7 +97,7 @@ func loadWalls(_ directory: String) -> [Phase: NSImage] {
     var result: [Phase: NSImage] = [:]
     for phase in Phase.allCases {
         let path = (directory as NSString).appendingPathComponent("tahoe-\(phase.rawValue).jpg")
-        guard let image = NSImage(contentsOfFile: path) else { print("缺壁纸 \(path)"); exit(1) }
+        guard let image = NSImage(contentsOfFile: path) else { print("Missing wallpaper \(path)"); exit(1) }
         result[phase] = image
     }
     return result
@@ -107,17 +107,17 @@ func dateLabel(_ day: String) -> String {
     let parser = DateFormatter()
     parser.locale = Locale(identifier: "en_US_POSIX")
     parser.dateFormat = "yyyy-MM-dd"
-    guard let date = parser.date(from: day) else { print("--day 格式是 2026-09-04"); exit(2) }
+    guard let date = parser.date(from: day) else { print("--day must use YYYY-MM-DD format, e.g. 2026-09-04"); exit(2) }
     let formatter = DateFormatter()
     formatter.locale = Locale(identifier: "en_US_POSIX")
     formatter.dateFormat = "EEE d MMM"
     return formatter.string(from: date)
 }
 
-// MARK: - 画布
+// MARK: - Canvas
 
-/// 顶左原点的离屏画布。`NSGraphicsContext(cgContext:flipped:)` 让 NSImage 与文字都按翻转坐标画，
-/// 不用自己给每一段文字倒过来。
+/// Offscreen canvas with a top-left origin. NSGraphicsContext(cgContext:flipped:) draws NSImage and text
+/// in flipped coordinates, avoiding manual transforms for each text run.
 func render(width: Int, height: Int, _ body: (CGContext, CGRect) -> Void) -> CGImage {
     let space = CGColorSpace(name: CGColorSpace.sRGB)!
     let cg = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
@@ -133,7 +133,7 @@ func render(width: Int, height: Int, _ body: (CGContext, CGRect) -> Void) -> CGI
     return cg.makeImage()!
 }
 
-/// 等比铺满（多出来的裁掉），alpha 用来做两张壁纸的交叉淡入。
+/// Fill while preserving aspect ratio, cropping overflow; alpha crossfades between wallpapers.
 func drawFill(_ image: NSImage, in rect: CGRect, alpha: CGFloat = 1) {
     let size = image.size
     let scale = max(rect.width / size.width, rect.height / size.height)
@@ -165,7 +165,7 @@ func text(_ string: String, size: CGFloat, weight: NSFont.Weight, color: NSColor
     return NSAttributedString(string: string, attributes: attributes)
 }
 
-/// 画一行菜单栏项，返回它占掉的宽度。图标与文字都垂直居中在 `bar` 里。
+/// Draw a menu bar item and return its width. Both icons and text are vertically centered in bar.
 @discardableResult
 func drawCentered(_ item: NSAttributedString, x: CGFloat, bar: CGRect) -> CGFloat {
     let size = item.size()
@@ -181,13 +181,13 @@ func drawCentered(_ image: NSImage, x: CGFloat, bar: CGRect) -> CGFloat {
     return size.width
 }
 
-// MARK: - 一帧「桌面」
+// MARK: - Desktop frame
 
 struct Desk {
-    /// 画布 1000 × 625：README 里按内容宽度缩到八百多像素，面板上的字还认得出来。
+    /// A 1000 × 625 canvas keeps panel text readable when scaled to the README's roughly 800-pixel content width.
     static let size = CGSize(width: 1000, height: 625)
-    /// 菜单栏比真机的比例略高（真机 24 pt 摆在 1500 多 pt 宽的屏上）：这是示意图，
-    /// 面板与它上面的沙漏才是要讲的事，得看得清。
+    /// Slightly taller menu bar proportions than a real Mac (24 pt on a screen over 1500 pt wide):
+    /// this is an illustration, and the panel and hourglass above it must remain clear.
     static let barHeight: CGFloat = 30
     static let panelWidth: CGFloat = 380
     static let panelCorner: CGFloat = 12
@@ -195,15 +195,15 @@ struct Desk {
     let walls: [Phase: NSImage]
     let dateLabel: String
 
-    /// - from/to: 交叉淡入的两张壁纸，`progress` 0 是 from、1 是 to。
-    /// - shot: 面板里放哪张截图。
-    /// - clock: 菜单栏右上角的时刻。
+    /// - from/to: Wallpapers to crossfade; progress 0 is from, 1 is to.
+    /// - shot: Screenshot to display in the panel.
+    /// - clock: Time at the top right of the menu bar.
     func frame(from: Phase, to: Phase, progress: CGFloat, shot: Shot, clock: String) -> CGImage {
         render(width: Int(Desk.size.width), height: Int(Desk.size.height)) { cg, bounds in
             drawFill(walls[from]!, in: bounds)
             if progress > 0 { drawFill(walls[to]!, in: bounds, alpha: progress) }
 
-            // 菜单栏：半透明深色一条，白字。真机是毛玻璃，这里用透明度近似。
+            // Menu bar: translucent dark strip with white text, approximating the real frosted glass with opacity.
             let bar = CGRect(x: 0, y: 0, width: bounds.width, height: Desk.barHeight)
             cg.setFillColor(NSColor(white: 0.06, alpha: 0.32).cgColor)
             cg.fill(bar)
@@ -217,7 +217,7 @@ struct Desk {
                 x += drawCentered(text(menu, size: 13, weight: .medium, color: .white, shadow: true), x: x, bar: bar) + 16
             }
 
-            // 右侧从右往左摆：时刻、日期、电池、Wi-Fi、然后是沙漏。
+            // Lay out the right side from right to left: time, date, battery, Wi-Fi, then hourglass.
             let clockText = text(clock, size: 13, weight: .medium, color: .white, shadow: true, monospacedDigits: true)
             var right = bounds.width - 14 - clockText.size().width
             drawCentered(clockText, x: right, bar: bar)
@@ -230,7 +230,7 @@ struct Desk {
                     drawCentered(icon, x: right, bar: bar)
                 }
             }
-            // 沙漏：面板开着，所以它带着「按下」的底色。
+            // Hourglass: show a pressed background because the panel is open.
             let hourglass = symbol("hourglass", size: 14, weight: .medium)!
             right -= 16 + hourglass.size.width
             let pressed = CGRect(x: right - 6, y: bar.minY + 3, width: hourglass.size.width + 12, height: bar.height - 6)
@@ -239,7 +239,7 @@ struct Desk {
             cg.fillPath()
             drawCentered(hourglass, x: right, bar: bar)
 
-            // 面板：挂在沙漏下面，贴着右边留 8 pt，跟 MenuBarExtra 被屏幕边缘顶回来的位置一样。
+            // Panel: below the hourglass, 8 pt from the right edge, matching MenuBarExtra's screen-edge adjustment.
             let panelSize = CGSize(width: Desk.panelWidth,
                                    height: Desk.panelWidth * shot.image.size.height / shot.image.size.width)
             let panel = CGRect(x: bounds.width - 8 - panelSize.width, y: bar.maxY + 6,
@@ -268,8 +268,8 @@ struct Desk {
 
 // MARK: - GIF
 
-/// 每一段先停几帧（时刻在走、面板在数倒计时），再用几帧把壁纸淡到下一段；
-/// 最后一段淡回第一段，循环接得上。停帧长、过渡帧短，总长十秒出头。
+/// Hold each phase for a few frames while the clock and countdown advance, then crossfade to the next wallpaper.
+/// The last phase fades back to the first for a seamless loop. Long holds and short transitions total just over ten seconds.
 func writeGIF(desk: Desk, shots: [Phase: [Shot]], to url: URL) {
     let hold: Double = 0.75
     let fadeFrames = 5
@@ -286,14 +286,14 @@ func writeGIF(desk: Desk, shots: [Phase: [Shot]], to url: URL) {
         let first = shots[next]!.first!
         for step in 1...fadeFrames {
             let progress = CGFloat(step) / CGFloat(fadeFrames + 1)
-            // 面板与时钟在过渡过半时一起跳到下一段：壁纸是渐变的，切换本身不是。
+            // Switch the panel and clock together halfway through: the wallpaper fades, but the phase change is discrete.
             let shot = progress < 0.5 ? last : first
             frames.append((desk.frame(from: phase, to: next, progress: progress, shot: shot, clock: shot.label), fadeDelay))
         }
     }
 
     guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.gif.identifier as CFString, frames.count, nil) else {
-        print("建不了 \(url.path)"); exit(1)
+        print("Cannot create \(url.path)"); exit(1)
     }
     CGImageDestinationSetProperties(destination, [
         kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]
@@ -306,15 +306,15 @@ func writeGIF(desk: Desk, shots: [Phase: [Shot]], to url: URL) {
             ]
         ] as CFDictionary)
     }
-    guard CGImageDestinationFinalize(destination) else { print("写不出 \(url.path)"); exit(1) }
+    guard CGImageDestinationFinalize(destination) else { print("Cannot write \(url.path)"); exit(1) }
     let total = frames.reduce(0) { $0 + $1.1 }
-    print("已写出 \(url.path)：\(frames.count) 帧，约 \(String(format: "%.1f", total)) 秒")
+    print("Wrote \(url.path): \(frames.count) frames, approximately \(String(format: "%.1f", total)) seconds")
 }
 
-// MARK: - 分享卡片
+// MARK: - Sharing card
 
-/// 1200 × 630：GitHub Social Preview、og:image、Twitter summary_large_image 都是这个比例。
-/// 左边是名字与一句话，右边是傍晚那一刻的面板；底图是 Tahoe Evening，压一层左深右浅的渐变让字站得住。
+/// 1200 × 630: the aspect ratio used by GitHub Social Preview, og:image, and Twitter summary_large_image.
+/// Name and tagline on the left, evening panel on the right; a dark-to-light overlay on Tahoe Evening keeps text legible.
 func writeCard(desk: Desk, icon: NSImage, shots: [Phase: [Shot]], to url: URL) {
     let width = 1200, height = 630
     let shot = shots[.evening]!.first!
@@ -327,7 +327,7 @@ func writeCard(desk: Desk, icon: NSImage, shots: [Phase: [Shot]], to url: URL) {
         let gradient = CGGradient(colorsSpace: space, colors: colors, locations: [0, 0.55, 1])!
         cg.drawLinearGradient(gradient, start: CGPoint(x: 0, y: 0), end: CGPoint(x: bounds.width, y: 0), options: [])
 
-        // 左栏
+        // Left column
         let inset: CGFloat = 76
         icon.draw(in: CGRect(x: inset - 6, y: 70, width: 112, height: 112), from: .zero, operation: .sourceOver,
                   fraction: 1, respectFlipped: true, hints: [.interpolation: NSImageInterpolation.high])
@@ -340,7 +340,7 @@ func writeCard(desk: Desk, icon: NSImage, shots: [Phase: [Shot]], to url: URL) {
         text("hourglow.bobbyhuang.dev", size: 19, weight: .medium,
              color: NSColor(white: 1, alpha: 0.7)).draw(at: CGPoint(x: inset, y: 546))
 
-        // 右栏：面板
+        // Right column: panel
         let panelWidth: CGFloat = 400
         let panelSize = CGSize(width: panelWidth, height: panelWidth * shot.image.size.height / shot.image.size.width)
         let panel = CGRect(x: bounds.width - 72 - panelSize.width, y: (bounds.height - panelSize.height) / 2,
@@ -360,19 +360,19 @@ func writeCard(desk: Desk, icon: NSImage, shots: [Phase: [Shot]], to url: URL) {
         cg.restoreGState()
     }
     guard let destination = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString, 1, nil) else {
-        print("建不了 \(url.path)"); exit(1)
+        print("Cannot create \(url.path)"); exit(1)
     }
     CGImageDestinationAddImage(destination, image, nil)
-    guard CGImageDestinationFinalize(destination) else { print("写不出 \(url.path)"); exit(1) }
-    print("已写出 \(url.path)：\(width) × \(height)")
+    guard CGImageDestinationFinalize(destination) else { print("Cannot write \(url.path)"); exit(1) }
+    print("Wrote \(url.path): \(width) × \(height)")
 }
 
-// MARK: - 入口
+// MARK: - Entry point
 
 let options = parse()
 let shots = loadShots(options.shots)
 let walls = loadWalls(options.walls)
-guard let icon = NSImage(contentsOfFile: options.icon) else { print("读不了图标 \(options.icon)"); exit(1) }
+guard let icon = NSImage(contentsOfFile: options.icon) else { print("Cannot read icon \(options.icon)"); exit(1) }
 let desk = Desk(walls: walls, dateLabel: dateLabel(options.day))
 let output = URL(fileURLWithPath: options.out)
 try? FileManager.default.createDirectory(at: output.deletingLastPathComponent(), withIntermediateDirectories: true)

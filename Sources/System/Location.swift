@@ -1,10 +1,10 @@
 import Foundation
 
-/// 从系统时区反查一个近似坐标。
+/// Infers approximate coordinates from the system time zone.
 ///
-/// `/usr/share/zoneinfo/zone.tab` 为每个时区标注了代表城市的经纬度。
-/// 对日出日落而言这个精度完全够用，且不需要任何定位权限。
-/// M4 会加上 CoreLocation 做精确定位，这里是它的回退路径。
+/// `/usr/share/zoneinfo/zone.tab` provides representative city coordinates for each time zone.
+/// This is adequate for approximate sunrise/sunset calculations and requires no location permission.
+/// Serves as the fallback for precise CoreLocation positioning.
 enum ApproxLocation {
 
     static func fromTimeZone(_ tz: TimeZone = .current) -> Coordinate? {
@@ -19,7 +19,7 @@ enum ApproxLocation {
         return nil
     }
 
-    /// 解析 `+3114+12128`（度分）或 `+513030-0000731`（度分秒）两种写法。
+    /// Parses `+3114+12128` (degrees/minutes) or `+513030-0000731` (degrees/minutes/seconds).
     static func parseISO6709(_ s: String) -> Coordinate? {
         let chars = Array(s)
         guard chars.count > 1 else { return nil }
@@ -40,7 +40,7 @@ enum ApproxLocation {
         guard field.hasPrefix("+") || field.hasPrefix("-") else { return nil }
         let sign: Double = field.hasPrefix("-") ? -1 : 1
         let body = Array(field.dropFirst())
-        // ISO 6709 zone.tab 只使用 DDMM / DDMMSS（经度多一位度数）。
+        // zone.tab uses only ISO 6709 DDMM / DDMMSS (with an extra degree digit for longitude).
         guard body.count == degreeDigits + 2 || body.count == degreeDigits + 4,
               body.allSatisfy(\.isNumber),
               let d = Int(String(body[0 ..< degreeDigits])),

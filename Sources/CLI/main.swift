@@ -1,9 +1,9 @@
 import Foundation
 
-// CLI 入口。求值与定时都在 `Engine/Scheduler.swift` 里，
-// 这里只是它的外壳与排障工具。常驻相关的命令见 `RunCommand.swift`。
+// CLI entry point. Evaluation and timers live in `Engine/Scheduler.swift`;
+// this is its wrapper and diagnostic toolkit. Resident-process commands live in `RunCommand.swift`.
 //
-// 输出全部走 `L10n`：CLI 是裸二进制，没有 bundle，文案表是编进来的那一份。
+// Output goes through `L10n`: the CLI is a bare binary without a bundle, so it uses compiled-in catalogs.
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 let command = arguments.first ?? "now"
@@ -12,7 +12,7 @@ let flags = Set(operands.filter { $0.hasPrefix("--") })
 let positional = operands.filter { !$0.hasPrefix("--") }
 
 extension Character {
-    /// 终端里占两列的字符（CJK、全角、emoji）。
+    /// Characters occupying two terminal columns (CJK, full-width characters, emoji).
     var isDoubleWidth: Bool {
         guard let v = unicodeScalars.first?.value else { return false }
         switch v {
@@ -27,22 +27,22 @@ extension Character {
 }
 
 extension String {
-    /// 终端里占几列。中文一个字两列，英文一列。
+    /// Terminal column width: Chinese characters occupy two columns, English letters one.
     var displayWidth: Int { reduce(0) { $0 + ($1.isDoubleWidth ? 2 : 1) } }
 
-    /// 按显示列宽右侧补空格。`String(format:)` 的 %-N@ 按字符数补齐，中文会错位。
+    /// Pad on the right by display columns. `String(format:)`'s %-N@ counts characters, misaligning Chinese text.
     func padded(to width: Int) -> String {
         self + String(repeating: " ", count: max(0, width - displayWidth))
     }
 }
 
-/// 一列文字的宽度按内容算，不写死数字：同一个栏目中文占四列、英文占七列，
-/// 写死哪个数字都会在另一门语言里错行。
+/// Derive column width from content rather than a fixed number: the same heading may use
+/// four columns in Chinese and seven in English, so either fixed width misaligns the other language.
 func column(_ values: [String], min floor: Int = 0) -> Int {
     max(floor, values.map(\.displayWidth).max() ?? 0)
 }
 
-/// 左边的标签列（配置 / 坐标 / 状态…）。宽度按当前语言里最长的那个标签算。
+/// Left-hand labels (configuration, coordinates, state, etc.), sized to the longest label in the current language.
 let labelWidth = column(["cli.label.config", "cli.label.coordinate", "cli.label.state",
                          "cli.label.assets", "cli.label.trigger", "cli.label.log",
                          "cli.label.plist"].map { L10n.t($0) })
@@ -86,7 +86,7 @@ func loadSchedule() -> Schedule {
     catch { fail(L10n.t("cli.loadFailed", error.localizedDescription)) }
 }
 
-// MARK: - 命令
+// MARK: - Commands
 
 func showList() {
     let schedule = loadSchedule()
@@ -150,7 +150,7 @@ func showCurrent() {
         guard let wallpaper = try WallpaperWriter.current() else {
             fail(L10n.t("cli.current.unreadable"))
         }
-        // 这两行是给排障用的原始事实（provider 与 assetID），不翻译。
+        // Raw diagnostic facts (provider and assetID), intentionally untranslated.
         switch wallpaper {
         case .aerial(let id): print("aerial  \(describe(wallpaper))  \(id)")
         case .image(let path): print("image   \(path)")
@@ -214,7 +214,7 @@ func showCatalog() {
         if onlyDownloaded, !asset.isDownloaded { continue }
         let mark = asset.isDownloaded ? "✓" : " "
         let size = asset.sizeMB.map { "\($0) MB" } ?? L10n.t("cli.catalog.notDownloaded")
-        // 名称与分类是系统素材库里的原文，`catalog` 是排障用的原样转储，不翻译。
+        // Names and categories retain system-catalog wording: `catalog` is an untranslated diagnostic dump.
         print(" \(mark) \(asset.name.padded(to: 26))"
               + "\(asset.categories.joined(separator: ",").padded(to: 14))"
               + "\(size.padded(to: 14))\(asset.id)")
@@ -245,8 +245,8 @@ func showSolar() {
                  clockFormat.string(from: times.sunrise),
                  clockFormat.string(from: times.sunset)))
     if let events = Solar.events(on: day, at: coordinate) {
-        // 高纬夏天太阳掉不到 −12°/−6°，这两个时刻并不存在。不要在这里编一个出来：
-        // 天光分段的兜底在 `TimeMap.nominalTwilight`，这里如实说「无」。
+        // In high-latitude summers the sun may never reach −12°/−6°, so these times do not exist.
+        // Solar-phase fallback belongs in `TimeMap.nominalTwilight`; report their absence honestly here.
         let dawn = events.nauticalDawn.map(clockFormat.string(from:)) ?? L10n.t("common.none")
         let dusk = events.civilDusk.map(clockFormat.string(from:)) ?? L10n.t("common.none")
         print(L10n.t("cli.solar.twilight", dawn, dusk))
@@ -287,7 +287,9 @@ func setLocation() {
 
 func showCities() {
     let query = positional.joined(separator: " ")
-    let hits = Cities.search(query)
+    // Empty searches sort by proximity to configured coordinates, like the panel; unreadable configuration preserves catalog order.
+    let near = (try? Store.load())?.effectiveCoordinate
+    let hits = Cities.search(query, near: near)
     guard !hits.isEmpty else { fail(L10n.t("cli.cities.empty")) }
     let shown = Array(hits.prefix(40))
     let nameWidth = column(shown.map(\.name), min: 12)
@@ -300,8 +302,8 @@ func showCities() {
     print("\n" + L10n.t("cli.cities.count", shown.count, hits.count))
 }
 
-/// 时间旅行：在一整天上按固定步长求值，打印每一次切换。
-/// 比等真实时钟快得多，也能一眼看出跨午夜回绕对不对。
+/// Time travel: evaluate at fixed intervals over a whole day and print every transition.
+/// Much faster than waiting for the real clock, and makes midnight wraparound easy to inspect.
 func runSimulate() {
     let schedule = loadSchedule()
     let calendar = Calendar.current
@@ -323,7 +325,7 @@ func runSimulate() {
     let nameWidth = column(schedule.slots.map { describe($0.wallpaper) }, min: 20)
     var previous: UUID?
     var transitions = 0
-    // 夏令时当天可能只有 23 或 25 小时；按下一个本地午夜收尾。
+    // Daylight-saving transitions can yield 23- or 25-hour days; stop at the next local midnight.
     for minute in 0..<Int(ceil(interval.duration / 60)) {
         let instant = start.addingTimeInterval(Double(minute) * 60)
         guard let resolution = schedule.resolve(at: instant, calendar: calendar) else { continue }
@@ -357,7 +359,7 @@ func runImport() {
         do {
             try Store.save(outcome.schedule)
         } catch {
-            // 配置没落盘，旧时间轴仍是权威；撤掉本次新素材，不能提前清旧目录。
+            // Saving failed, so the old timeline remains authoritative. Discard new assets without deleting the old directory.
             SceneImport.discard(outcome)
             throw error
         }
@@ -372,7 +374,7 @@ func runImport() {
             print("  \(slot.trigger.description.padded(to: triggerWidth))→  \(describe(slot.wallpaper))")
         }
         if !outcome.skipped.isEmpty {
-            // 别的文件认得出时段、它们认不出，硬塞会把夜景排到中午。跳过可以，闷声跳过不行。
+            // These files lack recognizable time slots, unlike others; forcing them in could schedule night scenes at noon. Skip, but report it.
             let skipped = outcome.skipped.count
             print("\n" + L10n.t(count: skipped, "cli.import.skipped", skipped))
             for url in outcome.skipped.prefix(12) {
@@ -385,8 +387,8 @@ func runImport() {
     }
 }
 
-/// 界面与命令行的语言。不带参数只打印现状。
-/// 偏好存在 `UserDefaults`，与菜单栏 app 是同一份 —— 改这里，面板下次打开就跟着变。
+/// UI and CLI language. Without arguments, only print the current state.
+/// Preferences share `UserDefaults` with the app; a CLI change is reflected when the panel next opens.
 func runLanguage() {
     if let wanted = positional.first {
         if wanted == "system" {
@@ -408,7 +410,7 @@ func runLanguage() {
     print(L10n.t("cli.language.available",
                  L10n.catalogs.map { "\($0.code) (\($0.name))" }
                      .joined(separator: L10n.t("list.separator"))))
-    // 环境变量压过刚写下的偏好，不说一句的话「设了没生效」会被当成 bug。
+    // Environment variables override the just-saved preference; explain this so an unchanged language does not look like a bug.
     if let env = L10n.environmentCode() { print(L10n.t("cli.language.env", env)) }
 }
 

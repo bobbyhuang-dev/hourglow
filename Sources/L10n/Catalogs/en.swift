@@ -1,8 +1,8 @@
-// English. Keys and their order mirror `zh-Hans.swift` — that file is the source text.
+// Source language. Write new strings here, then translate them into the other catalogs.
 //
-// `build/l10ncheck` fails if a key here is missing, empty, extra, or if its
-// `%` placeholders don't match the source. Add `<key>.one` next to a key whose
-// text counts things, and it is used when the count is exactly 1.
+// `build/l10ncheck` checks every catalog against these base keys and placeholders.
+// Add `<key>.one` beside count-dependent strings for the singular form; translations
+// whose language has no singular distinction can omit it.
 
 extension StringCatalog {
     static let en = StringCatalog(
@@ -177,8 +177,7 @@ extension StringCatalog {
         "place.useCurrent": "Use current location",
         "place.followTimeZone": "Follow the system time zone",
         "place.section.results": "Results",
-        "place.section.china": "China",
-        "place.section.world": "Rest of the world",
+        "place.section.nearby": "Nearby",
         "place.notFound": "No such place",
         "place.latitude": "Lat",
         "place.longitude": "Lon",

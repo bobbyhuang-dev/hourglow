@@ -1,19 +1,19 @@
 import Foundation
 
-/// 把一组壁纸均分到当天的四段天光里。
+/// Evenly distributes wallpapers across the day's four daylight phases.
 ///
-/// 对齐 24 Hour Wallpaper / Sunshift 的 ProTime 窗口，而不是「正好日出到正好日落」：
-/// 日出段从航海晨光开始，越过日出后再走三分之一段晨光；日落段提前三分之一
-/// 段黄昏开始，到民用黄昏结束。这样黄金时刻的几张照片不会被压在日出那一分钟上。
+/// Uses the ProTime windows from 24 Hour Wallpaper / Sunshift, not exact sunrise-to-sunset bounds:
+/// sunrise runs from nautical dawn until one-third of that dawn span past sunrise; sunset begins
+/// one-third of the dusk span early and ends at civil dusk, keeping golden-hour images from bunching at sunrise.
 ///
-/// 每一段再按该段的张数等分。3 张日出和 5 张日出占同一段太阳时间，只是切得更细。
-/// 窗口本身每天按当地太阳位置重算，所以冬夏的切换时刻会跟着走，不把钟点写死。
+/// Each phase is subdivided by its image count: three or five sunrise images share the same window.
+/// Windows are recalculated daily from the local solar position, following the seasons rather than fixed times.
 enum TimeMap {
 
-    /// 高纬夏天太阳掉不到 −12°/−6°，航海晨光与民用黄昏根本不存在。
-    /// 这时用一个名义时长顶上：既不能取 0（几张日出会挤在几十秒里连着刷过去，
-    /// 还会连着 killall 三次 WallpaperAgent），也不能拿它去覆盖真实存在的晨昏
-    /// （赤道的民用黄昏本来就只有二十来分钟）—— 所以只在「算不出来」时才用。
+    /// At high latitudes in summer the sun may never reach −12°/−6°, so nautical dawn or civil dusk is absent.
+    /// Use a nominal duration only then: zero would cycle several sunrise images within seconds
+    /// and run killall on WallpaperAgent three times in succession. Do not replace real twilight
+    /// with this fallback; equatorial civil dusk can legitimately last only about twenty minutes.
     static let nominalTwilight: TimeInterval = 45 * 60
 
     struct Window {
@@ -60,7 +60,7 @@ enum TimeMap {
         let nextDawn = next.nauticalDawn
             ?? next.sunrise.addingTimeInterval(-nominalTwilight)
 
-        // 仍留一个下限：极端情况下算出来的晨昏也可能贴到日出上，避免除零。
+        // Keep a lower bound even for real twilight that nearly coincides with sunrise, avoiding division by zero.
         let sunriseSpan = max(sunrise.timeIntervalSince(dawn), 60)
         let sunriseEnd = sunrise.addingTimeInterval(sunriseSpan / 3)
         let sunsetSpan = max(dusk.timeIntervalSince(sunset), 60)
@@ -74,8 +74,8 @@ enum TimeMap {
         )
     }
 
-    /// 该段第 `index` 张（0-based）在 `day` 这一天的触发时刻。
-    /// 夜晚最后几张可能落在次日凌晨，这是窗口跨午夜的自然结果。
+    /// Trigger time for image `index` (zero-based) in this phase on `day`.
+    /// The last night images may fall early the next day because the window crosses midnight.
     static func fireDate(phase: DayPhase,
                          index: Int,
                          count: Int,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""移动仍在运行的测试 bundle，验证更新器跟随实际路径；不启动引擎或真实安装。"""
+"""Move a running test bundle to verify that the updater follows its actual path, without starting the engine or performing a real installation."""
 import json
 from pathlib import Path
 import plistlib
@@ -14,9 +14,9 @@ from contextlib import contextmanager
 def receive(process):
     with selectors.DefaultSelector() as selector:
         selector.register(process.stdout, selectors.EVENT_READ)
-        assert selector.select(timeout=10), "等待更新器探针超时"
+        assert selector.select(timeout=10), "Timed out waiting for the updater probe"
     line = process.stdout.readline()
-    assert line, "更新器探针意外退出"
+    assert line, "Updater probe exited unexpectedly"
     return line.strip()
 
 
@@ -60,7 +60,7 @@ binary = Path(sys.argv[1] if len(sys.argv) > 1 else "build/updatecheck").resolve
 with probe(binary) as process:
     result = inspect(process)
     assert result["error"] == "notApp" and not result["available"], result
-print("✓ 裸二进制不会被当成可更新的 app")
+print("✓ A bare binary is not treated as an updatable app")
 
 with tempfile.TemporaryDirectory(prefix="hourglow-updater-location-") as temporary:
     root = Path(temporary).resolve()
@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix="hourglow-updater-location-") as tempora
     executable.parent.mkdir(parents=True)
     helper.parent.mkdir(parents=True)
     shutil.copy2(binary, executable)
-    # 只检查可执行权限，绝不运行这个占位 helper。
+    # Check executable permissions only; never run this placeholder helper.
     helper.write_text("#!/bin/sh\nexit 99\n")
     helper.chmod(0o755)
     with (app / "Contents/Info.plist").open("wb") as output:
@@ -85,25 +85,25 @@ with tempfile.TemporaryDirectory(prefix="hourglow-updater-location-") as tempora
         first = check_location(process, app)
         assert Path(first["initialBundle"]).resolve() == app.resolve(), first
         assert first["legacyAvailable"], first
-        print("✓ 完整 app 能检查更新并通过安装位置检查")
+        print("✓ A complete app can check for updates and pass installation-location checks")
 
         moved = root / "moved parent"
         original.rename(moved)
         app = moved / app.name
         moved_result = check_location(process, app)
         assert not moved_result["legacyAvailable"], moved_result
-        print("✓ 运行中移动父目录，更新助手和安装目标跟随新位置")
+        print("✓ Moving the parent directory while running moves the update helper and installation target to the new location")
 
-        # 旧路径即使又有另一份 app，也不能把更新装到那份副本。
+        # Even if another app appears at the old path, updates must not be installed into that copy.
         shutil.copytree(moved, original)
         check_location(process, app)
-        print("✓ 旧路径出现副本时仍只定位正在运行的 app")
+        print("✓ A copy at the old path does not prevent locating only the running app")
 
         renamed = app.with_name("HourGlow renamed.app")
         app.rename(renamed)
         app = renamed
         check_location(process, app)
-        print("✓ 运行中重命名 app 后仍可更新")
+        print("✓ The app remains updatable after being renamed while running")
 
         helper = app / "Contents/Helpers/HourGlowUpdater"
         helper.chmod(0o644)
@@ -112,11 +112,11 @@ with tempfile.TemporaryDirectory(prefix="hourglow-updater-location-") as tempora
         helper.unlink()
         result = inspect(process)
         assert result["error"] == "helperUnavailable" and not result["available"], result
-        print("✓ 助手缺失或不可执行时准确报告原因")
+        print("✓ A missing or non-executable helper is reported with the correct reason")
 
         helper.write_text("#!/bin/sh\nexit 99\n")
         helper.chmod(0o755)
         check_location(process, app)
-        print("✓ 恢复助手后无需重启即可恢复更新能力")
+        print("✓ Restoring the helper restores update availability without restarting")
 
-print("全部更新路径测试通过")
+print("All updater path tests passed")

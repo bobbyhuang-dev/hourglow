@@ -2,26 +2,26 @@ import AppKit
 import CoreLocation
 import Foundation
 
-/// 向系统要一次精确坐标。
+/// Requests precise coordinates once from the system.
 ///
-/// 只要一次，不做持续定位：一台机器的经纬度不会自己跑，而日出日落对坐标的敏感度也就是
-/// 「几十公里 ≈ 一分钟」的量级。拿到之后写进 `schedule.json` 的 `location`，之后就一直用它。
+/// No continuous tracking: a stationary computer's coordinates do not change, and sunrise/sunset sensitivity
+/// is on the order of tens of kilometers per minute. Save the result in schedule.json's location and reuse it.
 ///
-/// 拿不到坐标不是死路：`ApproxLocation` 会按系统时区反查一个近似坐标（免权限），
-/// 用户也可以在设置页手填经纬度。三条路的优先级是 手填 > 定位写下的 > 时区推断。
+/// Failure is not a dead end: ApproxLocation infers coordinates from the time zone without permission,
+/// or users can enter them in settings. Priority: manual entry > saved location fix > time-zone inference.
 ///
-/// 坑：
-/// - `CLLocationManager` 要在有 run loop 的线程上建，回调也回到那个线程 —— 这里固定用主线程。
-/// - 权限对话框只在 `.notDetermined` 时弹一次。用户拒绝之后再调 `requestWhenInUseAuthorization`
-///   不会有任何反应，也不会有回调 —— 所以拒绝要当成一个明确的结局报出去，让 UI 切到手填。
-/// - `requestLocation()` 有可能既不回位置也不回错误（冷启动、无 Wi-Fi 的台式机），
-///   所以自己加一个超时兜底。
+/// Pitfalls:
+/// - CLLocationManager requires a thread with a run loop and delivers callbacks there; always use the main thread.
+/// - The permission dialog appears only for .notDetermined. After denial, requestWhenInUseAuthorization
+///   does nothing and delivers no callback. Report denial as a terminal outcome so the UI can offer manual entry.
+/// - requestLocation() may deliver neither a location nor an error on cold starts or desktops without Wi-Fi,
+///   so enforce our own timeout.
 @MainActor
 final class PreciseLocation: NSObject, CLLocationManagerDelegate {
 
     enum Outcome {
         case coordinate(Coordinate)
-        /// 权限被拒或被管控。UI 应当把手填经纬度顶到前面。
+        /// Permission denied or restricted. The UI should prioritize manual coordinate entry.
         case denied
         case failed(String)
     }
@@ -35,7 +35,7 @@ final class PreciseLocation: NSObject, CLLocationManagerDelegate {
     private override init() {
         super.init()
         manager.delegate = self
-        manager.desiredAccuracy = kCLLocationAccuracyKilometer   // 日出日落用不着更准
+        manager.desiredAccuracy = kCLLocationAccuracyKilometer   // Sunrise/sunset needs no finer accuracy.
     }
 
     var authorization: CLAuthorizationStatus { manager.authorizationStatus }
@@ -44,11 +44,11 @@ final class PreciseLocation: NSObject, CLLocationManagerDelegate {
         authorization == .denied || authorization == .restricted
     }
 
-    /// 打开「系统设置 › 隐私与安全性 › 定位服务」。
+    /// Opens System Settings > Privacy & Security > Location Services.
     ///
-    /// 被拒之后 `requestWhenInUseAuthorization` 不会再弹第二次框，UI 只能引导用户
-    /// 自己去开 —— 既然说了在哪儿改，就得能点过去。Ventura 之后 pane 的标识变了，
-    /// 旧的仍被系统映射；两条都试，谁先打得开算谁。
+    /// After denial, requestWhenInUseAuthorization cannot show another dialog; direct users to settings
+    /// to enable access themselves. Provide a working link: the pane identifier changed after Ventura,
+    /// but the old one is still mapped by the system, so try both and use the first that opens.
     static func openPrivacySettings() {
         let candidates = [
             "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_LocationServices",
@@ -59,15 +59,15 @@ final class PreciseLocation: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    /// 请求一次坐标。已经在请求中时后来者直接顶掉前一个回调（面板上只有一个按钮）。
+    /// Requests one location; a new request replaces any pending callback (the panel has only one button).
     func request(_ completion: @escaping (Outcome) -> Void) {
         self.completion = completion
 
         switch manager.authorizationStatus {
         case .notDetermined:
-            // 授权结果走 `locationManagerDidChangeAuthorization`，那里再真正取一次位置。
+            // Authorization returns through locationManagerDidChangeAuthorization, which requests the actual location.
             manager.requestWhenInUseAuthorization()
-            arm(seconds: 60)   // 对话框要等用户点，给足时间
+            arm(seconds: 60)   // Allow time for the user to respond to the dialog.
         case .denied, .restricted:
             finish(.denied)
         default:
@@ -76,17 +76,17 @@ final class PreciseLocation: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    // MARK: - 委托
+    // MARK: - Delegate
 
-    // 委托回调都回到建 manager 的那个线程 —— 这里固定是主线程。声明成 `nonisolated`
-    // 是为了满足协议（它本身没有隔离），实际执行仍旧在主 actor 上，用 `assumeIsolated` 接进来，
-    // 和 `Scheduler` 的回调是同一套写法。
+    // Delegate callbacks arrive on the manager's creation thread, always the main thread here.
+    // nonisolated satisfies the nonisolated protocol; execution still occurs on the main actor,
+    // bridged with assumeIsolated using the same pattern as Scheduler callbacks.
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         MainActor.assumeIsolated {
             guard completion != nil else { return }
             switch manager.authorizationStatus {
             case .notDetermined:
-                break                       // 对话框还开着，等下一次回调
+                break                       // Dialog still open; wait for the next callback.
             case .denied, .restricted:
                 finish(.denied)
             default:
@@ -112,7 +112,7 @@ final class PreciseLocation: NSObject, CLLocationManagerDelegate {
         }
     }
 
-    // MARK: - 内部
+    // MARK: - Internals
 
     private func arm(seconds: TimeInterval) {
         timeout?.cancel()

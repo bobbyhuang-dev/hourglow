@@ -1,8 +1,8 @@
 import AppKit
 import SwiftUI
 
-/// aerial 分类名。`entries.json` 里是英文键，面板上按当前语言显示。
-/// 遇到没见过的分类原样显示 —— 系统更新加了新分类也不至于露出空白。
+/// Aerial category names: English keys in `entries.json`, displayed in the current language.
+/// Preserve unknown names so categories added by system updates do not appear blank.
 enum Category {
     static let order = ["Landscapes", "Cities", "Underwater", "Space", "Mac"]
 
@@ -11,10 +11,10 @@ enum Category {
     }
 }
 
-/// 壁纸选择器：156 张系统 aerial 的缩略图网格，外加本地图片。
+/// Wallpaper picker: a thumbnail grid of 156 system aerials, plus local images.
 ///
-/// 缩略图全部已缓存在本地（`aerials/thumbnails/`），所以网格是秒开的；
-/// 未下载的那些照样能选，系统会自己去拉视频，这里只把它标出来。
+/// All thumbnails are cached locally in `aerials/thumbnails/`, so the grid opens immediately.
+/// Undownloaded aerials remain selectable; macOS downloads their videos, while this view only marks them.
 struct WallpaperPicker: View {
     @Environment(AppModel.self) private var model
     let slotID: UUID
@@ -37,7 +37,7 @@ struct WallpaperPicker: View {
         }
     }
 
-    // MARK: - 筛选
+    // MARK: - Filtering
 
     private var search: some View {
         HStack(spacing: 6) {
@@ -75,7 +75,7 @@ struct WallpaperPicker: View {
             .padding(.horizontal, Panel.inset)
         }
         .scrollIndicators(.never)
-        // 两端渐隐：胶囊排不下时是横向滚动的，硬裁一半的「Mac」看着像排版坏了。
+        // Fade both ends of the horizontally scrolling chips; a hard-clipped "Mac" looks like broken layout.
         .mask {
             HStack(spacing: 0) {
                 LinearGradient(colors: [.clear, .black], startPoint: .leading, endPoint: .trailing)
@@ -121,7 +121,7 @@ struct WallpaperPicker: View {
         }
     }
 
-    // MARK: - 网格
+    // MARK: - Grid
 
     private var grid: some View {
         ScrollView {
@@ -138,8 +138,9 @@ struct WallpaperPicker: View {
             }
             .padding(.horizontal, Panel.rowInset)
             .padding(.vertical, 8)
+            .background(VerticalOnlyScroll())
         }
-        // 156 张，网格固定铺满：翻分类、搜关键词时面板不该跟着一跳一跳。
+        // Keep the 156-item grid at full height so category and search changes do not resize the panel.
         .frame(height: 330)
     }
 
@@ -150,8 +151,8 @@ struct WallpaperPicker: View {
         }
     }
 
-    /// 网格里的一格。悬停时名字转正色、描边加深 —— 156 格里鼠标在哪一格得看得出来。
-    /// 单独成一个视图是因为悬停是每格自己的 `@State`，放在父视图里 156 个布尔没法管。
+    /// A grid cell. Hover restores the name's primary color and darkens its border to locate the pointer among 156 items.
+    /// Each cell owns its hover `@State`; managing 156 booleans in the parent would be unwieldy.
     private struct GridCell: View {
         let asset: AerialAsset
         let selected: Bool
@@ -163,7 +164,7 @@ struct WallpaperPicker: View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 3) {
                 Thumbnail(url: asset.thumbnailURL, size: CGSize(width: 104, height: 64), corner: 6)
-                    // 未下载的压暗一点。156 张里绝大多数都没下载，压太狠整个网格都是灰的。
+                    // Dim undownloaded items only slightly: most of the 156 are undownloaded, so stronger dimming grays out the grid.
                     .opacity(asset.isDownloaded ? 1 : 0.7)
                     .overlay(alignment: .topTrailing) {
                         if selected {
@@ -205,11 +206,11 @@ struct WallpaperPicker: View {
         if let size = asset.sizeMB {
             return L10n.t("picker.tooltip.downloaded", asset.name, size)
         }
-        // 未下载的拿不到确切体积（manifest 里没有这一项），给个量级就够决策了。
+        // The manifest omits undownloaded sizes; an order-of-magnitude estimate is enough to inform the choice.
         return L10n.t("picker.tooltip.notDownloaded", asset.name)
     }
 
-    // MARK: - 底部
+    // MARK: - Footer
 
     private var footer: some View {
         HStack(spacing: 8) {
@@ -227,14 +228,14 @@ struct WallpaperPicker: View {
 
     // MARK: -
 
-    /// 只改草稿，回时段页等用户点「应用」。
+    /// Update only the draft; return to the slot page and wait for Apply.
     private func choose(_ wallpaper: Wallpaper) {
         model.editDraft { $0.wallpaper = wallpaper }
         open(.slot(slotID))
     }
 
-    /// 面板会在打开系统对话框时收起（菜单栏面板一失焦就关），选完时面板已经不在了。
-    /// 草稿活在 `AppModel` 里不受影响，面板再打开时 `PanelRoot` 会回到这一段继续编辑。
+    /// Opening a system dialog closes the menu bar panel on focus loss, so it is gone when selection finishes.
+    /// The draft survives in `AppModel`; `PanelRoot` returns to this slot for editing when the panel reopens.
     private func chooseLocalImage() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image]

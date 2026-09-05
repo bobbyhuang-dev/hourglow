@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// 设置页：开机自启 + 更新 + 地区入口。地区本身在「选择地区」那一页。
+/// Settings: launch at login, updates, and a link to the separate location page.
 ///
-/// 这两件事都不是「每天要动」的，所以不占时间轴的版面，收在 ⋯ 里；但它们又都会影响
-/// 调度对不对（没坐标日出日落整段被跳过、不自启就得每次自己开），所以也不能藏太深 ——
-/// 缺坐标时时间轴上那条提示条本身就是进来的入口。
+/// Startup and location are not daily controls, so they live in the ⋯ menu rather than on the timeline.
+/// Both affect scheduling (solar slots need coordinates; without login startup the app must be opened manually),
+/// so keep them discoverable: the timeline's missing-coordinate notice is itself an entry point.
 ///
-/// 与时段页不同，这里的改动**即时生效**：一个开关、一个坐标，都是单次的动作，
-/// 没有「一组改动一起应用」的语义，草稿反而多此一举。
+/// Unlike the slot editor, these changes **take effect immediately**. Each toggle or coordinate change
+/// is a single action, not part of a batch to apply together; a draft would add needless complexity.
 struct SettingsPage: View {
     @Environment(AppModel.self) private var model
     var open: (Page) -> Void
@@ -21,7 +21,7 @@ struct SettingsPage: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    // 语言排第一：看不懂当前语言的人，要找的就是这一栏。
+                    // Language comes first: users who cannot read the interface need to find this section.
                     language
                     startup
                     updates
@@ -32,16 +32,17 @@ struct SettingsPage: View {
                 }
                 .padding(Panel.inset)
                 .measureHeight(into: $contentHeight)
+                .background(VerticalOnlyScroll())
             }
             .frame(height: min(contentHeight, Panel.height))
         }
         .onAppear { model.refreshSettings() }
     }
 
-    // MARK: - 语言
+    // MARK: - Language
 
-    /// 选项里的语言名永远按母语显示（「简体中文」「English」），不跟着当前界面语言翻译 ——
-    /// 会来动这一栏的人，多半正看不懂界面上的字。
+    /// Always show language names in their native language, not the current interface language.
+    /// Users changing this setting may not be able to read the rest of the interface.
     private var language: some View {
         PanelSection(title: L10n.t("settings.section.language")) {
             HStack(spacing: 10) {
@@ -62,13 +63,13 @@ struct SettingsPage: View {
                 .pickerStyle(.menu)
                 .labelsHidden()
                 .controlSize(.small)
-                // `NSPopUpButton` 按最宽的那一项定宽，换语言时它不会忽宽忽窄。
+                // `NSPopUpButton` sizes to its widest item, keeping width stable across language changes.
                 .fixedSize()
             }
         }
     }
 
-    // MARK: - 更新
+    // MARK: - Updates
 
     private var updates: some View {
         PanelSection(title: L10n.t("settings.section.update")) {
@@ -116,7 +117,7 @@ struct SettingsPage: View {
                 }
             }
 
-            // 错误中的恢复时间不能被按钮挤掉，也不能被两行截断。
+            // Do not let the button squeeze out the error's recovery time or truncate it to two lines.
             if updateFailed {
                 Text(updateDetail)
                     .font(Panel.Font.secondary)
@@ -154,7 +155,7 @@ struct SettingsPage: View {
         return false
     }
 
-    // MARK: - 启动
+    // MARK: - Startup
 
     private var startup: some View {
         PanelSection(title: L10n.t("settings.section.startup")) {
@@ -192,13 +193,13 @@ struct SettingsPage: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             } else {
-                // 从 build/ 里直接跑的裸二进制没有可注册的 bundle。
+                // A bare binary run from build/ has no bundle to register.
                 Text(L10n.t("settings.launchAtLogin.unavailable"))
                     .font(Panel.Font.secondary)
                     .foregroundStyle(.secondary)
             }
 
-            // M2 那条 LaunchAgent 与 app 自启是两份常驻，同时开着不出错但没必要。
+            // The M2 LaunchAgent and app login startup are separate residents; running both works but is redundant.
             if model.agentInstalled {
                 Divider()
                 HStack(spacing: 10) {
@@ -215,9 +216,9 @@ struct SettingsPage: View {
         }
     }
 
-    // MARK: - 地区
+    // MARK: - Location
 
-    /// 地区是单独一页。设置里只留一行入口：现在在哪儿、今天日出日落几点。
+    /// Location has its own page. Settings only links to it, showing the current place and today's solar times.
     private var location: some View {
         PanelSection(title: L10n.t("settings.section.place")) {
             Button { open(.place) } label: {
@@ -251,7 +252,7 @@ struct SettingsPage: View {
         return L10n.t("place.sun.today", Clock.string(times.sunrise), Clock.string(times.sunset))
     }
 
-    // MARK: - 壁纸组
+    // MARK: - Wallpaper sets
 
     private var sceneImport: some View {
         PanelSection(title: L10n.t("settings.section.scene")) {
@@ -271,10 +272,10 @@ struct SettingsPage: View {
         }
     }
 
-    // MARK: - 帮助
+    // MARK: - Help
 
-    /// 新手指引是一扇独立的窗（理由见 `OnboardingView`），它只在全新安装时自动出现 ——
-    /// 老用户和后悔跳过的人得有个地方找回来，就是这一行。
+    /// Onboarding uses a standalone window (see `OnboardingView`) and opens automatically only on a fresh install.
+    /// This row lets existing users and those who skipped it find it again.
     private var help: some View {
         PanelSection(title: L10n.t("settings.section.help")) {
             HStack(spacing: 10) {
@@ -290,7 +291,7 @@ struct SettingsPage: View {
         }
     }
 
-    // MARK: - 关于
+    // MARK: - About
 
     private var about: some View {
         HStack(spacing: 6) {
@@ -308,7 +309,7 @@ struct SettingsPage: View {
 }
 
 extension Bundle {
-    /// 裸二进制（panelshot）没有 Info.plist，给个占位，别在界面上留空。
+    /// Bare binaries such as panelshot have no Info.plist; show a placeholder rather than leaving the interface blank.
     var shortVersion: String {
         object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }

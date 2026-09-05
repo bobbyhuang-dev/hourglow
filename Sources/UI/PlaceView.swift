@@ -1,10 +1,10 @@
 import SwiftUI
 
-/// 城市搜索的共用状态：离线表立刻出结果，联网的地理编码去抖 400 毫秒后补进来。
+/// Shared city-search state: immediate offline results, supplemented by geocoding after a 400 ms debounce.
 ///
-/// 地点页和新手指引的版式完全不同，但「同一个词搜出来的是哪几个城市」必须是同一套
-/// 逻辑 —— 尤其是去重：离线表和地理编码经常给出同一个城市，键是坐标而不是名字
-/// （「深圳」和「Shenzhen」是同一处）。
+/// The location page and onboarding have different layouts, but the same query must use the same
+/// search logic, especially deduplication: offline and geocoded results often describe the same city.
+/// Key by coordinates, not names, since localized and English names can identify the same place.
 @MainActor
 @Observable
 final class CitySearch {
@@ -13,11 +13,12 @@ final class CitySearch {
 
     @ObservationIgnored private var task: Task<Void, Never>?
 
-    /// 当前该显示的城市。离线表在前，联网结果补在后面。
-    func results(for query: String) -> [City] {
+    /// Cities to display: offline matches first, then remote results.
+    /// `near` only affects an empty query, sorting nearby cities by distance.
+    func results(for query: String, near: Coordinate? = nil) -> [City] {
         var seen = Set<String>()
         var result: [City] = []
-        for city in Cities.search(query) + remote {
+        for city in Cities.search(query, near: near) + remote {
             let key = String(format: "%.2f,%.2f",
                              city.coordinate.latitude, city.coordinate.longitude)
             if seen.insert(key).inserted { result.append(city) }
@@ -25,7 +26,7 @@ final class CitySearch {
         return result
     }
 
-    /// 输入框每变一次调一次。一个字母就发一次网络请求没有意义，所以两字起、去抖。
+    /// Call on every input change. Require two characters and debounce rather than requesting each keystroke.
     func update(query: String) {
         task?.cancel()
         remote = []
@@ -52,11 +53,11 @@ final class CitySearch {
     }
 }
 
-/// 选地区：常用城市离线可搜，其余走地理编码。
+/// Choose a location: common cities are searchable offline; others use geocoding.
 ///
-/// 中国全境都是 `Asia/Shanghai`，时区推断永远落在上海，深圳 / 张家界的日出会差
-/// 十几到四十分钟。日出日落按这个点算，所以地区是调度的一部分，不是设置里的附录。
-/// 选完城市直接写进 `schedule.location`；菜单栏面板失焦会收起，不依赖它还开着。
+/// All of China uses `Asia/Shanghai`, so time-zone inference always picks Shanghai; sunrise in Shenzhen
+/// or Zhangjiajie can differ by over ten to forty minutes. Location determines solar scheduling, not just preferences.
+/// Write selections directly to `schedule.location`; the menu bar panel closes on focus loss, so do not depend on it staying open.
 struct PlacePage: View {
     @Environment(AppModel.self) private var model
     var open: (Page) -> Void
@@ -84,9 +85,9 @@ struct PlacePage: View {
         .onChange(of: model.schedule.location) { seedFields() }
     }
 
-    // MARK: - 当前
+    // MARK: - Current location
 
-    /// 先报「算出来的今天」，再让人改地方。数字对不对，本地人一眼知道。
+    /// Show today's calculated times before offering location changes; locals can spot incorrect times immediately.
     private var current: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -123,7 +124,7 @@ struct PlacePage: View {
         return L10n.t("place.sun.today", Clock.string(times.sunrise), Clock.string(times.sunset))
     }
 
-    /// 高纬夏天这两个时刻可能不存在，此时天光分段按名义时长兜底，如实说清楚。
+    /// These times can be absent in high-latitude summers; explain the nominal-duration daylight fallback honestly.
     private var twilightLine: String? {
         guard let events = model.solarEventsToday else { return nil }
         let dawn = events.nauticalDawn.map(Clock.string) ?? L10n.t("common.none")
@@ -135,7 +136,7 @@ struct PlacePage: View {
     private var locatingHint: some View {
         switch model.locating {
         case .denied:
-            // 被拒之后系统不会再弹第二次框，只能自己去开。说了在哪儿改，就得能点过去。
+            // After denial, macOS will not prompt again. Link directly to the settings where permission can be restored.
             HStack(spacing: 6) {
                 Text(L10n.t("place.denied"))
                     .font(Panel.Font.secondary)
@@ -155,7 +156,7 @@ struct PlacePage: View {
         }
     }
 
-    // MARK: - 搜索
+    // MARK: - Search
 
     private var search: some View {
         HStack(spacing: 6) {
@@ -188,7 +189,7 @@ struct PlacePage: View {
         .padding(.bottom, 8)
     }
 
-    // MARK: - 来源
+    // MARK: - Sources
 
     private var sources: some View {
         VStack(spacing: 2) {
@@ -235,7 +236,7 @@ struct PlacePage: View {
         .padding(.bottom, 6)
     }
 
-    // MARK: - 列表
+    // MARK: - List
 
     private struct Section: Identifiable {
         var id: String
@@ -243,21 +244,15 @@ struct PlacePage: View {
         var cities: [City]
     }
 
+    /// An empty query shows one nearby section sorted by distance from the current coordinate.
+    /// The old China/international split always put China first, reflecting the developer's location rather than the user's.
     private var sections: [Section] {
-        let items = finder.results(for: query)
-        if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return [Section(id: "hits", title: L10n.t("place.section.results"), cities: items)]
-        }
-        let china = items.filter(\.isChina)
-        let world = items.filter { !$0.isChina }
-        var result: [Section] = []
-        if !china.isEmpty {
-            result.append(Section(id: "cn", title: L10n.t("place.section.china"), cities: china))
-        }
-        if !world.isEmpty {
-            result.append(Section(id: "world", title: L10n.t("place.section.world"), cities: world))
-        }
-        return result
+        let items = finder.results(for: query, near: model.schedule.effectiveCoordinate)
+        guard !items.isEmpty else { return [] }
+        let typed = !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return [Section(id: typed ? "hits" : "nearby",
+                        title: L10n.t(typed ? "place.section.results" : "place.section.nearby"),
+                        cities: items)]
     }
 
     private var list: some View {
@@ -274,7 +269,7 @@ struct PlacePage: View {
                         row(city)
                     }
                 }
-                if finder.results(for: query).isEmpty, !query.isEmpty, !finder.searching {
+                if sections.isEmpty, !query.isEmpty, !finder.searching {
                     Text(L10n.t("place.notFound"))
                         .font(Panel.Font.control)
                         .foregroundStyle(.secondary)
@@ -284,6 +279,7 @@ struct PlacePage: View {
             }
             .padding(.horizontal, Panel.rowInset)
             .padding(.bottom, 6)
+            .background(VerticalOnlyScroll())
         }
     }
 
@@ -323,7 +319,7 @@ struct PlacePage: View {
             && abs(current.longitude - city.coordinate.longitude) < 0.02
     }
 
-    // MARK: - 手填
+    // MARK: - Manual coordinates
 
     private var coordinates: some View {
         HStack(spacing: 6) {
@@ -336,8 +332,8 @@ struct PlacePage: View {
                 if let typed { model.setManualLocation(typed) }
             }
             .controlSize(.small)
-            // 只比坐标：`Coordinate` 的相等还包含城市名，拿它判断会让「和当前城市
-            // 一模一样的经纬度」也可点，点下去把城市名抹成一串裸数字。
+            // Compare coordinates only: `Coordinate` equality also includes the city name.
+            // Otherwise identical coordinates enable this action and replace the city name with raw numbers.
             .disabled(typed == nil || sameSpotAsCurrent)
         }
         .padding(.horizontal, Panel.inset)

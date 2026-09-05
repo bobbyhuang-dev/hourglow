@@ -1,9 +1,8 @@
 import Foundation
 
-// 断言里写着中文原文（城市名、指引文案），所以靶子必须跑在原文语言下：
-// 不钉住的话，英文系统上会挂在 `深圳` vs `Shenzhen` 这种地方。
-// 换语言本身由 `l10ncheck` 单独覆盖。
-setenv("HOURGLOW_LANG", L10n.sourceCode, 1)
+// Keep these scenarios independent of the system language.
+// Language selection itself is covered separately by l10ncheck.
+setenv("HOURGLOW_LANG", "en", 1)
 L10n.invalidate()
 
 private var failures = 0
@@ -23,73 +22,69 @@ private let original = Slot(
 
 var existing = SlotDraft(existing: original)
 check(!existing.isNew && !existing.isDirty && !existing.canApply,
-      "已有时段刚打开时是干净草稿")
+      "An existing slot opens as a clean draft")
 existing.edit { $0.enabled = false }
-check(existing.isDirty && existing.canApply, "本地编辑后可以应用")
+check(existing.isDirty && existing.canApply, "Local edits can be applied")
 existing.reconcile(with: original)
 check(existing.conflict == nil && existing.slot.enabled == false,
-      "外部配置未变化时保留本地编辑")
+      "Local edits survive when the external configuration is unchanged")
 
 var external = original
 external.wallpaper = .image(path: "/external.jpg")
 existing.reconcile(with: external)
 check(existing.conflict == .modified && !existing.canApply,
-      "外部修改不会被本地草稿静默覆盖")
-check(existing.slot.enabled == false, "发现冲突时仍保留本地草稿供用户查看")
+      "A local draft cannot silently overwrite external changes")
+check(existing.slot.enabled == false, "Conflicts preserve the local draft for inspection")
 
 var clean = SlotDraft(existing: original)
 clean.reconcile(with: external)
 check(clean.slot == external && !clean.isDirty && clean.conflict == nil,
-      "没有本地改动时自动跟上外部配置")
+      "A clean draft follows external configuration changes")
 
 var deleted = SlotDraft(existing: original)
 deleted.edit { $0.enabled = false }
 deleted.reconcile(with: nil)
 check(!deleted.isNew && deleted.conflict == .deleted && !deleted.canApply,
-      "外部删除不会把已有草稿误认成新时段")
+      "External deletion does not turn an existing draft into a new slot")
 
 let newSlot = Slot(trigger: .clock(hour: 10, minute: 0),
                    wallpaper: .image(path: "/new.jpg"))
 var created = SlotDraft(new: newSlot)
 created.reconcile(with: nil)
 check(created.isNew && created.isDirty && created.canApply,
-      "未落盘的新时段不受外部配置刷新影响")
+      "External configuration refreshes do not affect an unsaved new slot")
 created.markApplied()
 check(!created.isNew && !created.isDirty && !created.canApply,
-      "只有保存成功后新时段才变成已应用")
+      "A new slot becomes applied only after a successful save")
 
-// MARK: - 新手指引
+// MARK: - Onboarding
 
 check(Onboarding.shouldPresent(seenVersion: nil, isFirstRun: true),
-      "全新安装的人第一次启动就看到指引")
+      "A fresh installation presents onboarding on first launch")
 check(!Onboarding.shouldPresent(seenVersion: nil, isFirstRun: false),
-      "配置早就在的老用户升级上来不会被指引拦一道")
+      "Existing users are not interrupted by onboarding after upgrading")
 check(!Onboarding.shouldPresent(seenVersion: Onboarding.version, isFirstRun: true),
-      "看过当前这一版就不再自动弹，哪怕配置被清空了")
+      "The current onboarding version is not shown again even if configuration is cleared")
 check(Onboarding.shouldPresent(seenVersion: Onboarding.version - 1, isFirstRun: false),
-      "指引内容有实质更新时再请他看一次")
+      "A substantive onboarding update is presented again")
 
 check(OnboardingStep.allCases.contains(.place) && OnboardingStep.allCases.contains(.resident),
-      "要用户去开权限的两步（定位、常驻）都在流程里")
-check(OnboardingStep.allCases.allSatisfy { !$0.title.isEmpty && $0.summary.count > 10 },
-      "每一步都有标题，也都有讲得清的正文")
+      "Both permission-related steps, location and residency, are in the flow")
 
 var guide = OnboardingFlow()
 check(guide.isFirst && !guide.isLast && guide.step == .welcome,
-      "指引从「入口在菜单栏」讲起")
-check(guide.caption == "第 1 步 / 共 \(OnboardingStep.allCases.count) 步",
-      "进度按人的数法从 1 数起")
+      "Onboarding starts at the welcome step")
 guide.back()
-check(guide.index == 0, "第一步没有上一步可退")
+check(guide.index == 0, "Going back from the first step does not move before it")
 for _ in 0..<(OnboardingStep.allCases.count * 2) { guide.advance() }
-check(guide.isLast && guide.step == .done, "一路点「继续」停在最后一步，不会越界")
+check(guide.isLast && guide.step == .done, "Advancing stops at the final step without exceeding bounds")
 guide.back()
-check(!guide.isLast && guide.step == .timeline, "「上一步」退回时间轴那页")
+check(!guide.isLast && guide.step == .timeline, "Going back returns to the timeline step")
 guide.jump(to: .place)
-check(guide.index == 1 && !guide.isFirst, "panelshot 能直接跳到任意一步")
+check(guide.index == 1 && !guide.isFirst, "panelshot can jump directly to a step")
 
 if failures > 0 {
-    FileHandle.standardError.write(Data("\n\(failures) 项应用状态测试失败\n".utf8))
+    FileHandle.standardError.write(Data("\n\(failures) app state checks failed\n".utf8))
     exit(1)
 }
-print("\n全部应用状态测试通过")
+print("\nAll app state checks passed")

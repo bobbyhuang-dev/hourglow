@@ -1,19 +1,19 @@
 import Foundation
 
-/// 盯着 `schedule.json`，用户手改后引擎立刻跟上。
+/// Watches schedule.json so the engine immediately follows manual edits.
 ///
-/// 目录和文件本身**都要盯**，两种写法各漏一半：
+/// **Watch both the directory and the file**: each alone misses one kind of write.
 ///
-/// - `Store.save` 用原子写（临时文件 + rename），文件的 inode 会被换掉。
-///   只盯文件的话，第一次保存之后 fd 指向的就是个已被顶掉的旧 inode，再也收不到事件。
-/// - 手改（`vim` 的某些配置、`echo >`、脚本里的 `open(path, "w")`）是原地截断重写，
-///   目录内容没变，目录级的 vnode 事件压根不会产生 —— 实测就是这么漏掉一次配置变更的。
+/// - Store.save writes atomically (temporary file + rename), replacing the inode. A file-only watcher
+///   keeps its descriptor on the displaced inode after the first save and receives no further events.
+/// - Manual edits (some vim configurations, echo >, or open(path, "w") in scripts) truncate and rewrite
+///   in place. The directory is unchanged, so no directory vnode event occurs; this has caused missed edits.
 ///
-/// 所以：目录 source 负责接住「文件被换掉」，文件 source 负责接住「原地改内容」，
-/// 每次检查后重新挂一次文件 source，保证它始终盯在当前那个 inode 上。
+/// The directory source catches replacements; the file source catches in-place content changes.
+/// Re-arm the file source after every check to keep watching the current inode.
 ///
-/// 同一个目录里还有引擎自己写的 `state.json`，所以每次事件都要比对 `schedule.json`
-/// 的实际内容 —— 否则「求值 → 存状态 → 收到事件 → 再求值」会自激成死循环。
+/// The engine also writes state.json in this directory, so compare schedule.json's actual contents
+/// on every event to prevent an endless evaluate → save state → event → evaluate feedback loop.
 final class ConfigWatcher {
 
     private let fileURL: URL
@@ -26,7 +26,7 @@ final class ConfigWatcher {
     private var generation = 0
     private var isStarted = false
 
-    /// 文件系统事件常常成串到达（一次保存可能触发好几次），合并一下再处理。
+    /// Filesystem events arrive in bursts, often several per save; coalesce them before handling.
     private let debounce: TimeInterval = 0.25
 
     init(fileURL: URL, onChange: @escaping () -> Void) {
@@ -50,7 +50,7 @@ final class ConfigWatcher {
 
     func stop() {
         isStarted = false
-        // 让已经排进 main queue 的 debounce 闭包失效，保证 stop 返回后不再回调。
+        // Invalidate debounce closures already on the main queue so no callback occurs after stop returns.
         generation += 1
         directorySource?.cancel()
         directorySource = nil
@@ -58,8 +58,8 @@ final class ConfigWatcher {
         fileSource = nil
     }
 
-    /// 引擎自己保存配置后调用，免得把自己的写入当成外部改动再求值一遍。
-    /// 原子写换过 inode，顺手重新挂一次文件 source。
+    /// Called after the engine saves configuration to avoid evaluating its own write as an external change.
+    /// Re-arm the file source because the atomic write replaced the inode.
     func acknowledgeSelfWrite() {
         lastContents = try? Data(contentsOf: fileURL)
         armFileSource()
@@ -70,7 +70,7 @@ final class ConfigWatcher {
     private func armFileSource() {
         guard isStarted else { return }
         fileSource?.cancel()
-        // 文件不存在（还没写过配置）时挂不上，交给目录 source 接住创建事件。
+        // If the file does not exist yet, the directory source will catch its creation.
         fileSource = makeSource(path: fileURL.path,
                                 mask: [.write, .extend, .delete, .rename, .revoke])
     }
@@ -83,8 +83,8 @@ final class ConfigWatcher {
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: descriptor, eventMask: mask, queue: .main)
         source.setEventHandler { [weak self] in self?.scheduleCheck() }
-        // 关掉的必须是这一代 source 自己捕获的 descriptor：重新挂载时新旧 source
-        // 会短暂并存，按成员变量去关会把新的那个一起关掉。
+        // Close the descriptor captured by this source: old and new sources briefly coexist during
+        // re-arming, so closing through a member variable could accidentally close the new descriptor.
         source.setCancelHandler { close(descriptor) }
         source.resume()
         return source
@@ -95,7 +95,7 @@ final class ConfigWatcher {
         let mine = generation
         DispatchQueue.main.asyncAfter(deadline: .now() + debounce) { [weak self] in
             guard let self, self.isStarted, self.generation == mine else { return }
-            // 文件可能刚被 rename 顶掉，重新挂到当前 inode 上。
+            // A rename may have replaced the file; reattach to the current inode.
             self.armFileSource()
 
             let current = try? Data(contentsOf: self.fileURL)

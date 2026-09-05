@@ -1,9 +1,9 @@
 import Foundation
 
-/// 一次时段编辑会话的纯状态。
+/// Pure state for a single slot-editing session.
 ///
-/// 把它从 `AppModel` 拆出来，是为了把两个容易漏掉的边界写成离线测试：
-/// 保存前不能冒充已经应用；编辑期间外部配置变更不能被草稿静默覆盖。
+/// Extracted from `AppModel` to test two easily missed boundaries offline:
+/// drafts must not appear applied before saving, or silently overwrite external changes made during editing.
 struct SlotDraft {
     enum Conflict: Equatable {
         case modified
@@ -38,7 +38,7 @@ struct SlotDraft {
         transform(&slot)
     }
 
-    /// 配置被另一个进程刷新时，把干净草稿跟上；有本地改动时保留草稿并标冲突。
+    /// Follow external configuration changes for clean drafts; preserve local edits and flag conflicts otherwise.
     mutating func reconcile(with current: Slot?) {
         guard !isNew else { return }
         guard let current else {
@@ -62,7 +62,7 @@ struct SlotDraft {
         conflict = nil
     }
 
-    /// 只应在持久化成功后调用。
+    /// Call only after persistence succeeds.
     mutating func markApplied() {
         original = slot
         isNew = false

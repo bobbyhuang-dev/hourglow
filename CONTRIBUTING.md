@@ -110,9 +110,10 @@ If the timeline's look changed, regenerate the README demo GIF and the share car
 Every user-visible string lives in `Sources/L10n/`, and a language is one Swift file holding
 one dictionary. Nothing else in the tree needs to change.
 
-`Sources/L10n/Catalogs/zh-Hans.swift` is the **source text**: new strings are written there
-first, and `l10ncheck` measures every other language against it. English
-(`Catalogs/en.swift`) is the fallback when the system language matches nothing we have.
+`Sources/L10n/Catalogs/en.swift` is the **source text**: write new strings in English there
+first, then translate them; `l10ncheck` measures every other language against it. `sourceCode`
+defines completeness and missing-text fallback, while `defaultCode` selects the language when
+no requested language matches. Both are `en`, but these are distinct roles and settings.
 
 ### 1. Copy the English catalog
 
@@ -169,9 +170,9 @@ speaks your language too.
 ./build/l10ncheck Sources
 ```
 
-`l10ncheck` fails on a key that is missing, empty, or not in the source catalog; on a
+`l10ncheck` fails on a required key that is missing, empty, or not in the source catalog; on a
 `%` placeholder that does not match the source; and on a key used in code but absent from the
-source table. Then look at it for real:
+source table. Language-dependent `.one` forms are optional. Then look at it for real:
 
 ```bash
 HOURGLOW_LANG=fr ./build/hourglow-cli list
@@ -192,11 +193,12 @@ the CLI alike, so you can look at a language without switching your Mac to it.
   placeholder is *required* to number them, because word order changes between languages and
   the unnumbered form would then pull the wrong argument. Mixing `%@` and `%1$@` in one string
   is undefined behaviour; `l10ncheck` rejects all three mistakes.
-- **Plurals.** Chinese has none, so the source text has no plural forms. If your language needs
-  one, add a `<key>.one` entry next to the key and it is used when the count is exactly 1 —
-  see `"cli.import.done"` / `"cli.import.done.one"` in `en.swift`. This is optional and only
-  covers the 1-vs-many split; a language with a richer plural system should say so in an issue
-  rather than work around it.
+- **Plurals.** If your language needs a singular form, keep or add a `<key>.one` entry next to
+  the base key; it is used when the count is exactly 1. See `"cli.import.done"` /
+  `"cli.import.done.one"` in the English source catalog. Chinese does not need these entries,
+  even though English includes them. A translated base entry without `.one` is used for all
+  counts rather than falling back to the English singular. This optional mechanism covers
+  only the 1-vs-many split; raise an issue for a richer plural system rather than work around it.
 - **`cli.help` is a multi-line block, and its columns are aligned by hand.** Keep the command
   names as they are — they are what the user types — and align the descriptions after them.
 - **Terminal column widths.** The CLI pads its columns by display width and measures them from
@@ -206,18 +208,20 @@ the CLI alike, so you can look at a language without switching your Mac to it.
   back to the source text, so nothing breaks, but `l10ncheck` — and therefore CI — will not go
   green until the table is complete.
 
-The two check binaries that assert on Chinese text (`modelcheck`, `appcheck`) pin
-`HOURGLOW_LANG` to the source language at the top of the file. Leave that alone.
+The two check binaries with language-dependent scenarios (`modelcheck`, `appcheck`) explicitly
+pin `HOURGLOW_LANG` to `en` and invalidate the language cache before those scenarios. Keep that
+setup so stored and system preferences cannot change their results; `l10ncheck` tests language
+selection and switching.
 
 ## Conventions
 
-**Comments and documentation are written in Chinese.** The only exceptions are the files
-aimed at outside readers: `README.md`, this file, and `SECURITY.md`. `README.md` and
-`README.zh-CN.md` are a matched pair — if you change one, change the other in the same PR.
+**Comments and developer documentation are written in English.** `README.md` and
+`README.zh-CN.md` remain a matched English/Chinese pair — if you change one, change the other
+in the same PR. Keep Chinese product translations and meaningful Chinese examples/data.
 
 **No user-visible string is written in a view, a command or an error.** Every one of them is a
 key looked up in `Sources/L10n/`, and new strings are written into
-`Catalogs/zh-Hans.swift` — the source text — before being translated. This holds for CLI
+`Catalogs/en.swift` — the English source text — before being translated. This holds for CLI
 output and error messages as much as for the panel. See
 [Adding a language](#adding-a-language).
 
@@ -243,8 +247,7 @@ wallpaper store, and a long list of mistakes already made once. It is worth the 
 
 ## Commits and pull requests
 
-- Write commit messages in the imperative mood. Chinese or English is fine; the existing
-  history is Chinese.
+- Write new commit messages in English, in the imperative mood. Existing history stays as it is.
 - Keep one logical change per commit. Rebase rather than merge to update a branch.
 - In the PR description, say what changed and how you verified it. If you skipped a check,
   say which and why.

@@ -1,25 +1,25 @@
 import AppKit
 import SwiftUI
 
-// 把各个页面画成 PNG（时段页的固定时刻那一栏版式不同，另出一张）。菜单栏面板不是普通窗口，screencapture 抓不到它，
-// 改版式时用这个对照：
+// Render each page as a PNG (the slot page's fixed-time section has a different layout, so capture it separately).
+// The menu bar panel is not a normal window and screencapture cannot capture it; use this to compare layout changes:
 //
-//   ./build/panelshot [输出目录] [--now 2026-09-04T06:20] [--only timeline] [--appearance dark]
+//   ./build/panelshot [output-directory] [--now 2026-09-04T06:20] [--only timeline] [--appearance dark]
 //
-// `--now` 把面板上的「现在」定格在某一刻（哪一段在跑、下一次几点换、还有多久），
-// 演示 GIF 与分享卡片靠它一天之内出好几张（见 Tools/makedemo.sh）；不带就是真实时钟。
-// `--only` 只抓名字以它开头的那几张（timeline / slot / picker / settings / place / guide），
-// 一次只要一张时省下十几秒。
-// `--appearance light|dark` 钉住外观，不跟系统；演示图里傍晚与夜里那几张面板要跟壁纸一起变暗。
+// `--now` freezes the panel's "now" at a specific instant (active slot, next switch time, and time remaining).
+// Demo GIFs and share cards use it to capture several times within a day (see Tools/makedemo.sh); omit it to use the real clock.
+// `--only` captures only images whose names begin with its value (timeline / slot / picker / settings / place / guide),
+// saving more than ten seconds when only one image is needed.
+// `--appearance light|dark` fixes the appearance instead of following the system; evening and night demo panels darken with the wallpaper.
 //
-// 走的是真窗口 + `cacheDisplay`，不是 `ImageRenderer` —— 后者画不出 ScrollView
-// 里的内容，也画不出 AppKit 撑着的控件（分段控件、时间步进器、输入框、菜单）。
-// 窗口以近乎全透明的方式短暂出现，画完就关掉。
+// Uses a real window + `cacheDisplay`, not `ImageRenderer` — the latter cannot render ScrollView
+// contents or AppKit-backed controls (segmented controls, time steppers, text fields, menus).
+// The window appears briefly, almost fully transparent, then closes after rendering.
 
 @MainActor
 func shoot<V: View>(_ view: V, named name: String, into directory: URL,
                     width: CGFloat = Panel.width) {
-    // 文件名是 "1-timeline"、"6-guide-3" 这种，`--only` 对的是去掉序号后的那一截。
+    // Names look like "1-timeline" or "6-guide-3"; `--only` matches the part after the numeric prefix.
     if let only, !name.drop(while: { $0 != "-" }).dropFirst().hasPrefix(only) { return }
     let content = view
         .environment(AppModel.shared)
@@ -27,7 +27,7 @@ func shoot<V: View>(_ view: V, named name: String, into directory: URL,
         .background(Color(nsColor: .windowBackgroundColor))
 
     let host = NSHostingView(rootView: content)
-    // 各页高度不同（时间轴按时段数收），照它自己的意愿摆。
+    // Pages have different heights (the timeline fits its slot count); use each page's preferred size.
     let fitted = host.fittingSize
     host.frame = NSRect(x: 0, y: 0, width: width,
                         height: max(fitted.height, 120))
@@ -44,8 +44,8 @@ func shoot<V: View>(_ view: V, named name: String, into directory: URL,
 
     defer { window.orderOut(nil) }
 
-    // 抓两轮：第一轮等布局与缩略图的 `.task` 落地，第二轮才是要留下的那张。
-    // 只抓一次的话，异步加载完的图层可能还没合成进来，抓到半张空白。
+    // Capture twice: the first pass lets layout and thumbnail `.task` work settle; keep the second capture.
+    // With only one pass, asynchronously loaded layers may not yet be composited, leaving half the image blank.
     var bitmap: NSBitmapImageRep?
     for wait in [1.2, 0.4] {
         RunLoop.main.run(until: Date().addingTimeInterval(wait))
@@ -55,14 +55,14 @@ func shoot<V: View>(_ view: V, named name: String, into directory: URL,
         bitmap = rep
     }
     guard let bitmap else {
-        print("取不到位图: \(name)"); return
+        print("Could not obtain bitmap: \(name)"); return
     }
     guard let png = bitmap.representation(using: .png, properties: [:]) else {
-        print("编码失败: \(name)"); return
+        print("Encoding failed: \(name)"); return
     }
     let url = directory.appendingPathComponent("\(name).png")
     try? png.write(to: url)
-    print("已写出 \(url.path)")
+    print("Wrote \(url.path)")
 }
 
 var outputPath = "."
@@ -75,24 +75,24 @@ while let argument = arguments.next() {
     case "--update-rate-limit":
         previewUpdateRateLimit = true
     case "--now":
-        guard let value = arguments.next() else { print("--now 需要一个时刻"); exit(2) }
+        guard let value = arguments.next() else { print("--now requires a time"); exit(2) }
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd'T'HH:mm"
         guard let date = formatter.date(from: value) else {
-            print("--now 认不出 \(value)，格式是 2026-09-04T06:20"); exit(2)
+            print("--now cannot parse \(value); use the format 2026-09-04T06:20"); exit(2)
         }
-        // 必须赶在第一次碰 AppModel.shared 之前：它 init 时就会按「现在」求值一次。
+        // Must run before the first access to AppModel.shared: its init immediately resolves using "now".
         AppModel.now = { date }
     case "--only":
-        guard let value = arguments.next() else { print("--only 需要一个名字"); exit(2) }
+        guard let value = arguments.next() else { print("--only requires a name"); exit(2) }
         only = value
     case "--appearance":
-        guard let value = arguments.next() else { print("--appearance 需要 light 或 dark"); exit(2) }
+        guard let value = arguments.next() else { print("--appearance requires light or dark"); exit(2) }
         switch value {
         case "light": appearance = NSAppearance(named: .aqua)
         case "dark":  appearance = NSAppearance(named: .darkAqua)
-        default: print("--appearance 只认 light 或 dark"); exit(2)
+        default: print("--appearance only accepts light or dark"); exit(2)
         }
     default:
         outputPath = argument
@@ -100,7 +100,7 @@ while let argument = arguments.next() {
 }
 let directory = URL(fileURLWithPath: outputPath)
 
-// 只覆盖本进程的参数域，不改用户偏好，也不联网；用来检查长错误和恢复时间是否被截断。
+// Override only this process's argument domain, without changing user preferences or accessing the network; check for truncation of long errors and recovery times.
 if previewUpdateRateLimit {
     let limit = AppUpdater.RateLimit(retryAt: AppModel.now().addingTimeInterval(600), notice: .reset)
     UserDefaults.standard.setVolatileDomain(
@@ -108,19 +108,19 @@ if previewUpdateRateLimit {
         forName: UserDefaults.argumentDomain)
 }
 
-// 顶层代码不是 main actor 隔离的，但它确确实实跑在主线程上。
+// Top-level code is not main-actor isolated, but it does run on the main thread.
 MainActor.assumeIsolated {
     NSApplication.shared.setActivationPolicy(.accessory)
 
     let model = AppModel.shared
     guard let first = model.schedule.slots.first else {
-        print("配置里没有时段，先跑一次 hourglow-cli list"); exit(1)
+        print("No slots in the configuration; run hourglow-cli list first"); exit(1)
     }
 
     shoot(TimelinePage(open: { _ in }), named: "1-timeline", into: directory)
     shoot(SlotPage(slotID: first.id, open: { _ in }), named: "2-slot", into: directory)
-    // 固定时刻那一栏摆的是 AppKit 的时刻输入框，跟日出日落栏完全是两个版式，
-    // 只抓第一个时段很可能一次也看不到它。配置里有的话就多抓一张。
+    // The fixed-time section uses an AppKit time field, with a completely different layout from sunrise/sunset.
+    // Capturing only the first slot may never show it. Take an extra capture if the configuration has one.
     if let clock = model.schedule.slots.first(where: {
         if case .clock = $0.trigger { return true } else { return false }
     }), clock.id != first.id {
@@ -130,8 +130,8 @@ MainActor.assumeIsolated {
     shoot(SettingsPage(open: { _ in }), named: "4-settings", into: directory)
     shoot(PlacePage(open: { _ in }), named: "5-place", into: directory)
 
-    // 新手指引不是面板的一页，宽度也不是 360 —— 它是唯一一扇独立的窗（见
-    // `OnboardingView` 的类型注释）。五步各来一张，改文案或插图时对照。
+    // Onboarding is not a panel page, nor is it 360 wide — it is the only standalone window (see
+    // the type comment on `OnboardingView`). Capture each of the five steps to compare copy or illustration changes.
     for (index, step) in OnboardingStep.allCases.enumerated() {
         shoot(OnboardingView(initialStep: step, finish: {}),
               named: "6-guide-\(index + 1)", into: directory, width: Guide.width)

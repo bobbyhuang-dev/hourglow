@@ -1,8 +1,8 @@
 import Darwin
 import Foundation
 
-/// HourGlow 主进程退出之后再替换 `.app`。这个可执行文件会先从 bundle 复制到缓存目录，
-/// 所以挪走旧 bundle 时不会把自己脚下的文件一起抽掉。
+/// Replace `.app` only after the HourGlow main process exits. This executable is first copied
+/// from the bundle into the cache, so moving the old bundle does not remove its own backing files.
 private let arguments = CommandLine.arguments
 guard arguments.count == 6,
       let parentPID = pid_t(arguments[1]) else {
@@ -15,7 +15,7 @@ private let helper = URL(fileURLWithPath: arguments[4]).standardizedFileURL
 private let stageRoot = URL(fileURLWithPath: arguments[5]).standardizedFileURL
 private let manager = FileManager.default
 private let logURL: URL = {
-    // 测试把日志也指进临时目录，别为了验证 helper 往真实用户日志里留一行。
+    // Tests redirect logs to a temporary directory rather than adding entries to the real user's log.
     if let override = ProcessInfo.processInfo.environment["HOURGLOW_UPDATER_LOG"] {
         return URL(fileURLWithPath: override)
     }
@@ -52,8 +52,8 @@ private func relaunch(_ app: URL) throws {
     }
 }
 
-// 正常退出通常不到一秒；给足 30 秒是为了系统正在注销或应用被卡住时仍能留下明确结果，
-// 而不是 helper 永久挂着。
+// Normal shutdown takes less than a second. Allow 30 seconds for logout or a stuck app,
+// then report a definite outcome instead of leaving the helper waiting forever.
 private let deadline = Date().addingTimeInterval(30)
 while kill(parentPID, 0) == 0, Date() < deadline {
     usleep(100_000)
@@ -88,7 +88,7 @@ do {
     exit(0)
 } catch {
     log(L10n.t("updater.failed", error.localizedDescription))
-    // 新版本挪到位之后如果重启失败，先把它撤掉，再把旧 bundle 原样放回。
+    // If relaunch fails after installing the new version, remove it and restore the old bundle unchanged.
     if newMoved, manager.fileExists(atPath: target.path) { try? manager.removeItem(at: target) }
     if oldMoved, manager.fileExists(atPath: backup.path) {
         try? manager.moveItem(at: backup, to: target)

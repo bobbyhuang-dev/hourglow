@@ -1,18 +1,18 @@
 import Foundation
 
-/// 某一时刻的求值结果。
+/// The evaluation result at a particular instant.
 struct Resolution {
-    /// 当前应当生效的时段。
+    /// The slot that should currently be active.
     var active: Slot
-    /// 它是从什么时候开始生效的。
+    /// When it became active.
     var since: Date
-    /// 下一次切换。全部时段都被禁用时为 nil。
+    /// The next transition. Nil when all slots are disabled.
     var next: (slot: Slot, at: Date)?
 }
 
 extension Trigger {
-    /// 把触发条件解析成 `day` 那一天的绝对时刻。
-    /// solar 类型在缺少坐标、或该日为极昼极夜时返回 nil。
+    /// Resolves the trigger to an absolute instant on `day`.
+    /// Solar triggers return nil without coordinates or during polar day or night.
     func fireDate(on day: Date, coordinate: Coordinate?, calendar: Calendar) -> Date? {
         switch self {
         case .clock(let hour, let minute):
@@ -36,10 +36,10 @@ extension Trigger {
 
 extension Schedule {
 
-    /// 每个时段以其触发偏移反推基准日，再前后各展开一天。
+    /// Backtracks each slot's offset to its base day, then expands one day in either direction.
     ///
-    /// 不能统一围绕 `now` 展开：例如“日出后 48 小时”在今天触发时，
-    /// 对应的太阳事件实际发生在前天。统一只看昨天、今天、明天会漏掉它。
+    /// Expanding around `now` uniformly would miss events: "48 hours after sunrise" firing
+    /// today refers to sunrise two days ago, outside a yesterday/today/tomorrow window.
     func firings(around now: Date,
                  coordinate: Coordinate?,
                  calendar: Calendar = .current) -> [(date: Date, slot: Slot)] {
@@ -60,11 +60,11 @@ extension Schedule {
             let anchor: Date
             switch slot.trigger {
             case .clock, .solarPhase:
-                // solarPhase 的触发点都落在当天窗口内（夜晚可跨过午夜），
-                // 用 now 当锚、前后各展开一天就够接到跨午夜的那几张。
+                // solarPhase triggers fall within the day's windows (night can cross midnight).
+                // Anchoring on now and expanding one day each way includes those overnight images.
                 anchor = now
             case .solar(_, let offsetMinutes):
-                // fireDate 会把相同的偏移加回来；先减掉它，便能找到真正的太阳事件日。
+                // fireDate adds this offset back; subtract it first to find the actual solar event day.
                 anchor = now.addingTimeInterval(-Double(offsetMinutes) * 60)
             }
 
@@ -83,23 +83,23 @@ extension Schedule {
                 }
             }
         }
-        // 用户可以手写两个完全相同的触发时刻。Swift 的 sort 不保证相等元素稳定，
-        // 不补第二排序键的话，重启之后谁胜出可能改变；这里明确让配置中靠后的时段胜出。
+        // Users can specify identical trigger times. Swift's sort is not stable for equal elements;
+        // use configuration order as a tie-breaker so the later slot consistently wins after restarts.
         return result.sorted {
             $0.date == $1.date ? $0.order < $1.order : $0.date < $1.date
         }.map { (date: $0.date, slot: $0.slot) }
     }
 
-    /// 取「不晚于此刻」的最后一次触发；若全都在未来，说明还没轮到今天的第一段，
-    /// 由前一天展开出的条目兜底。
+    /// Takes the last firing no later than now. Before today's first slot,
+    /// the entries expanded from the previous day provide the fallback.
     func resolve(at now: Date = Date(),
                  coordinate: Coordinate? = nil,
                  calendar: Calendar = .current) -> Resolution? {
         let coord = coordinate ?? effectiveCoordinate
         let all = firings(around: now, coordinate: coord, calendar: calendar)
         guard let current = all.last(where: { $0.date <= now }) else { return nil }
-        // 同一时刻有多个时段时，`current` 会取配置中靠后的一个；“下一次切换”也必须
-        // 报同一个胜出者，不能先预告 A，到点后却解析成 B。
+        // At a shared trigger time, `current` picks the later slot in configuration order.
+        // The next transition must report that same winner, not announce A and then resolve to B.
         let upcoming: (date: Date, slot: Slot)?
         if let nextDate = all.first(where: { $0.date > now })?.date {
             upcoming = all.last(where: { $0.date == nextDate })
