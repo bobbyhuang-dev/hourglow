@@ -73,7 +73,7 @@ extension StringCatalog {
         "menu.import": "导入 24 小时壁纸…",
         "menu.checkUpdates": "检查更新…",
         "menu.guide": "新手指引…",
-        "menu.revealConfig": "在访达中显示配置…",
+        "menu.revealConfig": "在访达中显示配置",
         "menu.quit": "退出 HourGlow",
 
         // MARK: Slot editor

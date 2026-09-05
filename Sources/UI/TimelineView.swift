@@ -252,16 +252,19 @@ struct TimelinePage: View {
 
             Spacer(minLength: 0)
 
+            // Grouped by what the item acts on: the schedule, the app, help, then quit.
             Menu {
-                Button(L10n.t("menu.settings")) { open(.settings) }
-                    .keyboardShortcut(",")
                 Button(L10n.t("menu.place")) { open(.place) }
                 Button(L10n.t("menu.import")) { model.importSceneFromPanel() }
                     .disabled(model.importingScene)
+                Divider()
+                Button(L10n.t("menu.settings")) { open(.settings) }
+                    .keyboardShortcut(",")
                 Button(L10n.t("menu.checkUpdates")) {
                     open(.settings)
                     model.checkForUpdates()
                 }
+                Divider()
                 Button(L10n.t("menu.guide")) { OnboardingWindow.shared.present() }
                 Button(L10n.t("menu.revealConfig")) { model.revealConfigInFinder() }
                 Divider()

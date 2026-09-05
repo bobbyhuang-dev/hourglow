@@ -75,7 +75,7 @@ extension StringCatalog {
         "menu.import": "Import a 24-Hour Wallpaper…",
         "menu.checkUpdates": "Check for Updates…",
         "menu.guide": "Getting Started…",
-        "menu.revealConfig": "Show Configuration in Finder…",
+        "menu.revealConfig": "Show Configuration in Finder",
         "menu.quit": "Quit HourGlow",
 
         // MARK: Slot editor
