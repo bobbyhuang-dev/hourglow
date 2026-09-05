@@ -296,11 +296,13 @@ python3 Tests/verify-cli-boundaries.py # invalid input and 23/25-hour daylight-s
 
 ## Status
 
-Stable, and in daily use. **1.5 is the current release** — a today's-daylight bar on the
-timeline, a lighter idle footprint, and an updater that respects GitHub rate limits and moved
-bundles. 1.4 added English alongside the Simplified Chinese it started in, 1.3 a guided first
-launch, 1.2 24 Hour Wallpaper import and solar-phase scheduling, 1.1 built-in updates, and 1.0
-covered the scheduling engine, the menu bar UI, launch at login and precise location.
+Stable, and in daily use. **1.6 is the current release** — a quality-of-life round: an About
+window, automatic location that refreshes daily by default, pages that fade instead of slide,
+even gutters across every scrollable panel, and a tidier ⋯ menu. 1.5 added the today's-daylight
+bar, a lighter idle footprint and a more careful updater, 1.4 English alongside the Simplified
+Chinese it started in, 1.3 a guided first launch, 1.2 24 Hour Wallpaper import and solar-phase
+scheduling, 1.1 built-in updates, and 1.0 covered the scheduling engine, the menu bar UI, launch
+at login and precise location.
 
 Implementation notes live in [CLAUDE.md](CLAUDE.md): the layering, the verified facts about
 the macOS wallpaper store, and the mistakes already made once so they don't get made again.
