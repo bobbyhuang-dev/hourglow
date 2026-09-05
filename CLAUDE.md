@@ -338,6 +338,9 @@ neutral gray rather than inventing sun times. If twilight cannot be computed, us
 before sunrise/after sunset for the gradient endpoints — this is drawing behavior, independent
 of `TimeMap`'s resolution fallback. Pausing dims the entire bar; the status subtitle turns
 orange with a pause icon, without adding a separate paused badge.
+Page navigation **fades the old page out, then the new page in** (`Panel.pageFadeDuration`,
+`pageAnimation`), with no movement. A full-width slide read as fast and dizzy (pages differ in
+height, so the panel resized while content moved), and a crossfade overlapped two pages' text.
 Persistent row backgrounds mean “selected” on macOS, but these rows navigate rather than
 select. Reserve backgrounds for hover/press; mark the currently active slot with a leading
 accent bar (`Panel.nowBar`).

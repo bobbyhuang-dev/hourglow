@@ -8,16 +8,6 @@ enum Page: Equatable {
     case picker(UUID)
     case settings
     case place
-
-    var depth: Int {
-        switch self {
-        case .timeline: return 0
-        case .slot:     return 1
-        case .settings: return 1
-        case .place:    return 1
-        case .picker:   return 2
-        }
-    }
 }
 
 /// The menu bar panel root.
@@ -27,8 +17,6 @@ enum Page: Equatable {
 struct PanelRoot: View {
     @Environment(AppModel.self) private var model
     @State private var page: Page = .timeline
-    /// Navigation direction determines which side the transition enters from.
-    @State private var forward = true
     /// Location can open from the timeline or settings; return to the originating page.
     @State private var placeBack: Page = .timeline
 
@@ -37,19 +25,19 @@ struct PanelRoot: View {
             switch page {
             case .timeline:
                 TimelinePage(open: navigate)
-                    .transition(slide)
+                    .transition(pageTransition)
             case .slot(let id):
                 SlotPage(slotID: id, open: navigate)
-                    .transition(slide)
+                    .transition(pageTransition)
             case .picker(let id):
                 WallpaperPicker(slotID: id, open: navigate)
-                    .transition(slide)
+                    .transition(pageTransition)
             case .settings:
                 SettingsPage(open: navigate)
-                    .transition(slide)
+                    .transition(pageTransition)
             case .place:
                 PlacePage(open: navigate, backPage: placeBack)
-                    .transition(slide)
+                    .transition(pageTransition)
             }
         }
         // Rebuild this subtree when the language changes. Put `.id` on the pages, not `PanelRoot`,
@@ -57,7 +45,7 @@ struct PanelRoot: View {
         .id(model.languageGeneration)
         // Lock width; each page owns its height (timeline fits its slots, picker fills the panel).
         .frame(width: Panel.width)
-        .animation(Panel.animation, value: page)
+        .animation(Panel.pageAnimation, value: page)
         .background(PanelVisibilityObserver { model.setPanelVisible($0) })
         .onAppear {
             // Losing focus closes the panel, including when choosing a local image. Keep unfinished drafts
@@ -89,21 +77,17 @@ struct PanelRoot: View {
 
     /// Returning to the timeline ends editing and discards changes that were not applied.
     private func navigate(_ target: Page) {
-        if target == .place {
-            placeBack = page == .place ? placeBack : page
-            forward = true
-        } else if page == .place {
-            forward = false
-        } else {
-            forward = target.depth > page.depth
-        }
+        if target == .place { placeBack = page == .place ? placeBack : page }
         if target == .timeline { model.endEditing() }
         page = target
     }
 
-    private var slide: AnyTransition {
-        .asymmetric(
-            insertion: .move(edge: forward ? .trailing : .leading).combined(with: .opacity),
-            removal: .move(edge: forward ? .leading : .trailing).combined(with: .opacity))
+    /// Fade out, then fade in: the insertion waits for the removal to finish so pages never overlap.
+    /// See `Panel.pageAnimation` for why this is not a slide or crossfade.
+    private var pageTransition: AnyTransition {
+        let fade = Panel.pageFadeDuration
+        return .asymmetric(
+            insertion: .opacity.animation(.easeIn(duration: fade).delay(fade)),
+            removal: .opacity.animation(.easeOut(duration: fade)))
     }
 }

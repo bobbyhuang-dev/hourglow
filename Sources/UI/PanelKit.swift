@@ -24,6 +24,12 @@ enum Panel {
     /// It indicates status, not selection: use a leading bar, never a full-row accent background.
     static let nowBar = CGSize(width: 3, height: 18)
     static let animation: Animation = .snappy(duration: 0.22)
+    /// Page navigation fades the old page out, then the new page in, with no movement.
+    /// A full-width slide read as fast and dizzy (pages differ in height, so the panel resized
+    /// while 360 pt of content moved), and a crossfade overlapped two pages' text. Sequential
+    /// fades never overlap content; the brief blank moment is the point.
+    static let pageFadeDuration: TimeInterval = 0.07
+    static let pageAnimation: Animation = .easeInOut(duration: pageFadeDuration * 2)
 
     /// Today's daylight bar beneath the status area: a 24-hour strip plus tick labels.
     static let dayBarHeight: CGFloat = 14
