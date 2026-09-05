@@ -68,9 +68,12 @@ func shoot<V: View>(_ view: V, named name: String, into directory: URL,
 var outputPath = "."
 var only: String?
 var appearance: NSAppearance?
+var previewUpdateRateLimit = false
 var arguments = CommandLine.arguments.dropFirst().makeIterator()
 while let argument = arguments.next() {
     switch argument {
+    case "--update-rate-limit":
+        previewUpdateRateLimit = true
     case "--now":
         guard let value = arguments.next() else { print("--now 需要一个时刻"); exit(2) }
         let formatter = DateFormatter()
@@ -96,6 +99,14 @@ while let argument = arguments.next() {
     }
 }
 let directory = URL(fileURLWithPath: outputPath)
+
+// 只覆盖本进程的参数域，不改用户偏好，也不联网；用来检查长错误和恢复时间是否被截断。
+if previewUpdateRateLimit {
+    let limit = AppUpdater.RateLimit(retryAt: AppModel.now().addingTimeInterval(600), notice: .reset)
+    UserDefaults.standard.setVolatileDomain(
+        ["updates.rateLimit": try! JSONEncoder().encode(limit)],
+        forName: UserDefaults.argumentDomain)
+}
 
 // 顶层代码不是 main actor 隔离的，但它确确实实跑在主线程上。
 MainActor.assumeIsolated {

@@ -63,6 +63,7 @@ jobs:
           ./build/appstartupcheck
           ./build/panelvisibilitycheck
           ./build/updatecheck
+          python3 Tests/verify-updater-location.py
           ./build/l10ncheck Sources
           bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 

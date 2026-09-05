@@ -63,7 +63,8 @@ final class AppModel {
     private(set) var languageGeneration = 0
 
     /// 更新与壁纸调度彼此独立；这里仅保存设置页要展示的状态。
-    private(set) var updateState = AppUpdateState.idle
+    private(set) var updateState = AppUpdater.pendingRateLimit()
+        .map { AppUpdateState.failed($0.localizedDescription) } ?? .idle
     private(set) var automaticUpdatesEnabled = AppUpdater.automaticUpdatesEnabled
     private(set) var importingScene = false
 
@@ -465,6 +466,7 @@ final class AppModel {
     // MARK: - 设置：更新
 
     var canUpdate: Bool { AppUpdater.isAvailable }
+    var updateUnavailableReason: String? { AppUpdater.unavailabilityError?.localizedDescription }
 
     var currentVersion: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
@@ -482,11 +484,11 @@ final class AppModel {
         if enabled { checkForUpdates(manual: false, force: true) }
     }
 
-    /// 手动检查总是联网；自动检查由 24 小时间隔限流。手动检查即使发现新版也先展示，
+    /// 手动检查忽略 24 小时间隔，但仍遵守服务器的限流期限。手动检查即使发现新版也先展示，
     /// 等用户点「更新并重启」，避免他正在看设置页时 app 突然消失。
     func checkForUpdates(manual: Bool = true, force: Bool = false) {
-        guard canUpdate else {
-            if manual { updateState = .failed(L10n.t("update.error.notApp")) }
+        if let reason = updateUnavailableReason {
+            if manual { updateState = .failed(reason) }
             return
         }
         guard !updateState.isBusy else { return }

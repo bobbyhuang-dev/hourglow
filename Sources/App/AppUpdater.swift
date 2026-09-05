@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 
 /// GitHub Release 里一份可以安装的正式版。
@@ -42,11 +43,50 @@ enum AppUpdater {
         string: "https://api.github.com/repos/bobbyhuang-dev/hourglow/releases/latest")!
     private static let automaticKey = "updates.automatic"
     private static let lastCheckKey = "updates.lastCheck"
+    private static let rateLimitKey = "updates.rateLimit"
     private static let checkInterval: TimeInterval = 24 * 60 * 60
 
     static var isAvailable: Bool {
-        Bundle.main.bundleURL.pathExtension == "app"
-            && FileManager.default.isExecutableFile(atPath: helperURL.path)
+        unavailabilityError == nil
+    }
+
+    static var unavailabilityError: UpdateError? {
+        do {
+            _ = try installation()
+            return nil
+        } catch let error as UpdateError {
+            return error
+        } catch {
+            return .appUnavailable
+        }
+    }
+
+    /// Bundle.main 会缓存启动时的路径。运行中移动 app 或它的父目录后，必须从内核取得
+    /// 可执行文件的当前位置；检查、复制 helper 与安装目标都用同一份解析结果。
+    static func installation() throws -> (app: URL, helper: URL) {
+        // PROC_PIDPATHINFO_MAXSIZE 是 Swift 无法导入的表达式宏，按 sys/proc_info.h 展开。
+        var path = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(getpid(), &path, UInt32(path.count)) > 0 else {
+            throw UpdateError.appUnavailable
+        }
+        let executable = URL(fileURLWithPath: String(cString: path)).standardizedFileURL
+        let macOS = executable.deletingLastPathComponent()
+        let contents = macOS.deletingLastPathComponent()
+        let app = contents.deletingLastPathComponent()
+        guard macOS.lastPathComponent == "MacOS", contents.lastPathComponent == "Contents",
+              app.pathExtension.lowercased() == "app" else {
+            throw UpdateError.notRunningAsApp
+        }
+        guard let bundle = Bundle(url: app), bundle.bundleIdentifier == bundleIdentifier,
+              bundle.executableURL?.standardizedFileURL == executable,
+              FileManager.default.isExecutableFile(atPath: executable.path) else {
+            throw UpdateError.appUnavailable
+        }
+        let helper = app.appendingPathComponent("Contents/Helpers/HourGlowUpdater")
+        guard FileManager.default.isExecutableFile(atPath: helper.path) else {
+            throw UpdateError.helperUnavailable
+        }
+        return (app, helper)
     }
 
     static var automaticUpdatesEnabled: Bool {
@@ -60,7 +100,7 @@ enum AppUpdater {
     }
 
     static var shouldCheckAutomatically: Bool {
-        guard automaticUpdatesEnabled else { return false }
+        guard automaticUpdatesEnabled, pendingRateLimit() == nil else { return false }
         guard let last = UserDefaults.standard.object(forKey: lastCheckKey) as? Date else {
             return true
         }
@@ -71,9 +111,27 @@ enum AppUpdater {
         UserDefaults.standard.set(Date(), forKey: lastCheckKey)
     }
 
+    // 保留服务器要求的等待期限；重启或连点检查按钮也不能绕过它。
+    static func pendingRateLimit(now: Date = Date(),
+                                 defaults: UserDefaults = .standard) -> RateLimit? {
+        guard let data = defaults.data(forKey: rateLimitKey),
+              let limit = try? JSONDecoder().decode(RateLimit.self, from: data),
+              limit.retryAt > now else { return nil }
+        return limit
+    }
+
+    static func rememberRateLimit(_ limit: RateLimit?, defaults: UserDefaults = .standard) {
+        if let limit, let data = try? JSONEncoder().encode(limit) {
+            defaults.set(data, forKey: rateLimitKey)
+        } else {
+            defaults.removeObject(forKey: rateLimitKey)
+        }
+    }
+
     /// 查询最新正式版。`/releases/latest` 本身就排除了草稿与预发布版，这里仍再守一遍，
     /// 避免服务端语义变化后把测试包推给普通用户。
     static func latestRelease(currentVersion: String) async throws -> AppRelease? {
+        if let limit = pendingRateLimit() { throw UpdateError.rateLimited(limit) }
         var request = URLRequest(url: latestReleaseAPI,
                                  cachePolicy: .reloadIgnoringLocalCacheData,
                                  timeoutInterval: 20)
@@ -82,7 +140,13 @@ enum AppUpdater {
         request.setValue("HourGlow-Updater", forHTTPHeaderField: "User-Agent")
 
         let (data, response) = try await URLSession.shared.data(for: request)
-        try requireSuccess(response)
+        do {
+            try requireSuccess(response, data: data)
+        } catch UpdateError.rateLimited(let limit) {
+            rememberRateLimit(limit)
+            throw UpdateError.rateLimited(limit)
+        }
+        rememberRateLimit(nil)
         return try release(from: data, currentVersion: currentVersion)
     }
 
@@ -103,12 +167,12 @@ enum AppUpdater {
     /// 启动 bundle 里的独立 helper。它先等当前 PID 退出，再替换 bundle 并重新打开；
     /// 这里一旦返回，调用方就应该马上 terminate。
     static func launchInstaller(stagedApp: URL) throws {
-        try requireInstallableLocation()
-        let currentApp = Bundle.main.bundleURL.standardizedFileURL
+        let location = try installation()
+        try requireWritableParent(of: location.app)
 
         let root = try updatesDirectory()
         let copiedHelper = root.appendingPathComponent("HourGlowUpdater-\(UUID().uuidString)")
-        try FileManager.default.copyItem(at: helperURL, to: copiedHelper)
+        try FileManager.default.copyItem(at: location.helper, to: copiedHelper)
         try FileManager.default.setAttributes([.posixPermissions: 0o755],
                                               ofItemAtPath: copiedHelper.path)
 
@@ -119,7 +183,7 @@ enum AppUpdater {
         process.arguments = [
             String(ProcessInfo.processInfo.processIdentifier),
             stagedApp.path,
-            currentApp.path,
+            location.app.path,
             copiedHelper.path,
             stageRoot.path,
         ]
@@ -135,13 +199,11 @@ enum AppUpdater {
 
     /// 下载前先挡住只读位置；否则发现一个新版本以后会每天白下同一份包，最后才知道装不了。
     static func requireInstallableLocation() throws {
-        guard isAvailable else { throw UpdateError.notRunningAsApp }
-        let currentApp = Bundle.main.bundleURL.standardizedFileURL
-        guard currentApp.pathExtension == "app",
-              Bundle(url: currentApp)?.bundleIdentifier == bundleIdentifier else {
-            throw UpdateError.notRunningAsApp
-        }
-        let parent = currentApp.deletingLastPathComponent()
+        try requireWritableParent(of: installation().app)
+    }
+
+    private static func requireWritableParent(of app: URL) throws {
+        let parent = app.deletingLastPathComponent()
         guard FileManager.default.isWritableFile(atPath: parent.path) else {
             throw UpdateError.installDirectoryNotWritable(parent.path)
         }
@@ -188,15 +250,71 @@ enum AppUpdater {
 
     // MARK: - 下载与验签
 
-    private static var helperURL: URL {
-        Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/HourGlowUpdater")
+    static func requireSuccess(_ response: URLResponse, data: Data? = nil,
+                               now: Date = Date()) throws {
+        guard let http = response as? HTTPURLResponse else { throw UpdateError.badResponse(nil) }
+        guard !(200..<300).contains(http.statusCode) else { return }
+        if http.statusCode == 403 || http.statusCode == 429 {
+            let exhausted = http.value(forHTTPHeaderField: "x-ratelimit-remaining") == "0"
+            let payload = data.flatMap { try? JSONDecoder().decode(GitHubError.self, from: $0) }
+            let message = payload?.message.lowercased() ?? ""
+            let retryHeader = http.value(forHTTPHeaderField: "retry-after")
+            if exhausted || http.statusCode == 429 || retryHeader != nil
+                || message.contains("rate limit") {
+                let reset = exhausted ? futureDate(
+                    http.value(forHTTPHeaderField: "x-ratelimit-reset"), now: now) : nil
+                let retry = retryDate(retryHeader, now: now)
+                // 两个头同时出现时遵守更晚的期限；非主额度限流不能借用无关的 reset 头。
+                let deadline = [reset, retry].compactMap { $0 }.max()
+                let notice: RateLimit.Notice = deadline == nil ? .unknown
+                    : (deadline == reset ? .reset : .retry)
+                throw UpdateError.rateLimited(RateLimit(
+                    retryAt: deadline?.addingTimeInterval(1) ?? now.addingTimeInterval(60),
+                    notice: notice))
+            }
+            throw UpdateError.forbidden
+        }
+        throw UpdateError.badResponse(http.statusCode)
     }
 
-    private static func requireSuccess(_ response: URLResponse) throws {
-        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
-            throw UpdateError.badResponse((response as? HTTPURLResponse)?.statusCode)
+    private static func futureDate(_ value: String?, now: Date) -> Date? {
+        guard let value, let seconds = TimeInterval(value), seconds.isFinite,
+              seconds > now.timeIntervalSince1970,
+              seconds < Date.distantFuture.timeIntervalSince1970 else { return nil }
+        return Date(timeIntervalSince1970: seconds)
+    }
+
+    private static func retryDate(_ value: String?, now: Date) -> Date? {
+        guard let value else { return nil }
+        if let seconds = TimeInterval(value), seconds.isFinite, seconds >= 0 {
+            return futureDate(String(now.timeIntervalSince1970 + seconds), now: now)
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
+        guard let date = formatter.date(from: value), date > now else { return nil }
+        return date
+    }
+
+    struct RateLimit: Codable, Equatable, Sendable {
+        enum Notice: String, Codable { case reset, retry, unknown }
+        let retryAt: Date
+        let notice: Notice
+
+        var localizedDescription: String {
+            if notice == .unknown { return L10n.t("update.error.rateLimit.unknown") }
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: L10n.code)
+            // 带日期和时区，跨午夜也不会让用户把明天的恢复时刻当成今天。
+            formatter.setLocalizedDateFormatFromTemplate("MMMdHHmmssz")
+            let time = formatter.string(from: retryAt)
+            return notice == .reset ? L10n.t("update.error.rateLimit.reset", time)
+                : L10n.t("update.error.rateLimit.retry", time)
         }
     }
+
+    private struct GitHubError: Decodable { let message: String }
 
     private static func updatesDirectory() throws -> URL {
         guard let caches = FileManager.default.urls(for: .cachesDirectory,
@@ -322,12 +440,16 @@ enum AppUpdater {
         case missingDigest
         case unexpectedDownloadURL
         case badResponse(Int?)
+        case forbidden
+        case rateLimited(RateLimit)
         case noCacheDirectory
         case digestMismatch
         case unarchiveFailed(String)
         case bundleMismatch
         case invalidSignature(String)
         case notRunningAsApp
+        case appUnavailable
+        case helperUnavailable
         case installDirectoryNotWritable(String)
 
         var errorDescription: String? {
@@ -339,6 +461,8 @@ enum AppUpdater {
             case .badResponse(let status):
                 return status.map { L10n.t("update.error.http", $0) }
                     ?? L10n.t("update.error.badResponse")
+            case .forbidden: return L10n.t("update.error.forbidden")
+            case .rateLimited(let limit): return limit.localizedDescription
             case .noCacheDirectory: return L10n.t("update.error.noCacheDirectory")
             case .digestMismatch: return L10n.t("update.error.digestMismatch")
             case .unarchiveFailed(let detail):
@@ -349,6 +473,8 @@ enum AppUpdater {
                 return detail.isEmpty ? L10n.t("update.error.signature")
                                       : L10n.t("update.error.signature.detail", detail)
             case .notRunningAsApp: return L10n.t("update.error.notApp")
+            case .appUnavailable: return L10n.t("update.error.appUnavailable")
+            case .helperUnavailable: return L10n.t("update.error.helperUnavailable")
             case .installDirectoryNotWritable(let path):
                 return L10n.t("update.error.readOnly", path)
             }

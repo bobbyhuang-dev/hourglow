@@ -25,6 +25,7 @@ HourGlow 是一个 macOS 菜单栏壁纸调度器：按固定时刻、日出日�
 ./build/appstartupcheck        # Startup recovery and visible/hidden refresh (about 2 minutes)
 ./build/panelvisibilitycheck   # Native window visibility and observer teardown; briefly shows a test window
 ./build/updatecheck           # 更新器：SemVer、Release 解析、SHA-256
+python3 Tests/verify-updater-location.py # 运行中移动 app/父目录、旧路径副本、助手缺失
 ./build/l10ncheck Sources     # 文案表：漏词/空词/多词、占位符、挑语言的规则、代码里的 key 是否存在
 bash Tests/verify-updater-helper.sh build/HourGlow.app/Contents/Helpers/HourGlowUpdater
 bash Tests/verify-app-signature.sh build/HourGlow.app   # 签名与稳定的 designated requirement
@@ -34,6 +35,7 @@ python3 Tests/verify-cli-boundaries.py # 非法输入与夏令时 23/25 小时�
 ./build/panelshot ~/Desktop   # 五个页面 + 新手指引五步画成 PNG（固定时刻那一栏另出一张），改版式时对照
 ./build/panelshot ~/Desktop --only timeline --now 2026-09-04T06:20   # 只抓一页，并把「现在」定格在某一刻
 ./build/panelshot ~/Desktop --appearance dark                        # 钉住外观（light | dark），不跟系统
+./build/panelshot ~/Desktop --only settings --update-rate-limit       # 限流提示与恢复时间，不联网
 Tools/makedemo.sh             # README 顶上的 docs/demo.gif + 官网/GitHub 的分享卡片（见下面「演示图与分享卡片」）
 ```
 
@@ -554,6 +556,14 @@ UserDefaults dev.bobbyhuang.hourglow language                 # 界面语言偏�
 - **runner 上常并存多个 Xcode，默认那个不一定最新**，所以两个 workflow 都先
   `ls -d /Applications/Xcode_*.app | sort -V | tail -1` 再 `xcode-select -s`。
 - **`.app` 只能用 `ditto -c -k --keepParent` 压**。`zip` 不保留符号链接与扩展属性，解压出来的
+- **403 不一定是限流**。额度剩余为 0、429、Retry-After 或明确的限流响应正文才进入等待。
+  读取 `x-ratelimit-reset` / `Retry-After`，提示本地日期、时间与时区；缺失或异常时不编造
+  重置时间，至少等一分钟。期限存在 UserDefaults，手动、自动检查与重启都遵守它；普通
+  403 单独解释请求被拒。错误在设置页占整行并允许换行，不能把恢复时间截掉。
+- **`Bundle.main` 的路径会停在启动时的位置**。运行中移动 app 或它的父目录，旧路径下找不到
+  helper，不能误报「不是从 app 启动」。更新器用 `proc_pidpath` 取得当前可执行文件的位置，
+  校验 bundle ID 与 executable 后统一用于检查、复制 helper 与安装目标；助手缺失另报原因。
+  `verify-updater-location.py` 用真实子进程覆盖移动、改名、旧路径出现副本与助手权限变化。
   bundle 签名是坏的。反过来，裸二进制的 CLI 用 `zip -qj` 就够 —— `ditto --sequesterRsrc`
   会额外塞一份 `__MACOSX/`。压完再解一次跑 `codesign --verify --deep --strict`，
   确认压包这一步没把签名弄坏。

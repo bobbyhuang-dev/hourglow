@@ -108,6 +108,7 @@ struct SettingsPage: View {
                         .controlSize(.small)
                 } else {
                     Button(L10n.t("settings.update.check")) { model.checkForUpdates() }
+                        .disabled(!model.canUpdate)
                         .controlSize(.small)
                         .disabled(!model.canUpdate)
                 }
@@ -125,7 +126,7 @@ struct SettingsPage: View {
     private var updateDetail: String {
         switch model.updateState {
         case .idle:
-            return L10n.t(model.canUpdate ? "settings.update.idle" : "update.error.notApp")
+            return model.updateUnavailableReason ?? L10n.t("settings.update.idle")
         case .checking: return L10n.t("settings.update.checking")
         case .upToDate: return L10n.t("settings.update.upToDate")
         case .available(let release):
