@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 mkdir -p build
 
 # Version. Release pipelines override it from the tag (e.g. HOURGLOW_VERSION=1.0.1); local builds use this default.
-VERSION="${HOURGLOW_VERSION:-1.6.0}"
+VERSION="${HOURGLOW_VERSION:-1.6.1}"
 BUILD_NUMBER="${HOURGLOW_BUILD:-1}"
 BUNDLE_ID="dev.bobbyhuang.hourglow"
 

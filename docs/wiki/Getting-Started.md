@@ -1,8 +1,7 @@
 ## Requirements and installation
 
 HourGlow requires **macOS 26 (Tahoe) or later**. Universal 2 builds support Apple silicon
-and Intel. The current 1.6.0 download supports Apple silicon only; Intel users can build from
-source until the next release ships.
+and Intel starting with release **1.6.1**. Earlier downloads support Apple silicon only.
 
 1. Open the [latest release](https://github.com/bobbyhuang-dev/hourglow/releases/latest) and download `HourGlow-x.y.z.zip`.
 2. Unzip it and move `HourGlow.app` into `/Applications` before enabling launch at login.

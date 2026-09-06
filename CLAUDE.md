@@ -6,7 +6,7 @@ is a symlink to it, so both have identical content — edit this file only.
 HourGlow is a macOS menu bar wallpaper scheduler: it switches system aerial wallpapers or
 local images at fixed times, relative to sunrise/sunset (with offsets), or in solar phases.
 Swift 6.3 + SwiftUI, zero third-party dependencies, **no Xcode project** (`swiftc` compiles
-directly and the `.app` bundle is assembled by hand). Version 1.6 is the current release.
+directly and the `.app` bundle is assembled by hand). Version 1.6.1 is the current release.
 
 For user-facing documentation, see `README.md` / `README.zh-CN.md`; for contributing, see
 `CONTRIBUTING.md`. This file takes the implementer's perspective: how to build and verify,
@@ -126,7 +126,7 @@ repository Social Preview has no API: upload `og.png` manually under Settings �
 Social preview. Homepage and Topics can be set with `gh repo edit`.
 
 Versions come from `HOURGLOW_VERSION` / `HOURGLOW_BUILD` at the top of `build.sh` (defaults
-`1.6.0` / `1`); the release workflow overrides them with the tag and run number. CI and
+`1.6.1` / `1`); the release workflow overrides them with the tag and run number. CI and
 releases use GitHub Actions: `.github/workflows/ci.yml` builds, runs the main checks, and
 cross-checks the ephemeris on every push/PR; `.github/workflows/release.yml` builds, verifies,
 packages, and creates a Release for `v*` tags. See “CI and releases” below for past pitfalls.
@@ -839,8 +839,8 @@ never update only one. Keep Chinese product translations and meaningful Chinese 
   and is no longer used anywhere. The CLI uses MapKit too, servicing its main run loop while
   waiting with a bounded timeout. Keep the README pair, security policy, wiki and website's
   network descriptions aligned with forward searches, optional system fixes and reverse lookup.
-- Public 1.6.0 assets remain Apple silicon only. Do not advertise the latest download as Intel
-  compatible until a Universal 2 release has actually been published.
+- Release 1.6.1 introduces Universal 2 downloads. Public 1.6.0 and earlier assets remain Apple
+  silicon only; keep that distinction when directing Intel users to old releases.
 
 ### Live geocoding verification
 

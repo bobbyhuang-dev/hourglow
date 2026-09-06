@@ -152,9 +152,8 @@ involves, so you can decide whether to trust it.
 macOS 26 (Tahoe) or later on an Apple silicon or Intel Mac. Builds from this source are
 Universal 2: the app, update helper and CLI each contain both `arm64` and `x86_64` slices.
 
-**The current 1.6.0 download is Apple silicon only.** Intel support ships in the next release;
-until then, Intel users can [build from source](#build-from-source). Building needs the
-command-line Swift toolchain (`xcode-select --install`), not the full Xcode.
+**Downloads from 1.6.1 onward support both architectures.** Earlier releases are Apple silicon
+only. Building needs the command-line Swift toolchain (`xcode-select --install`), not the full Xcode.
 
 ## Build from source
 
@@ -301,8 +300,9 @@ python3 Tests/verify-cli-boundaries.py # invalid input and 23/25-hour daylight-s
 
 ## Status
 
-Stable, and in daily use. **1.6 is the current release** — a quality-of-life round: an About
-window, automatic location that refreshes daily by default, pages that fade instead of slide,
+Stable, and in daily use. **1.6.1 is the current release** — Universal 2 support for Apple silicon
+and Intel, offline-first place searches using MapKit, and clearer network documentation.
+1.6 introduced an About window, automatic location that refreshes daily by default, pages that fade instead of slide,
 even gutters across every scrollable panel, and a tidier ⋯ menu. 1.5 added the today's-daylight
 bar, a lighter idle footprint and a more careful updater, 1.4 English alongside the Simplified
 Chinese it started in, 1.3 a guided first launch, 1.2 24 Hour Wallpaper import and solar-phase

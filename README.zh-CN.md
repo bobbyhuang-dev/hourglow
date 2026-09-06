@@ -114,8 +114,8 @@ HourGlow 对你的 Mac 只做一件事：换壁纸。下面把这件事涉及的
 支持运行 macOS 26 (Tahoe) 及以上的 Apple silicon 和 Intel Mac。当前源码构建 Universal 2：
 App、更新助手和 CLI 均包含 `arm64` 与 `x86_64` 两种架构。
 
-**当前公开的 1.6.0 下载包仅支持 Apple silicon。** Intel 支持将在下一版本发布；在此之前，
-Intel 用户可以从源码构建。只需要命令行 Swift 工具链（`xcode-select --install`），不需要完整 Xcode。
+**从 1.6.1 起，下载包同时支持两种架构。** 更早的版本仅支持 Apple silicon。
+从源码构建只需要命令行 Swift 工具链（`xcode-select --install`），不需要完整 Xcode。
 
 ## 从源码构建
 
@@ -251,7 +251,9 @@ python3 Tests/verify-cli-boundaries.py # 非法输入与夏令时 23/25 小时�
 
 ## 状态
 
-稳定，作者本人每天在用。**当前版本 1.6** —— 一轮体验打磨：新增关于窗口，自动定位默认每天刷新，
+稳定，作者本人每天在用。**当前版本 1.6.1** —— Universal 2 同时支持 Apple silicon 与 Intel，
+地点搜索优先使用离线结果，联网查询统一使用 MapKit，并补全文档中的网络行为说明。
+1.6 新增关于窗口，自动定位默认每天刷新，
 页面切换改为淡入淡出，各个可滚动页面的两侧留白统一，⋯ 菜单也整理过了。1.5 加了今日天光条、
 更省电的空闲行为与更稳妥的更新器，1.4 加了英文界面，1.3 加了新手指引，
 1.2 带来了 24 Hour Wallpaper 导入与天光分段调度，1.1 加了内建更新，
