@@ -1,19 +1,6 @@
 #!/bin/bash
 # Build Universal 2 production binaries and native verification targets.
 set -euo pipefail
-BUILD_CHECKS=1
-PRODUCTION_FLAGS=(-O)
-if [ "$#" -ne 0 ]; then
-    if [ "$#" -eq 1 ] && [ "$1" = "--production-only" ]; then
-        BUILD_CHECKS=0
-        # CodeQL traces each frontend process; extract each complete module once.
-        PRODUCTION_FLAGS+=(-whole-module-optimization)
-    else
-        echo "Usage: $0 [--production-only]" >&2
-        exit 2
-    fi
-fi
-
 cd "$(dirname "$0")"
 mkdir -p build
 
@@ -30,20 +17,15 @@ UI=(Sources/App/SlotDraft.swift Sources/App/Onboarding.swift Sources/App/AppUpda
 ENTRY=(Sources/App/HourGlowApp.swift)
 
 # Both slices use the same deployment target. Merge before signing so the signature seals both.
-# CodeQL only needs the host architecture to trace the shared sources once.
 compile_production() {
     local output="$1"
     shift
-    if [ "$BUILD_CHECKS" -eq 0 ]; then
-        swiftc "${PRODUCTION_FLAGS[@]}" "$@" -o "$output"
-        return
-    fi
     local architecture
     local slices=()
     for architecture in arm64 x86_64; do
         local slice="build/slices/$architecture/$(basename "$output")"
         mkdir -p "$(dirname "$slice")"
-        swiftc "${PRODUCTION_FLAGS[@]}" -target "$architecture-apple-macos26.0" "$@" -o "$slice"
+        swiftc -O -target "$architecture-apple-macos26.0" "$@" -o "$slice"
         slices+=("$slice")
     done
     lipo -create "${slices[@]}" -output "$output"
@@ -52,21 +34,18 @@ compile_production() {
 echo "building: hourglow-cli"
 compile_production build/hourglow-cli "${COMMON[@]}" Sources/CLI/*.swift
 codesign --force --sign - build/hourglow-cli >/dev/null 2>&1
-# CodeQL needs production targets only; CI and releases still build every verification target.
-if [ "$BUILD_CHECKS" -eq 1 ]; then
-    echo "building: verification targets"
-    swiftc -O "${COMMON[@]}" Tests/SolarCheck/main.swift -o build/solarcheck
-    swiftc -O "${COMMON[@]}" Tests/ModelCheck/main.swift -o build/modelcheck
-    swiftc -O "${COMMON[@]}" Tests/EngineCheck/main.swift -o build/enginecheck
-    swiftc -O "${COMMON[@]}" Tests/ImportCheck/main.swift -o build/importcheck
-    swiftc -O "${L10N[@]}" Tests/L10nCheck/main.swift  -o build/l10ncheck
-    swiftc -O "${COMMON[@]}" Sources/App/SlotDraft.swift Sources/App/Onboarding.swift Tests/AppCheck/main.swift -o build/appcheck
-    swiftc -O "${L10N[@]}" Sources/App/AppUpdater.swift Tests/UpdateCheck/main.swift -o build/updatecheck
-    # Offscreen panel rendering for layout comparisons (see Tests/PanelShot/main.swift).
-    swiftc -O "${COMMON[@]}" "${UI[@]}" Tests/PanelShot/main.swift -o build/panelshot
-    swiftc -O "${COMMON[@]}" "${UI[@]}" Tests/AppStartupCheck/main.swift -o build/appstartupcheck
-    swiftc -O Sources/UI/PanelVisibilityObserver.swift Tests/PanelVisibilityCheck/main.swift -o build/panelvisibilitycheck
-fi
+echo "building: verification targets"
+swiftc -O "${COMMON[@]}" Tests/SolarCheck/main.swift -o build/solarcheck
+swiftc -O "${COMMON[@]}" Tests/ModelCheck/main.swift -o build/modelcheck
+swiftc -O "${COMMON[@]}" Tests/EngineCheck/main.swift -o build/enginecheck
+swiftc -O "${COMMON[@]}" Tests/ImportCheck/main.swift -o build/importcheck
+swiftc -O "${L10N[@]}" Tests/L10nCheck/main.swift  -o build/l10ncheck
+swiftc -O "${COMMON[@]}" Sources/App/SlotDraft.swift Sources/App/Onboarding.swift Tests/AppCheck/main.swift -o build/appcheck
+swiftc -O "${L10N[@]}" Sources/App/AppUpdater.swift Tests/UpdateCheck/main.swift -o build/updatecheck
+# Offscreen panel rendering for layout comparisons (see Tests/PanelShot/main.swift).
+swiftc -O "${COMMON[@]}" "${UI[@]}" Tests/PanelShot/main.swift -o build/panelshot
+swiftc -O "${COMMON[@]}" "${UI[@]}" Tests/AppStartupCheck/main.swift -o build/appstartupcheck
+swiftc -O Sources/UI/PanelVisibilityObserver.swift Tests/PanelVisibilityCheck/main.swift -o build/panelvisibilitycheck
 
 # HourGlow.app — assemble the bundle manually, without Xcode.
 # LSUIElement hides the Dock icon and main window; the icon appears only in Finder and Login Items.
@@ -133,6 +112,4 @@ codesign --force --sign - \
 
 echo "built: HourGlow $VERSION ($BUILD_NUMBER)"
 echo "built: build/hourglow-cli, $APP"
-if [ "$BUILD_CHECKS" -eq 1 ]; then
-    echo "built: build/solarcheck, build/modelcheck, build/enginecheck, build/importcheck, build/l10ncheck, build/appcheck, build/appstartupcheck, build/panelvisibilitycheck, build/updatecheck, build/panelshot"
-fi
+echo "built: build/solarcheck, build/modelcheck, build/enginecheck, build/importcheck, build/l10ncheck, build/appcheck, build/appstartupcheck, build/panelvisibilitycheck, build/updatecheck, build/panelshot"

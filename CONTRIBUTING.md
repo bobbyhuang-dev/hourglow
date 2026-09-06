@@ -282,12 +282,6 @@ wallpaper store, and a long list of mistakes already made once. It is worth the 
   say which and why.
 - CI (`.github/workflows/ci.yml`) builds on `macos-26` and runs the check binaries plus the
   ephemeris cross-check on every push and PR. It has to be green before merge.
-- CodeQL (`.github/workflows/codeql.yml`) scans Swift, Python, and GitHub Actions on pushes
-  to `main`, pull requests, and weekly. Swift uses `./build.sh --production-only` with manual build
-  mode on `macos-26` to trace the app, CLI, and updater without rebuilding verification targets,
-  because this repository has no Xcode project or Swift package for autobuild.
-  Maintainers must switch from default to advanced setup in Settings > Advanced Security
-  when activating this workflow; default setup blocks uploads from advanced workflows.
 
 ## Releases
 
@@ -305,7 +299,6 @@ license, and there is no separate CLA to sign.
 ### Universal builds
 
 `./build.sh` builds both `arm64` and `x86_64` production slices and merges them with `lipo`
-before signing. Verification binaries use the host architecture. `--production-only` is the
-CodeQL tracing path and intentionally builds only the host architecture; do not package it.
+before signing. Verification binaries use the host architecture.
 Run `bash Tests/verify-universal.sh` before packaging. CI and the release workflow verify on
 both `macos-26` and `macos-26-intel`; publication waits for both jobs to pass.
