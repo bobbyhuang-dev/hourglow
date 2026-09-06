@@ -2,9 +2,12 @@
 # Build hourglow-cli, verification targets, and the menu bar app (M3).
 set -euo pipefail
 BUILD_CHECKS=1
+PRODUCTION_FLAGS=(-O)
 if [ "$#" -ne 0 ]; then
     if [ "$#" -eq 1 ] && [ "$1" = "--production-only" ]; then
         BUILD_CHECKS=0
+        # CodeQL traces each frontend process; extract each complete module once.
+        PRODUCTION_FLAGS+=(-whole-module-optimization)
     else
         echo "Usage: $0 [--production-only]" >&2
         exit 2
@@ -27,7 +30,7 @@ UI=(Sources/App/SlotDraft.swift Sources/App/Onboarding.swift Sources/App/AppUpda
 ENTRY=(Sources/App/HourGlowApp.swift)
 
 echo "building: hourglow-cli"
-swiftc -O "${COMMON[@]}" Sources/CLI/*.swift          -o build/hourglow-cli
+swiftc "${PRODUCTION_FLAGS[@]}" "${COMMON[@]}" Sources/CLI/*.swift          -o build/hourglow-cli
 # CodeQL needs production targets only; CI and releases still build every verification target.
 if [ "$BUILD_CHECKS" -eq 1 ]; then
     echo "building: verification targets"
@@ -51,9 +54,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
 
 echo "building: HourGlow.app"
-swiftc -O "${COMMON[@]}" "${UI[@]}" "${ENTRY[@]}" -o "$APP/Contents/MacOS/HourGlow"
+swiftc "${PRODUCTION_FLAGS[@]}" "${COMMON[@]}" "${UI[@]}" "${ENTRY[@]}" -o "$APP/Contents/MacOS/HourGlow"
 echo "building: HourGlowUpdater"
-swiftc -O "${L10N[@]}" Sources/Updater/main.swift -o "$APP/Contents/Helpers/HourGlowUpdater"
+swiftc "${PRODUCTION_FLAGS[@]}" "${L10N[@]}" Sources/Updater/main.swift -o "$APP/Contents/Helpers/HourGlowUpdater"
 
 # The generated icon is checked in; rerun Tools/makeicon.swift only when changing it (usage in its header).
 cp Resources/HourGlow.icns "$APP/Contents/Resources/HourGlow.icns"

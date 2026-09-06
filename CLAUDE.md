@@ -746,7 +746,9 @@ machine, not a theoretical risk.
 - **CodeQL requires advanced setup for Swift.** `.github/workflows/codeql.yml` initializes
   CodeQL in `manual` mode, runs `./build.sh --production-only` on `macos-26`, then analyzes
   the traced app, CLI, and updater. This covers all `Sources/` files without rebuilding them
-  for every verification target; plain `./build.sh` still builds everything for CI/releases.
+  for every verification target. The production-only path uses whole-module compilation so
+  CodeQL runs one extractor per module instead of one per source file. Plain `./build.sh`
+  retains the existing compiler flags and builds everything for CI/releases.
   Default setup's autobuilder cannot find an Xcode project, workspace, or Swift package here;
   its setup run can appear successful while dropping Swift from subsequent scans. Preserve
   the separate Actions and Python jobs when changing the workflow. When activating this
