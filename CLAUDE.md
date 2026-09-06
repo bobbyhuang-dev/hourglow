@@ -744,7 +744,9 @@ machine, not a theoretical risk.
 - **Runners often contain multiple Xcode versions, and the default need not be newest.** All
   build workflows first run `ls -d /Applications/Xcode_*.app | sort -V | tail -1`, then `xcode-select -s`.
 - **CodeQL requires advanced setup for Swift.** `.github/workflows/codeql.yml` initializes
-  CodeQL in `manual` mode, runs `./build.sh` on `macos-26`, then analyzes the traced build.
+  CodeQL in `manual` mode, runs `./build.sh --production-only` on `macos-26`, then analyzes
+  the traced app, CLI, and updater. This covers all `Sources/` files without rebuilding them
+  for every verification target; plain `./build.sh` still builds everything for CI/releases.
   Default setup's autobuilder cannot find an Xcode project, workspace, or Swift package here;
   its setup run can appear successful while dropping Swift from subsequent scans. Preserve
   the separate Actions and Python jobs when changing the workflow. When activating this

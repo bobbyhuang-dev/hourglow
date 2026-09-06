@@ -51,10 +51,10 @@ jobs:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
 
-      # Reuse the real build so the app, CLI, and updater are all traced.
+      # Trace all production sources without recompiling them for each verification binary.
       - name: Build Swift
         if: matrix.language == 'swift'
-        run: ./build.sh
+        run: ./build.sh --production-only
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
