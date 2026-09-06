@@ -302,3 +302,9 @@ license, and there is no separate CLA to sign.
 before signing. Verification binaries use the host architecture.
 Run `bash Tests/verify-universal.sh` before packaging. CI and the release workflow verify on
 both `macos-26` and `macos-26-intel`; publication waits for both jobs to pass.
+
+For optional live MapKit validation, run `python3 Tests/verify-geocoding.py`. It verifies that
+an unknown offline place resolves online through the real CLI and leaves wallpaper untouched.
+Use `--arch x86_64` on Apple silicon with Rosetta to check the Intel slice. The query and expected
+coordinates are configurable for the Apple Maps service available in your region; this check
+is deliberately separate from the offline suite.

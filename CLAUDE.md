@@ -841,3 +841,14 @@ never update only one. Keep Chinese product translations and meaningful Chinese 
   network descriptions aligned with forward searches, optional system fixes and reverse lookup.
 - Public 1.6.0 assets remain Apple silicon only. Do not advertise the latest download as Intel
   compatible until a Universal 2 release has actually been published.
+
+### Live geocoding verification
+
+`python3 Tests/verify-geocoding.py --arch arm64` (or `x86_64` under Rosetta) exercises the real
+CLI with a query absent from the offline city list and checks the coordinates on disk. It uses
+a disposable paused schedule and never starts the wallpaper engine. This opt-in check requires
+network access and regional MapKit coverage, so keep it separate from offline CI. The default
+query is a public Hangzhou landmark; `--query`, `--latitude` and `--longitude` allow another region.
+On the review Mac, the system GeoServices log explicitly returned "Received no results status
+from server" for the Cupertino/UK probes, while the Hangzhou query returned 30.259242, 120.130396
+through both production CPU slices. An empty result is not proof of a broken callback or network.
