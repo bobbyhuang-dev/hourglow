@@ -4,20 +4,18 @@ import MapKit
 
 /// Resolves a user-entered place name to coordinates.
 ///
-/// Tries system MapKit geocoding first (`MKGeocodingRequest`, no API key required), then OpenStreetMap
-/// Nominatim if no result is found. Sunrise and sunset remain local calculations; only place selection uses the network.
+/// Uses Apple's MapKit for searches missing from the offline city list and for reverse lookups.
+/// Public Nominatim does not permit client-side autocomplete, so it is not used by the app or CLI.
 enum PlaceSearch {
+    static func needsRemoteSearch(_ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        return q.count >= 2 && Cities.search(q).isEmpty
+    }
 
     static func remote(_ query: String) async -> [City] {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard q.count >= 2 else { return [] }
-        let apple = await apple(q)
-        if !apple.isEmpty { return apple }
-        return await nominatim(q)
-    }
-
-    static func apple(_ query: String) async -> [City] {
-        guard let request = MKGeocodingRequest(addressString: query) else { return [] }
+        guard q.count >= 2, !Task.isCancelled,
+              let request = MKGeocodingRequest(addressString: q) else { return [] }
         do {
             return try await request.mapItems.compactMap(city(from:))
         } catch {
@@ -25,45 +23,36 @@ enum PlaceSearch {
         }
     }
 
-    static func nominatim(_ query: String) async -> [City] {
-        guard let request = nominatimRequest(query) else { return [] }
-        do {
-            let (data, _) = try await URLSession.shared.data(for: request)
-            return parseNominatim(data, query: query)
-        } catch {
-            return []
-        }
-    }
-
-    /// Stores network results safely: a callback can still write after timeout, racing the caller's read of an unprotected var.
     private final class Mailbox: @unchecked Sendable {
         private let lock = NSLock()
-        private var cities: [City] = []
+        private var cities: [City]?
 
         func put(_ value: [City]) {
             lock.lock(); defer { lock.unlock() }
             cities = value
         }
 
-        func take() -> [City] {
+        func take() -> [City]? {
             lock.lock(); defer { lock.unlock() }
             return cities
         }
     }
 
-    /// CLI path that avoids the main thread to prevent mutual waits with the RunLoop.
-    static func nominatimBlocking(_ query: String) -> [City] {
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Single-character queries match too many unrelated places to justify a network request.
-        guard q.count >= 2, let request = nominatimRequest(q) else { return [] }
+    /// The synchronous CLI must keep servicing the main run loop for MapKit callbacks.
+    /// A timeout cancels the task; its mailbox remains alive for a late system callback.
+    static func remoteBlocking(_ query: String, timeout: TimeInterval = 9,
+                               lookup: @escaping @Sendable (String) async -> [City] = { await remote($0) }) -> [City] {
+        let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query.count >= 2 else { return [] }
         let mailbox = Mailbox()
-        let done = DispatchSemaphore(value: 0)
-        URLSession.shared.dataTask(with: request) { data, _, _ in
-            if let data { mailbox.put(parseNominatim(data, query: q)) }
-            done.signal()
-        }.resume()
-        _ = done.wait(timeout: .now() + 9)
-        return mailbox.take()
+        let task = Task.detached { mailbox.put(await lookup(query)) }
+        defer { task.cancel() }
+        let deadline = ProcessInfo.processInfo.systemUptime + timeout
+        while ProcessInfo.processInfo.systemUptime < deadline {
+            if let cities = mailbox.take() { return cities }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.01))
+        }
+        return []
     }
 
     /// Reverse lookup only names coordinates. Returns nil on failure so the caller preserves
@@ -90,39 +79,4 @@ enum PlaceSearch {
         )
     }
 
-    private static func nominatimRequest(_ query: String) -> URLRequest? {
-        var allowed = CharacterSet.urlQueryAllowed
-        allowed.remove(charactersIn: ":#[]@!$&'()*+,;=")
-        guard let encoded = query.addingPercentEncoding(withAllowedCharacters: allowed),
-              let url = URL(string: "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=8&q=\(encoded)")
-        else { return nil }
-        var request = URLRequest(url: url, timeoutInterval: 8)
-        // Nominatim requires an identifiable User-Agent; anonymous requests receive 403.
-        request.setValue("HourGlow/1.1 (https://github.com/bobbyhuang-dev/hourglow)",
-                         forHTTPHeaderField: "User-Agent")
-        request.setValue("zh-CN,en", forHTTPHeaderField: "Accept-Language")
-        return request
-    }
-
-    private static func parseNominatim(_ data: Data, query: String) -> [City] {
-        guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else {
-            return []
-        }
-        var cities: [City] = []
-        for row in rows {
-            guard let lat = (row["lat"] as? String).flatMap(Double.init),
-                  let lon = (row["lon"] as? String).flatMap(Double.init) else { continue }
-            let display = row["display_name"] as? String
-            let name = (row["name"] as? String)
-                ?? display?.split(separator: ",").first.map { String($0).trimmingCharacters(in: .whitespaces) }
-                ?? query
-            cities.append(City(
-                name: name,
-                detail: display ?? "OpenStreetMap",
-                coordinate: Coordinate(latitude: lat, longitude: lon, name: name),
-                keys: [name, query]
-            ))
-        }
-        return cities
-    }
 }

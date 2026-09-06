@@ -279,7 +279,7 @@ func setLocation() {
     }
 
     let query = positional.joined(separator: " ")
-    let city = Cities.lookup(query) ?? PlaceSearch.nominatimBlocking(query).first
+    let city = Cities.lookup(query) ?? PlaceSearch.remoteBlocking(query).first
     guard let city else { fail(L10n.t("cli.location.notFound", query)) }
     schedule.location = city.asCoordinate
     do {

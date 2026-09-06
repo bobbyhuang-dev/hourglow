@@ -33,3 +33,8 @@ If you pick a wallpaper in System Settings, that manual choice lasts until the n
 The engine responds to wake, clock changes, time-zone changes, and day rollover. It schedules a timer for the next trigger rather than polling the wallpaper.
 
 HourGlow changes the desktop and screen saver together. Per-display, per-Space, and separate screen saver scheduling are outside the current scope; see the [non-goals](https://github.com/bobbyhuang-dev/hourglow/blob/main/CONTRIBUTING.md#non-goals).
+
+Place-name searches stay offline while the built-in city list has matches. Otherwise the app
+queries Apple MapKit after a short typing pause (at least two characters). The CLI also uses
+MapKit when its offline lookup has no match. Current-location fixes use macOS Location Services;
+MapKit may reverse-geocode the coordinates to supply a readable name. No Nominatim requests are made.

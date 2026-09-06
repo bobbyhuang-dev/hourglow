@@ -31,7 +31,7 @@ final class CitySearch {
         task?.cancel()
         remote = []
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 2 else {
+        guard PlaceSearch.needsRemoteSearch(trimmed) else {
             searching = false
             return
         }

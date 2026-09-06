@@ -56,11 +56,19 @@ The parts of HourGlow with real security surface:
   `~/Library/Application Support/HourGlow/`. Anything that lets one local user influence
   another's schedule, or that makes the lock usable to redirect a write, is in scope.
 
-Network behaviour, for reference. HourGlow makes two kinds of outbound request, both with an
-obvious cause: the GitHub API to look up the latest release (daily, while automatic updates are
-on) plus GitHub's asset host to download one you install; and, when you type a place name the
-offline city list doesn't know, Apple's MapKit geocoder and then OpenStreetMap's Nominatim. Sun
-times are computed locally; there is no telemetry, no analytics, and no other server.
+Network behaviour, for reference:
+
+- Automatic update checks contact the GitHub API daily; installing an update downloads its
+  archive from GitHub. Automatic update checks can be disabled independently of location.
+- Place searches stay offline while the built-in city list has matches. Otherwise, queries of
+  at least two characters go to Apple's MapKit after a short typing pause. The CLI also uses
+  MapKit when its offline lookup has no match. HourGlow does not contact Nominatim.
+- Optional current-location fixes use macOS Location Services. With automatic location enabled
+  and permission granted, the app refreshes coordinates at its documented daily/event boundaries.
+  MapKit reverse geocoding supplies a readable name when coordinates change or have no name;
+  it does not replace the coordinates. Turning automatic location off stops automatic fixes.
+
+Sun times are computed locally. There is no telemetry, analytics, or account.
 
 ## Known limitations that are not vulnerabilities
 

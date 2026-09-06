@@ -434,6 +434,23 @@ for (first, next) in [("2026-03-08 00:30", "2026-03-09 00:30"),
           "Daily refresh follows calendar days across daylight-saving changes: \(next)")
 }
 
+// Place searches must keep known cities offline and preserve the CLI main run loop.
+check(!PlaceSearch.needsRemoteSearch("  Shenzhen  ") && !PlaceSearch.needsRemoteSearch("深圳")
+      && !PlaceSearch.needsRemoteSearch(" ") && !PlaceSearch.needsRemoteSearch("x"),
+      "Known cities and short queries never request online geocoding")
+let remoteQuery = "HourGlow remote lookup fixture 987654321"
+check(PlaceSearch.needsRemoteSearch(remoteQuery), "Unknown place names can request MapKit geocoding")
+let remoteFixture = Cities.search("Shenzhen")
+let remoteHits = PlaceSearch.remoteBlocking(remoteQuery, timeout: 1) { _ in
+    await MainActor.run { remoteFixture }
+}
+check(remoteHits == remoteFixture, "CLI geocoding services main-actor callbacks without deadlocking")
+let remoteTimeout = PlaceSearch.remoteBlocking(remoteQuery, timeout: 0.03) { _ in
+    try? await Task.sleep(nanoseconds: 1_000_000_000)
+    return remoteFixture
+}
+check(remoteTimeout.isEmpty, "CLI geocoding times out without accepting a late result")
+
 if failures > 0 {
     FileHandle.standardError.write(Data("\n\(failures) checks failed\n".utf8))
     exit(1)

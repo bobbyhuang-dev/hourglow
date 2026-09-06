@@ -134,9 +134,10 @@ involves, so you can decide whether to trust it.
   service is ever contacted.
 - **What goes over the network.** With automatic updates on (the default), HourGlow asks
   `api.github.com` once a day for the latest release and, when you install one, downloads it
-  from GitHub. Typing a place name the built-in city list doesn't know geocodes it through
-  Apple's MapKit and, failing that, OpenStreetMap's Nominatim. System location uses macOS
-  Location Services; the app also asks MapKit for a readable name when a saved location changes
+  from GitHub. Place searches stay offline while the built-in city list has matches. Otherwise,
+  queries of at least two characters go to Apple's MapKit after a short typing pause; the CLI
+  also uses MapKit when its offline lookup has no match. No Nominatim requests are made.
+  System location uses macOS Location Services; the app also asks MapKit for a readable name when a saved location changes
   or has no name. Automatic location and release checks have separate switches.
   No telemetry, no analytics, no account.
 - **Updates are verified** before anything is replaced: the download's SHA-256 against the
