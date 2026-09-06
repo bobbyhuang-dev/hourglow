@@ -135,6 +135,17 @@ packages, and creates a Release for `v*` tags. See “CI and releases” below f
 share a module with a `main.swift` containing top-level code, and `panelshot` needs to reuse
 `UI/`. New UI files match `Sources/UI/*.swift`; new entry points require a script change.
 
+## GitHub community documentation
+
+Issue forms and their chooser configuration live in `.github/ISSUE_TEMPLATE/`. Bug reports
+use the existing `bug` label; feature requests use `enhancement`. Keep CLI diagnostics optional
+and point security reports at the security policy, which includes a private email fallback.
+
+Wiki sources live in `docs/wiki/` and are published separately to `hourglow.wiki.git`.
+`CONTRIBUTING.md` documents publication and reconciliation of direct wiki edits. Preserve
+`_Sidebar.md` and `_Footer.md`, verify page links, and never equate a main-repository commit
+with a published wiki update.
+
 ## Architecture
 
 Dependencies flow one way: `UI → AppModel → Scheduler → Resolver/WallpaperWriter`.

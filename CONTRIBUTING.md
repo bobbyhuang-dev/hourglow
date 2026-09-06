@@ -7,7 +7,7 @@ Be civil. Assume the other person is trying to help.
 
 ## Ways to contribute
 
-**Bug reports.** Open an [issue](https://github.com/bobbyhuang-dev/hourglow/issues) and
+**Bug reports.** Check the [troubleshooting guide](https://github.com/bobbyhuang-dev/hourglow/wiki/Troubleshooting), then use the [bug report form](https://github.com/bobbyhuang-dev/hourglow/issues/new?template=bug_report.yml) and
 include:
 
 - your macOS version and the HourGlow version (⋯ menu → about, or the release you downloaded);
@@ -23,12 +23,41 @@ Do **not** open a public issue for a security problem — see [SECURITY.md](SECU
 one new file plus one line — see [Adding a language](#adding-a-language). No Swift beyond
 filling in a dictionary, and you do not need to be able to build the app to start.
 
-**Feature requests.** Open an issue describing the problem you hit, not just the feature you
+**Feature requests.** Use the [feature request form](https://github.com/bobbyhuang-dev/hourglow/issues/new?template=feature_request.yml) to describe the problem you hit, not just the feature you
 have in mind. Check the non-goals list first (see below); if your request is on it, say why
 the trade-off should change.
 
 **Pull requests.** Small, focused changes are easiest to review. For anything larger than a
 bug fix, open an issue first so we can agree on the approach before you write the code.
+
+## Wiki documentation
+
+The [wiki](https://github.com/bobbyhuang-dev/hourglow/wiki) contains installation, scheduling,
+import, and troubleshooting guides. Its Markdown sources live in `docs/wiki/`, including
+the shared `_Sidebar.md` and `_Footer.md`. Submit documentation changes there so they can
+be reviewed alongside code changes.
+
+GitHub stores the published wiki in a separate Git repository. After documentation changes
+land on `main`, a maintainer publishes them from the main repository's root:
+
+```bash
+wiki_checkout="$(mktemp -d)/hourglow.wiki"
+git clone https://github.com/bobbyhuang-dev/hourglow.wiki.git "$wiki_checkout"
+cp docs/wiki/*.md "$wiki_checkout/"
+git -C "$wiki_checkout" diff --check
+git -C "$wiki_checkout" diff
+git -C "$wiki_checkout" add -- '*.md'
+git -C "$wiki_checkout" diff --cached
+git -C "$wiki_checkout" commit -m "docs: update user guides"
+git -C "$wiki_checkout" push origin HEAD
+```
+
+Check for direct wiki edits before copying and reconcile them with `docs/wiki/`. The copy
+step does not remove old pages: review renames and deletions explicitly. Verify the published
+pages and sidebar links after pushing. Committing `docs/wiki/` alone does not publish the wiki.
+
+Issue forms live in `.github/ISSUE_TEMPLATE/`. Keep their labels aligned with existing GitHub
+labels, leave diagnostics optional, and direct security reports to `SECURITY.md`'s policy.
 
 ## Non-goals
 

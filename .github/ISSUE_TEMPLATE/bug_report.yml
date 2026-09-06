@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a problem with HourGlow.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search [existing issues](https://github.com/bobbyhuang-dev/hourglow/issues?q=is%3Aissue) and check the [troubleshooting guide](https://github.com/bobbyhuang-dev/hourglow/wiki/Troubleshooting) first.
+        For security vulnerabilities, use the [private reporting instructions](https://github.com/bobbyhuang-dev/hourglow/security/policy) instead of a public issue.
+  - type: input
+    id: version
+    attributes:
+      label: HourGlow version
+      description: Find the version and build in the menu bar panel's About window. For a source build, include the commit if known.
+      placeholder: "1.6.0 (build 1), or a commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Find this in About This Mac. Include whether you are using a beta.
+      placeholder: "macOS 26.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation
+      options:
+        - GitHub release
+        - Built from source
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Describe the smallest sequence that shows the problem. For switching problems, include the trigger time, time zone, and any sleep/wake or manual wallpaper changes.
+      placeholder: |
+        1. Open HourGlow and...
+        2. Set...
+        3. Observe...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: What happened instead? Include the exact error message, if any.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics and configuration (optional)
+      description: |
+        If you have the optional CLI, include `hourglow-cli now` and `hourglow-cli list` for scheduling problems. Relevant excerpts of `schedule.json` or the updater log can also help. The troubleshooting guide lists their paths.
+        Remove personal file paths, coordinates, location names, and other private information before posting. CLI installation is not required to report a bug.
+      render: text
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots and additional context (optional)
+      description: Drag images here if they help explain the problem. Hide any private information first.

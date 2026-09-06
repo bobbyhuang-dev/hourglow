@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation and troubleshooting
+    url: https://github.com/bobbyhuang-dev/hourglow/wiki
+    about: Learn how to install HourGlow, configure a schedule, and resolve common problems.
+  - name: Report a security vulnerability privately
+    url: https://github.com/bobbyhuang-dev/hourglow/security/policy
+    about: Follow the security policy to report a vulnerability privately, including an email fallback.
