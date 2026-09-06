@@ -834,3 +834,19 @@ never update only one. Keep Chinese product translations and meaningful Chinese 
   size. On the review machine with Swift 6.3.3 and `-O`, 120 slots improved from about 3.43 to
   0.31 ms per resolution; 480 slots improved from 13.94 to 1.36 ms. These are computation timings,
   not measurements of battery-life improvement or of macOS's aerial renderer.
+
+## Release readiness fixes (2026-09-06)
+
+- Production builds are Universal 2 (`arm64` + `x86_64`), including the CLI and nested update
+  helper. Compile both slices with a macOS 26 deployment target, merge with `lipo`, then sign.
+  Check binaries remain native. CodeQL's `--production-only` remains host-only and must never
+  be packaged. `Tests/verify-universal.sh` protects both architectures and their signatures.
+- CI and release verification run on `macos-26` and `macos-26-intel`. Release publication is
+  a dependent job, so an early successful Apple silicon build cannot publish before Intel passes.
+- Place searches with offline matches make no geocoding request. Unknown queries use Apple
+  MapKit after the existing 400 ms debounce; public Nominatim is not permitted for autocomplete
+  and is no longer used anywhere. The CLI uses MapKit too, servicing its main run loop while
+  waiting with a bounded timeout. Keep the README pair, security policy, wiki and website's
+  network descriptions aligned with forward searches, optional system fixes and reverse lookup.
+- Public 1.6.0 assets remain Apple silicon only. Do not advertise the latest download as Intel
+  compatible until a Universal 2 release has actually been published.

@@ -77,7 +77,7 @@ math is about sixty lines of Swift.
 
 ## Development setup
 
-You need macOS 26 (Tahoe) or later and the command-line Swift toolchain
+You need macOS 26 (Tahoe) or later on Apple silicon or Intel and the command-line Swift toolchain
 (`xcode-select --install`). The full Xcode app is not required — there is no Xcode project.
 
 ```bash
@@ -301,3 +301,11 @@ Contributors don't need to touch version numbers in a PR.
 HourGlow is licensed under the [Apache License 2.0](LICENSE). By submitting a pull request,
 you agree that your contribution is licensed under the same terms — this is section 5 of the
 license, and there is no separate CLA to sign.
+
+### Universal builds
+
+`./build.sh` builds both `arm64` and `x86_64` production slices and merges them with `lipo`
+before signing. Verification binaries use the host architecture. `--production-only` is the
+CodeQL tracing path and intentionally builds only the host architecture; do not package it.
+Run `bash Tests/verify-universal.sh` before packaging. CI and the release workflow verify on
+both `macos-26` and `macos-26-intel`; publication waits for both jobs to pass.

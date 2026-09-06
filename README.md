@@ -20,7 +20,7 @@ HourGlow fills that gap. Rather than hardcoding those four, it is a general
 each, and it handles switching at the right moment.
 
 Lives in the menu bar, no Dock icon. Swift 6.3 + SwiftUI, zero third-party dependencies,
-under 5 MB. Speaks English and 简体中文.
+under 10 MB. Speaks English and 简体中文.
 
 ## Features
 
@@ -149,8 +149,12 @@ involves, so you can decide whether to trust it.
 
 ## Requirements
 
-macOS 26 (Tahoe) or later. Building from source needs only the command-line Swift toolchain
-(`xcode-select --install`), not the full Xcode.
+macOS 26 (Tahoe) or later on an Apple silicon or Intel Mac. Builds from this source are
+Universal 2: the app, update helper and CLI each contain both `arm64` and `x86_64` slices.
+
+**The current 1.6.0 download is Apple silicon only.** Intel support ships in the next release;
+until then, Intel users can [build from source](#build-from-source). Building needs the
+command-line Swift toolchain (`xcode-select --install`), not the full Xcode.
 
 ## Build from source
 

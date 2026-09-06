@@ -7,10 +7,17 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
-    name: Build and verify
-    runs-on: macos-26      # LSMinimumSystemVersion is 26.0, requiring the Tahoe SDK.
+    name: Build and verify (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, macos-26-intel]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
 
@@ -27,8 +34,8 @@ jobs:
 
       # Default ad-hoc signing uses the cdhash as identity, which changes with every rebuild.
       # This can disrupt macOS 26 menu bar permission for new versions, so verify the stable requirement separately.
-      - name: Verify app signing identity
-        run: bash Tests/verify-app-signature.sh build/HourGlow.app
+      - name: Verify universal binaries and signing identity
+        run: bash Tests/verify-universal.sh
 
       # Targets avoid real configuration (ModelCheck redirects HOURGLOW_HOME itself).
       # Add another safeguard here so all runner writes stay in a temporary directory.

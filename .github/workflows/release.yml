@@ -20,8 +20,12 @@ permissions:
 
 jobs:
   release:
-    name: Build and release
-    runs-on: macos-26
+    name: Verify release (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-26, macos-26-intel]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -48,8 +52,8 @@ jobs:
           HOURGLOW_BUILD: ${{ github.run_number }}
         run: ./build.sh
 
-      - name: Verify app signing identity
-        run: bash Tests/verify-app-signature.sh build/HourGlow.app
+      - name: Verify universal binaries and signing identity
+        run: bash Tests/verify-universal.sh
 
       # Run the same checks as CI before publishing: a successful build does not guarantee correct calculations.
       - name: Run verification targets
@@ -96,7 +100,10 @@ jobs:
         run: |
           rm -rf "$RUNNER_TEMP/verify" && mkdir -p "$RUNNER_TEMP/verify"
           ditto -x -k "dist/HourGlow-$VERSION.zip" "$RUNNER_TEMP/verify"
-          bash Tests/verify-app-signature.sh "$RUNNER_TEMP/verify/HourGlow.app"
+          ditto -x -k "dist/hourglow-cli-$VERSION.zip" "$RUNNER_TEMP/verify"
+          bash Tests/verify-universal.sh "$RUNNER_TEMP/verify/HourGlow.app" "$RUNNER_TEMP/verify/hourglow-cli"
+          HOURGLOW_HOME="$RUNNER_TEMP/release-smoke" TZ=Asia/Shanghai "$RUNNER_TEMP/verify/hourglow-cli" list
+          HOURGLOW_HOME="$RUNNER_TEMP/release-smoke" TZ=Asia/Shanghai "$RUNNER_TEMP/verify/hourglow-cli" simulate 2026-12-21
           /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             "$RUNNER_TEMP/verify/HourGlow.app/Contents/Info.plist"
 
@@ -104,7 +111,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          cat > "$RUNNER_TEMP/notes.md" <<NOTES
+          cat > "dist/notes.md" <<NOTES
           A macOS menu bar wallpaper scheduler that follows the daylight.
 
           ## Install
@@ -122,22 +129,39 @@ jobs:
           HourGlow checks GitHub Releases for future updates once a day. You can turn automatic
           updates off or run a manual check from its settings page.
 
-          Requires macOS 26 (Tahoe) or later.
+          Universal 2: supports Apple silicon and Intel Macs running macOS 26 (Tahoe) or later.
 
           **hourglow-cli-$VERSION.zip** is the optional command line tool (troubleshooting + headless daemon).
 
           Checksums are in \`SHA256SUMS.txt\`.
           NOTES
-          cat "$RUNNER_TEMP/notes.md"
+          cat "dist/notes.md"
 
+      - name: Upload verified release assets
+        if: matrix.os == 'macos-26'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish after both architectures pass
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: release-assets
+          path: dist
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.version.outputs.tag }}
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           gh release create "$TAG" \
-            --title "HourGlow $VERSION" \
-            --notes-file "$RUNNER_TEMP/notes.md" \
+            --title "HourGlow ${TAG#v}" \
+            --notes-file dist/notes.md \
             --generate-notes \
             dist/*.zip dist/SHA256SUMS.txt

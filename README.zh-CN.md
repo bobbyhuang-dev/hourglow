@@ -17,7 +17,7 @@ macOS Tahoe 提供了 Tahoe Morning / Day / Evening / Night 四张动态壁纸�
 macOS 那样按时间自动切换的能力。HourGlow 补上这个缺口 —— 但不写死这四张，而是做成一个
 通用的「触发条件 → 壁纸」调度器：你定义若干时段，每段绑一张壁纸，它负责在正确的时刻切换。
 
-菜单栏常驻，无 Dock 图标。Swift 6.3 + SwiftUI，零第三方依赖，二进制不到 5 MB。
+菜单栏常驻，无 Dock 图标。Swift 6.3 + SwiftUI，零第三方依赖，二进制不到 10 MB。
 界面有简体中文与英文两种。
 
 ## 功能
@@ -111,8 +111,11 @@ HourGlow 对你的 Mac 只做一件事：换壁纸。下面把这件事涉及的
 
 ## 要求
 
-macOS 26 (Tahoe) 及以上。从源码构建只需要命令行的 Swift 工具链（`xcode-select --install`
-即可），不需要完整的 Xcode。
+支持运行 macOS 26 (Tahoe) 及以上的 Apple silicon 和 Intel Mac。当前源码构建 Universal 2：
+App、更新助手和 CLI 均包含 `arm64` 与 `x86_64` 两种架构。
+
+**当前公开的 1.6.0 下载包仅支持 Apple silicon。** Intel 支持将在下一版本发布；在此之前，
+Intel 用户可以从源码构建。只需要命令行 Swift 工具链（`xcode-select --install`），不需要完整 Xcode。
 
 ## 从源码构建
 

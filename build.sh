@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build hourglow-cli, verification targets, and the menu bar app (M3).
+# Build Universal 2 production binaries and native verification targets.
 set -euo pipefail
 BUILD_CHECKS=1
 PRODUCTION_FLAGS=(-O)
@@ -29,8 +29,29 @@ COMMON=("${L10N[@]}" Sources/Model/*.swift Sources/System/*.swift Sources/Engine
 UI=(Sources/App/SlotDraft.swift Sources/App/Onboarding.swift Sources/App/AppUpdater.swift Sources/App/AppModel.swift Sources/UI/*.swift)
 ENTRY=(Sources/App/HourGlowApp.swift)
 
+# Both slices use the same deployment target. Merge before signing so the signature seals both.
+# CodeQL only needs the host architecture to trace the shared sources once.
+compile_production() {
+    local output="$1"
+    shift
+    if [ "$BUILD_CHECKS" -eq 0 ]; then
+        swiftc "${PRODUCTION_FLAGS[@]}" "$@" -o "$output"
+        return
+    fi
+    local architecture
+    local slices=()
+    for architecture in arm64 x86_64; do
+        local slice="build/slices/$architecture/$(basename "$output")"
+        mkdir -p "$(dirname "$slice")"
+        swiftc "${PRODUCTION_FLAGS[@]}" -target "$architecture-apple-macos26.0" "$@" -o "$slice"
+        slices+=("$slice")
+    done
+    lipo -create "${slices[@]}" -output "$output"
+}
+
 echo "building: hourglow-cli"
-swiftc "${PRODUCTION_FLAGS[@]}" "${COMMON[@]}" Sources/CLI/*.swift          -o build/hourglow-cli
+compile_production build/hourglow-cli "${COMMON[@]}" Sources/CLI/*.swift
+codesign --force --sign - build/hourglow-cli >/dev/null 2>&1
 # CodeQL needs production targets only; CI and releases still build every verification target.
 if [ "$BUILD_CHECKS" -eq 1 ]; then
     echo "building: verification targets"
@@ -54,9 +75,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Helpers" "$APP/Contents/Resources"
 
 echo "building: HourGlow.app"
-swiftc "${PRODUCTION_FLAGS[@]}" "${COMMON[@]}" "${UI[@]}" "${ENTRY[@]}" -o "$APP/Contents/MacOS/HourGlow"
+compile_production "$APP/Contents/MacOS/HourGlow" "${COMMON[@]}" "${UI[@]}" "${ENTRY[@]}"
 echo "building: HourGlowUpdater"
-swiftc "${PRODUCTION_FLAGS[@]}" "${L10N[@]}" Sources/Updater/main.swift -o "$APP/Contents/Helpers/HourGlowUpdater"
+compile_production "$APP/Contents/Helpers/HourGlowUpdater" "${L10N[@]}" Sources/Updater/main.swift
 
 # The generated icon is checked in; rerun Tools/makeicon.swift only when changing it (usage in its header).
 cp Resources/HourGlow.icns "$APP/Contents/Resources/HourGlow.icns"
