@@ -282,6 +282,11 @@ wallpaper store, and a long list of mistakes already made once. It is worth the 
   say which and why.
 - CI (`.github/workflows/ci.yml`) builds on `macos-26` and runs the check binaries plus the
   ephemeris cross-check on every push and PR. It has to be green before merge.
+- CodeQL (`.github/workflows/codeql.yml`) scans Swift, Python, and GitHub Actions on pushes
+  to `main`, pull requests, and weekly. Swift uses `./build.sh` with manual build mode on
+  `macos-26`, because this repository has no Xcode project or Swift package for autobuild.
+  Maintainers must switch from default to advanced setup in Settings > Advanced Security
+  when activating this workflow; default setup blocks uploads from advanced workflows.
 
 ## Releases
 

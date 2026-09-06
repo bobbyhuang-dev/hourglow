@@ -741,8 +741,15 @@ machine, not a theoretical risk.
 
 - **Use the `macos-26` runner.** `LSMinimumSystemVersion` is 26.0 and older SDKs cannot compile it.
   `macos-latest` currently points there, but pinning avoids future drift.
-- **Runners often contain multiple Xcode versions, and the default need not be newest.** Both
-  workflows first run `ls -d /Applications/Xcode_*.app | sort -V | tail -1`, then `xcode-select -s`.
+- **Runners often contain multiple Xcode versions, and the default need not be newest.** All
+  build workflows first run `ls -d /Applications/Xcode_*.app | sort -V | tail -1`, then `xcode-select -s`.
+- **CodeQL requires advanced setup for Swift.** `.github/workflows/codeql.yml` initializes
+  CodeQL in `manual` mode, runs `./build.sh` on `macos-26`, then analyzes the traced build.
+  Default setup's autobuilder cannot find an Xcode project, workspace, or Swift package here;
+  its setup run can appear successful while dropping Swift from subsequent scans. Preserve
+  the separate Actions and Python jobs when changing the workflow. When activating this
+  workflow, switch the repository from default to advanced setup in Settings > Advanced
+  Security; default setup must be disabled before advanced analysis can upload results.
 - **Package `.app` only with `ditto -c -k --keepParent`.** `zip` loses symlinks and extended
   attributes, breaking the unpacked signature. Conversely, `zip -qj` is enough for the bare
   CLI binary; `ditto --sequesterRsrc` adds unwanted `__MACOSX/` contents. Unpack the result and
